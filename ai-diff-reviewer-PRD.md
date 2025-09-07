@@ -47,11 +47,23 @@ ai-review chunk --profile generic-medium   # Handle large diffs
 
 ## Technical Stack
 - **Language**: TypeScript/Node.js
+- **Runtime**: Node.js 18+
 - **Dependencies**:
   - `simple-git` - Git operations
   - `commander` - CLI framework
   - `chalk` - Terminal colors
+  - `minimatch` - Glob pattern matching for .aidiffignore
+  - `json5` - Config file parsing
+  - `ora` - Spinner for long operations
+- **Dev Dependencies**:
+  - `typescript` - Type safety
+  - `@types/node` - Node.js types
+  - `vitest` - Testing framework
+  - `tsx` - TypeScript execution
+  - `eslint` - Linting
+  - `prettier` - Code formatting
 - **Package**: npm (`npx ai-diff-review`)
+- **Build**: `tsup` for bundling
 
 ## File Structure
 ```
