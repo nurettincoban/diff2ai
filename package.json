@@ -1,0 +1,49 @@
+{
+  "name": "diff2ai",
+  "version": "0.0.1",
+  "description": "CLI tool to extract Git diffs and format AI-ready reviews",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "diff2ai": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup src/cli.ts --format esm,cjs --dts --out-dir dist",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "prepare": "npm run build",
+    "test": "npm run build && vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://example.com/diff2ai.git"
+  },
+  "keywords": [
+    "git",
+    "diff",
+    "review",
+    "cli"
+  ],
+  "devDependencies": {
+    "@types/node": "^24.3.1",
+    "eslint": "^9.35.0",
+    "prettier": "^3.6.2",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "chalk": "^5.6.0",
+    "commander": "^14.0.0",
+    "json5": "^2.2.3",
+    "minimatch": "^10.0.3",
+    "ora": "^8.2.0",
+    "simple-git": "^3.28.0"
+  }
+}

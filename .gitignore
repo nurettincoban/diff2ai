@@ -1,0 +1,81 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Testing
+coverage/
+*.lcov
+.nyc_output/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Package manager files
+.npm
+.yarn-integrity
+
+# TypeScript cache
+*.tscache
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional stylelint cache
+.stylelintcache
+
+# Output files from the tool
+*.diff
+*_reviewed.diff
+batch_*.md
+review_*.md
+review.json
+
+# User config
+.aidiff.json
+.aidiffignore
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
