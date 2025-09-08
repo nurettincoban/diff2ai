@@ -15,6 +15,7 @@ import { registerDoctor } from './doctor.js';
 import ora from 'ora';
 import chalk from 'chalk';
 import { registerReview } from './review.js';
+import { header, success } from '../ux/theme.js';
 
 export function registerCommands(program: Command): void {
   registerDoctor(program);
@@ -57,6 +58,9 @@ export function registerCommands(program: Command): void {
             // ignore selection errors
           }
         }
+
+        console.log(header('diff2ai diff', `${opts.staged ? 'mode: staged' : `target: ${selectedTarget}`}`));
+
         const targetRef = `origin/${selectedTarget}`;
         const spin = ora('Generating diff...').start();
         const diff = await generateUnifiedDiff({
@@ -74,6 +78,15 @@ export function registerCommands(program: Command): void {
         const filePath = writeDiffFile(opts.staged ? 'staged' : 'diff', diff);
         spin.stop();
         console.log(`Wrote diff: ${filePath}`);
+        console.log(
+          success([
+            chalk.green('Diff ready'),
+            chalk.dim(`path:   ${filePath}`),
+            '',
+            'Next:',
+            '- Generate prompt: diff2ai prompt <diff> --template default',
+          ]),
+        );
       } catch (error: unknown) {
         const message = (error as Error)?.message ?? String(error);
         if (/Not a git repository/i.test(message)) {
@@ -101,6 +114,7 @@ export function registerCommands(program: Command): void {
     .action(async (sha: string) => {
       try {
         assertGitRepo();
+        console.log(header('diff2ai show', `sha: ${sha}`));
         const diff = await generateUnifiedDiff({ commitSha: sha });
         if (!diff || diff.trim().length === 0) {
           console.log(chalk.gray('No changes detected.'));
@@ -108,6 +122,7 @@ export function registerCommands(program: Command): void {
         }
         const filePath = writeDiffFile(`commit_${sha}`, diff);
         console.log(`Wrote diff: ${filePath}`);
+        console.log(success([chalk.green('Commit diff ready'), chalk.dim(`path:   ${filePath}`)]));
       } catch (error: unknown) {
         console.error((error as Error)?.message ?? String(error));
         process.exitCode = 1;
@@ -121,6 +136,7 @@ export function registerCommands(program: Command): void {
     .action((diffFile: string, opts: { template: TemplateName }) => {
       try {
         const abs = diffFile;
+        console.log(header('diff2ai prompt', `template: ${opts.template}`));
         if (!fs.existsSync(abs)) {
           console.error(`Diff file not found: ${abs}`);
           process.exitCode = 1;
@@ -131,6 +147,7 @@ export function registerCommands(program: Command): void {
         const out = abs.replace(/\.diff$/i, '.md');
         fs.writeFileSync(out, md, 'utf-8');
         console.log(`Wrote prompt: ${out}`);
+        console.log(success([chalk.green('Prompt ready'), chalk.dim(`path:   ${out}`)]));
       } catch (error: unknown) {
         console.error((error as Error)?.message ?? String(error));
         process.exitCode = 1;
@@ -148,6 +165,7 @@ export function registerCommands(program: Command): void {
     .action((diffFile: string, opts: { profile: ProfileName }) => {
       try {
         const abs = diffFile;
+        console.log(header('diff2ai chunk', `profile: ${opts.profile}`));
         if (!fs.existsSync(abs)) {
           console.error(`Diff file not found: ${abs}`);
           process.exitCode = 1;
@@ -169,6 +187,13 @@ export function registerCommands(program: Command): void {
         }
         fs.writeFileSync(path.join(process.cwd(), 'review_index.md'), indexLines.join('\n') + '\n', 'utf-8');
         console.log(`Wrote ${chunks.length} batch file(s) and review_index.md`);
+        console.log(
+          success([
+            chalk.green('Chunking complete'),
+            chalk.dim(`batches: ${chunks.length}`),
+            chalk.dim('index:   review_index.md'),
+          ]),
+        );
       } catch (error: unknown) {
         console.error((error as Error)?.message ?? String(error));
         process.exitCode = 1;
