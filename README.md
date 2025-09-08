@@ -1,147 +1,85 @@
 # diff2ai
 
-CLI tool that extracts Git diffs from MRs/PRs and formats them for AI code review without requiring repository access.
+CLI tool that extracts Git diffs from branches/refs and formats them for AI code review without requiring repository access.
 
 ## Quickstart (Local Development)
 
 ```bash
-# Install deps
 npm install
-
-# Build
 npm run build
-
-# See help
 node dist/cli.js --help
 ```
 
+## Minimal Flags (MVP)
+- `--no-interactive`: disable prompts (for CI/non-TTY)
+- `--yes`: auto-confirm safe prompts
+
+Interactive mode is on by default when attached to a TTY.
+
+## Workflow
+1) Generate a diff and an AI prompt automatically:
+```bash
+node dist/cli.js review feature/branch        # writes review_*.diff and review_*.md (default template)
+```
+2) Paste the AI's response into `review.md` in your repo.
+
+- For large diffs:
+```bash
+node dist/cli.js chunk path/to.diff --profile generic-medium
+# Produces batch_*.md and review_index.md with merge guidance
+```
+Process each batch with your AI, then merge issue blocks into a single `review.md` (no duplicates).
+
 ## Usage
 
-- `diff` – Generate diffs against target branch or staged changes
+- review – High-level flow (auto-prompt)
 ```bash
-# Working tree vs target (default target: main)
-node dist/cli.js diff
+node dist/cli.js review feature/login                 # default template
+node dist/cli.js review feature/api --target main     # choose target branch
+node dist/cli.js review feature/api --template basic  # basic template
+```
 
-# Staged changes only
+- diff – Generate diffs
+```bash
+node dist/cli.js diff
 node dist/cli.js diff --staged
 ```
 
-- `show` – Commit-by-commit review
+- prompt – Generate a prompt from a diff file
 ```bash
-node dist/cli.js show <sha>
+node dist/cli.js prompt path/to.diff --template default
 ```
-
-- `mr` – Fetch & diff an MR/PR
-```bash
-# GitHub PR
-node dist/cli.js mr --id 123 --platform github --target main
-
-# GitLab MR
-node dist/cli.js mr --id 123 --platform gitlab --target main
-```
-
-- `prompt` – Generate AI-ready markdown from a diff file
-```bash
-node dist/cli.js prompt path/to.diff --template comprehensive
-# templates: basic | comprehensive | security
-```
-
-- `chunk` – Split large diffs into batches
-```bash
-node dist/cli.js chunk path/to.diff --profile generic-medium
-# profiles: claude-large | generic-large | generic-medium
-```
-
-### Output Files
-- `*.diff`: Raw unified diff output
-- `*.md`: AI-ready prompt using the selected template
-- `batch_*.md`: Chunked review files for large diffs
-- `review_index.md`: Index linking all batch files
-
-## Configuration
-
-Create `.aidiff.json` in your repository root (JSON5 supported):
-```json5
-{
-  "target": "main",
-  "profile": "generic-large",
-  "include": ["src/**", "apps/**"],
-  "exclude": ["**/*.lock", "dist/**", "**/*.min.*"]
-}
-```
-
-Ignore patterns with `.aidiffignore` (minimatch syntax):
-```
-# example
-**/*.lock
-**/dist/**
-**/*.min.*
-```
-
-Notes
-- Missing config falls back to defaults with a warning.
-- Ignore patterns are applied when processing paths from diffs.
-
-## Error Handling (What you’ll see)
-
-- Missing Git repo
-```
-Error: Missing Git repo. Ensure a .git directory exists.
-```
-
-- Invalid diff target
-```
-Error: Invalid diff target. Available remote branches:
-  origin/main
-  origin/develop
-  ...
-```
-
-- MR/PR fetch failure (GitHub example)
-```
-Error: Could not fetch PR #123
-Try manually: git fetch origin pull/123/head:pr-123 && git checkout pr-123
-```
-
-- Missing diff file for prompt/chunk
-```
-Diff file not found: <path>
-```
-
-## Performance
-- Goal: process <1000 LOC diffs in <2 seconds on a typical dev machine.
-- Use `chunk` when diffs exceed model/profile token budgets.
 
 ## Templates
-- Files in `templates/`: `basic.md`, `comprehensive.md`, `security.md`
-- If templates are missing, a built-in comprehensive template is used.
+- `templates/default.md`: strict schema with Severity/Type/Title/Affected/Explanation/Proposed fix
+- `templates/basic.md`: minimal guidance
+
+## Error Handling
+- Missing Git repo: clear message
+- Invalid diff target: shows available remote branches
+- Missing files: concise errors with next steps
+
+## Performance
+- Goal: process <1000 LOC diffs in <2 seconds on a typical dev machine
+- Use `chunk` when diffs exceed model/profile token budgets
 
 ## Development
-
-- Scripts
 ```bash
-npm run build     # bundle CLI into dist/
-npm run lint      # ESLint (flat config)
-npm run format    # Prettier
-npm test          # build + Vitest
+npm run build
+npm run lint
+npm run format
+npm test
 ```
 
-- Tech Stack
-  - TypeScript, Node.js 18+
-  - Bundler: tsup
-  - CLI: commander
-  - Git ops: simple-git
-  - Config: json5
-  - Ignore: minimatch
-
 ## Roadmap (MVP parity)
+- [x] review (pure git, refs/branches)
 - [x] diff / diff --staged
 - [x] show <sha>
-- [x] mr --id with GitHub/GitLab fetch refs
-- [x] prompt with templates
+- [x] prompt with templates (basic, default)
 - [x] chunk with profiles and index
-- [ ] Additional tests and performance checks
-- [ ] README examples for Windows shells
+- [x] interactive prompts and safety checks
+- [ ] tests for interactive flows
+- [ ] performance check (<1000 LOC in <2s)
 
 ## License
 MIT

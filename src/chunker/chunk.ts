@@ -2,6 +2,8 @@ import { PROFILES, type ProfileName } from './profiles.js';
 
 export type Chunk = { filename: string; content: string };
 
+const DEFAULT_HEADER = `# Enforced Code Review Instructions\n\nYou are an AI code reviewer. Output ONLY numbered issue blocks as per the schema. Do not echo the diff or add preambles.\nFor chunked reviews, do not assume context outside this chunk.\n`;
+
 export function chunkDiff(
   unifiedDiff: string,
   profile: ProfileName,
@@ -35,7 +37,7 @@ export function chunkDiff(
 }
 
 function wrapAsMarkdown(diff: string): string {
-  return `--- START DIFF ---\n${diff}\n--- END DIFF ---\n`;
+  return `${DEFAULT_HEADER}\n--- START DIFF ---\n${diff}\n--- END DIFF ---\n`;
 }
 
 function joinWithOverlap(a: string, b: string): string {

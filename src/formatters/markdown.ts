@@ -1,32 +1,15 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from 'fs';
+import path from 'path';
 
-export type TemplateName = 'basic' | 'comprehensive' | 'security';
+export type TemplateName = 'basic' | 'default';
 
-const DEFAULT_COMPREHENSIVE = `# Code Review Request
-
-Review the following diff and add comments directly above problematic lines.
-Format: // REVIEW: [ERROR|WARNING|INFO] Your comment here
-
-Check for:
-- Bugs and logic errors
-- Missing tests or test coverage gaps
-- Security vulnerabilities
-- Performance issues
-- Code style and best practices
-- Breaking changes to APIs
-
---- START DIFF ---
-{diff_content}
---- END DIFF ---
-`;
+const DEFAULT_TEMPLATE = `# Enforced Code Review Instructions\n\nYou are an AI code reviewer. Follow these rules strictly and keep feedback concise and actionable.\n\nGuidelines\n- Comment ONLY on lines present in the diff.\n- Place feedback immediately ABOVE the relevant added/changed lines.\n- Prefer concrete fixes over generic advice.\n- If proposing code, keep snippets minimal and focused.\n\nIssue Block (use this exact structure per issue)\n\n⚠️ Potential issue [<TYPE>]\n<Short, imperative title (max 1 line)>\n<Clear explanation: what is wrong, why it matters, how to fix>\n\n🤖 Prompt for AI Agents\n<One-paragraph, precise instruction with exact file paths and line ranges>\n\n--- START DIFF ---\n{diff_content}\n--- END DIFF ---\n`;
 
 export function renderTemplate(template: TemplateName, diffContent: string, cwd: string = process.cwd()): string {
   const templatesDir = path.join(cwd, 'templates');
   const fileMap: Record<TemplateName, string> = {
     basic: 'basic.md',
-    comprehensive: 'comprehensive.md',
-    security: 'security.md',
+    default: 'default.md',
   };
 
   const templatePath = path.join(templatesDir, fileMap[template]);
@@ -35,6 +18,6 @@ export function renderTemplate(template: TemplateName, diffContent: string, cwd:
     return raw.replace('{diff_content}', diffContent);
   }
 
-  // Fallback to built-in comprehensive if files are missing
-  return DEFAULT_COMPREHENSIVE.replace('{diff_content}', diffContent);
+  // Fallback to built-in default template if files are missing
+  return DEFAULT_TEMPLATE.replace('{diff_content}', diffContent);
 }

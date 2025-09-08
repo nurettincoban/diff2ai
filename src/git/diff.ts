@@ -1,21 +1,15 @@
-import path from 'node:path';
 import simpleGit, { SimpleGit } from 'simple-git';
 import type { IgnoreFilter } from '../config/ignore.js';
 
 export type DiffOptions = {
   targetRef?: string; // e.g., origin/main
+  compareRef?: string; // e.g., pr-123 (local ref) or any commit-ish
   staged?: boolean;
   commitSha?: string;
   includeGlobs?: string[];
   excludeGlobs?: string[];
   ignore?: IgnoreFilter;
 };
-
-function shouldInclude(filePath: string, includeGlobs?: string[], excludeGlobs?: string[]): boolean {
-  // For MVP we rely on `git diff` to provide paths; basic include/exclude can be applied later if needed.
-  // Here we simply honor exclude via ignore filter if provided externally.
-  return true;
-}
 
 export async function generateUnifiedDiff(options: DiffOptions = {}, cwd: string = process.cwd()): Promise<string> {
   const git: SimpleGit = simpleGit({ baseDir: cwd });
@@ -31,6 +25,13 @@ export async function generateUnifiedDiff(options: DiffOptions = {}, cwd: string
   }
 
   const targetRef = options.targetRef ?? 'origin/main';
+
+  if (options.compareRef) {
+    const range = `${targetRef}...${options.compareRef}`;
+    const diff = await git.diff([range]);
+    return diff;
+  }
+
   const range = `${targetRef}...HEAD`;
   const diff = await git.diff([range]);
   return diff;

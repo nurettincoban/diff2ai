@@ -1,21 +1,23 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import prettier from 'eslint-plugin-prettier';
+import globals from 'globals';
 
 export default [
   js.configs.recommended,
-  ...tseslint.configs.recommended,
-  {
-    ignores: ['dist/**', 'node_modules/**'],
-  },
   {
     files: ['**/*.ts'],
     languageOptions: {
       parser: tseslint.parser,
-      ecmaVersion: 2021,
-      sourceType: 'module',
+      parserOptions: {
+        project: false,
+        ecmaVersion: 2021,
+        sourceType: 'module',
+      },
+      globals: globals.node,
     },
     plugins: {
+      '@typescript-eslint': tseslint.plugin,
       prettier,
     },
     rules: {
