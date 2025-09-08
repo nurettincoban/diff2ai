@@ -84,7 +84,7 @@ diff2ai chunk huge.diff --profile generic-medium
 The default template enforces a clean, repeatable review structure. AI reviewers must output only numbered issue blocks — no preambles, no conclusions, no diff echo.
 
 Issue block schema:
-```markdown
+```text
 ## <n>) Severity: CRITICAL|HIGH|MEDIUM|LOW|INFO | Type: Implementation|Bug|Security|Test|Performance|Style|Doc|Maintainability
 Title: <short imperative>
 
@@ -95,9 +95,9 @@ Explanation:
 <what is wrong, why it matters, how to fix>
 
 Proposed fix:
-```<lang>
+~~~<lang>
 <minimal snippet or steps>
-```
+~~~
 ```
 
 For chunked reviews: “Do not assume context outside this chunk; if cross‑file risks are suspected, note briefly.”
