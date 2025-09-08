@@ -65,6 +65,7 @@ Thumbs.db
 batch_*.md
 review_*.md
 review.json
+reviews/
 
 # User config
 .aidiff.json

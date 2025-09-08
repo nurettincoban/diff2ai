@@ -1,5 +1,9 @@
 # diff2ai
 
+[![npm version](https://img.shields.io/npm/v/diff2ai)](https://www.npmjs.com/package/diff2ai) [![CI](https://github.com/ORG/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/ORG/REPO/actions/workflows/ci.yml)
+
+MVP — under active development. Made with ❤️ in Finland.
+
 Turn your Git diffs into beautiful, high-signal AI code review prompts — fast, local, and repo-safe.
 
 - ⚡️ Zero network by default (pure git)
@@ -12,6 +16,15 @@ Turn your Git diffs into beautiful, high-signal AI code review prompts — fast,
 
 ## Why diff2ai?
 Most AI reviews are noisy. diff2ai generates a focused prompt from your actual diff, with a strict schema that forces actionable feedback (severity, file/line ranges, proposed fix). Paste it into your favorite AI coding agent and get a concise, useful review.
+
+### 10-second Quickstart
+```bash
+# Generate AI-ready prompt for your MR against main
+git fetch origin main
+diff2ai review feature/my-branch --target main
+
+# Paste the generated *.md file into Claude, Cursor, or Copilot
+```
 
 ---
 
@@ -106,14 +119,41 @@ Templates available:
 - `default` (strict, recommended)
 - `basic` (lightweight)
 
+## Example output
+```text
+## 1) Severity: HIGH | Type: Implementation
+Title: Avoid mutation of request body in middleware
+
+Affected:
+- src/middleware/auth.ts:42-57
+
+Explanation:
+Mutating the incoming request object can introduce side effects across downstream handlers. Use a cloned object or limit changes to a derived value.
+
+Proposed fix:
+~~~ts
+const sanitized = { ...req.body, password: undefined };
+next();
+~~~
+```
+
 ---
 
 ## Output files
+- Default output location: current working directory.
+- Recommended: use a dedicated `reviews/` directory and add it to `.gitignore`.
+
 - `*.diff` unified diff (input for prompt rendering and chunking)
 - `*.md` AI‑ready prompt (paste into your AI coding agent)
 - `batch_*.md` chunked prompts for large diffs
 - `review_index.md` guidance for merging batch results into a single review
 
+```bash
+diff2ai review feature/api --target main
+# writes reviews/*.diff and reviews/*.md by default
+```
+
+Paste the generated `*.md` into the MR/PR description or as a top comment.
 Use the prompt with your AI reviewer. Save the AI’s response wherever you prefer — PR comments, a `review.md` file, or your internal tooling.
 
 ---
@@ -182,6 +222,13 @@ Conventional flow:
   - Wherever you prefer: PR comments, a `review.md` file, or your internal tools.
 - “Can I script this in CI?”
   - Yes. Use `--no-interactive` (and `--yes` if needed).
+
+- “Does this upload my code anywhere?”
+  - No. It runs 100% locally and writes to your filesystem. You decide what to paste into an AI.
+- “How do I handle huge MRs?”
+  - Use `diff2ai chunk <diff> --profile <name>`, paste each `batch_*.md` to your AI, then merge the results guided by `review_index.md`.
+- “Can I use this on GitLab MRs?”
+  - Yes. Checkout the MR branch locally (or fetch the refs), then run `diff2ai review <branch> --target <base>`.
 
 ---
 

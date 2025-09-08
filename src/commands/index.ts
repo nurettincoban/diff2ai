@@ -3,7 +3,7 @@ import { loadConfig } from '../config/loadConfig.js';
 import { loadIgnore } from '../config/ignore.js';
 import { assertGitRepo, listRemoteBranches } from '../git/repo.js';
 import { generateUnifiedDiff } from '../git/diff.js';
-import { writeDiffFile } from '../formatters/diff.js';
+import { writeDiffFile, ensureDir } from '../formatters/diff.js';
 import { renderTemplate, type TemplateName } from '../formatters/markdown.js';
 import fs from 'fs';
 import path from 'path';
@@ -25,7 +25,8 @@ export function registerCommands(program: Command): void {
     .command('diff')
     .description('Generate diff for working tree vs target or staged changes')
     .option('--staged', 'Use staged changes')
-    .action(async (opts: { staged?: boolean }) => {
+    .option('--out <dir>', 'Output directory (default: reviews/)')
+    .action(async (opts: { staged?: boolean; out?: string }) => {
       try {
         assertGitRepo();
         const globalOpts = program.opts();
@@ -75,7 +76,8 @@ export function registerCommands(program: Command): void {
           return;
         }
 
-        const filePath = writeDiffFile(opts.staged ? 'staged' : 'diff', diff);
+        const outDir = opts.out ?? path.join(process.cwd(), 'reviews');
+        const filePath = writeDiffFile(opts.staged ? 'staged' : 'diff', diff, outDir);
         spin.stop();
         console.log(`Wrote diff: ${filePath}`);
         console.log(
@@ -111,7 +113,8 @@ export function registerCommands(program: Command): void {
   program
     .command('show <sha>')
     .description('Show commit diff for a specific SHA')
-    .action(async (sha: string) => {
+    .option('--out <dir>', 'Output directory (default: reviews/)')
+    .action(async (sha: string, opts: { out?: string }) => {
       try {
         assertGitRepo();
         console.log(header('diff2ai show', `sha: ${sha}`));
@@ -120,7 +123,8 @@ export function registerCommands(program: Command): void {
           console.log(chalk.gray('No changes detected.'));
           return;
         }
-        const filePath = writeDiffFile(`commit_${sha}`, diff);
+        const outDir = opts.out ?? path.join(process.cwd(), 'reviews');
+        const filePath = writeDiffFile(`commit_${sha}`, diff, outDir);
         console.log(`Wrote diff: ${filePath}`);
         console.log(success([chalk.green('Commit diff ready'), chalk.dim(`path:   ${filePath}`)]));
       } catch (error: unknown) {
@@ -133,7 +137,8 @@ export function registerCommands(program: Command): void {
     .command('prompt <diffFile>')
     .description('Generate AI-ready markdown prompt from a diff file')
     .option('--template <name>', 'Template: basic|default', 'default')
-    .action((diffFile: string, opts: { template: TemplateName }) => {
+    .option('--out <dir>', 'Output directory (default: reviews/)')
+    .action((diffFile: string, opts: { template: TemplateName; out?: string }) => {
       try {
         const abs = diffFile;
         console.log(header('diff2ai prompt', `template: ${opts.template}`));
@@ -144,10 +149,12 @@ export function registerCommands(program: Command): void {
         }
         const diffContent = fs.readFileSync(abs, 'utf-8');
         const md = renderTemplate(opts.template ?? 'default', diffContent);
-        const out = abs.replace(/\.diff$/i, '.md');
-        fs.writeFileSync(out, md, 'utf-8');
-        console.log(`Wrote prompt: ${out}`);
-        console.log(success([chalk.green('Prompt ready'), chalk.dim(`path:   ${out}`)]));
+        const outDir = opts.out ?? path.join(process.cwd(), 'reviews');
+        ensureDir(outDir);
+        const outPath = path.join(outDir, path.basename(abs).replace(/\.diff$/i, '.md'));
+        fs.writeFileSync(outPath, md, 'utf-8');
+        console.log(`Wrote prompt: ${outPath}`);
+        console.log(success([chalk.green('Prompt ready'), chalk.dim(`path:   ${outPath}`)]));
       } catch (error: unknown) {
         console.error((error as Error)?.message ?? String(error));
         process.exitCode = 1;
@@ -162,7 +169,8 @@ export function registerCommands(program: Command): void {
       'Profile: claude-large|generic-large|generic-medium',
       'generic-medium',
     )
-    .action((diffFile: string, opts: { profile: ProfileName }) => {
+    .option('--out <dir>', 'Output directory (default: reviews/)')
+    .action((diffFile: string, opts: { profile: ProfileName; out?: string }) => {
       try {
         const abs = diffFile;
         console.log(header('diff2ai chunk', `profile: ${opts.profile}`));
@@ -180,18 +188,21 @@ export function registerCommands(program: Command): void {
           'Then merge all issue blocks into a single review.md without duplication.',
           '',
         ];
+        const outDir = opts.out ?? path.join(process.cwd(), 'reviews');
+        ensureDir(outDir);
         for (const c of chunks) {
-          const out = path.join(process.cwd(), c.filename);
+          const out = path.join(outDir, c.filename);
           fs.writeFileSync(out, c.content, 'utf-8');
-          indexLines.push(`- ${c.filename}`);
+          indexLines.push(`- ${path.basename(out)}`);
         }
-        fs.writeFileSync(path.join(process.cwd(), 'review_index.md'), indexLines.join('\n') + '\n', 'utf-8');
-        console.log(`Wrote ${chunks.length} batch file(s) and review_index.md`);
+        const indexPath = path.join(outDir, 'review_index.md');
+        fs.writeFileSync(indexPath, indexLines.join('\n') + '\n', 'utf-8');
+        console.log(`Wrote ${chunks.length} batch file(s) and ${path.basename(indexPath)}`);
         console.log(
           success([
             chalk.green('Chunking complete'),
             chalk.dim(`batches: ${chunks.length}`),
-            chalk.dim('index:   review_index.md'),
+            chalk.dim(`index:   ${path.basename(indexPath)}`),
           ]),
         );
       } catch (error: unknown) {

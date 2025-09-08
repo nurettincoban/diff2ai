@@ -1,7 +1,7 @@
-import { execSync } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { execSync } from 'child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { describe, it, expect } from 'vitest';
 
 function run(cmd: string, cwd: string) {
@@ -23,7 +23,7 @@ describe('diff --staged integration', () => {
     run('git add file.txt', tmp);
 
     // resolve project root and CLI path
-    const projectRoot = path.resolve(__dirname, '..');
+    const projectRoot = path.resolve(process.cwd());
     const cli = path.join(projectRoot, 'dist', 'cli.js');
 
     // build before running
@@ -32,10 +32,11 @@ describe('diff --staged integration', () => {
     const out = run(`node ${cli} diff --staged`, tmp);
     expect(out).toMatch(/Wrote diff:/);
 
+    const reviewsDir = path.join(tmp, 'reviews');
     const written = fs
-      .readdirSync(tmp)
+      .readdirSync(reviewsDir)
       .filter((f) => f.endsWith('.diff'))
-      .map((f) => path.join(tmp, f));
+      .map((f) => path.join(reviewsDir, f));
 
     expect(written.length).toBeGreaterThan(0);
     const diffContent = fs.readFileSync(written[0], 'utf-8');

@@ -17,9 +17,13 @@ export function registerReview(program: Command): void {
     .command('review <ref>')
     .description('Review a branch or git ref against target (pure git)')
     .option('--target <branch>', 'Target branch (default from config)')
+    .option('--out <dir>', 'Output directory (default: reviews/)')
     .option('--template <name>', 'Template for prompt generation (basic|default)', 'default')
     .option('--profile <name>', 'Chunking profile', 'generic-medium')
-    .action(async (ref: string, opts: { target?: string; template: 'basic' | 'default'; profile: ProfileName }) => {
+    .action(async (
+      ref: string,
+      opts: { target?: string; template: 'basic' | 'default'; profile: ProfileName; out?: string },
+    ) => {
       try {
         assertGitRepo();
         const { config } = loadConfig();
@@ -36,7 +40,8 @@ export function registerReview(program: Command): void {
           console.log(chalk.gray('No changes detected.'));
           return;
         }
-        const diffPath = writeDiffFile('review', diff);
+        const outDir = opts.out ?? path.join(process.cwd(), 'reviews');
+        const diffPath = writeDiffFile('review', diff, outDir);
         spin.succeed(chalk.green(`Wrote diff: ${diffPath}`));
 
         const md = renderTemplate((opts.template as any) ?? 'default', fs.readFileSync(diffPath, 'utf-8'));
