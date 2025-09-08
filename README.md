@@ -1,7 +1,5 @@
 # diff2ai
 
-[![npm version](https://img.shields.io/npm/v/diff2ai)](https://www.npmjs.com/package/diff2ai) [![CI](https://github.com/ORG/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/ORG/REPO/actions/workflows/ci.yml)
-
 MVP — under active development. Made with ❤️ in Finland.
 
 Turn your Git diffs into beautiful, high-signal AI code review prompts — fast, local, and repo-safe.
