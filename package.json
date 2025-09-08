@@ -11,7 +11,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "tsup src/cli.ts --format esm,cjs --dts --out-dir dist",
+    "build": "tsup",
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
     "prepare": "npm run build",
@@ -33,6 +33,7 @@
     "@types/node": "^24.3.1",
     "@typescript-eslint/eslint-plugin": "^8.43.0",
     "@typescript-eslint/parser": "^8.43.0",
+    "esbuild-plugin-copy": "^2.1.1",
     "eslint": "^9.35.0",
     "globals": "^16.3.0",
     "prettier": "^3.6.2",
