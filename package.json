@@ -1,6 +1,6 @@
 {
   "name": "diff2ai",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "CLI tool to extract Git diffs and format AI-ready reviews",
   "license": "MIT",
   "type": "module",

@@ -1,6 +1,10 @@
 # diff2ai
 
-MVP — under active development. Made with ❤️ in Finland.
+[![npm version](https://img.shields.io/npm/v/diff2ai.svg?logo=npm&label=npm)](https://www.npmjs.com/package/diff2ai)
+[![npm downloads](https://img.shields.io/npm/dm/diff2ai.svg?color=blue)](https://www.npmjs.com/package/diff2ai)
+![node version](https://img.shields.io/badge/node-%3E%3D18.0-brightgreen)
+
+Public CLI — made with ❤️ in Finland.
 
 Turn your Git diffs into beautiful, high-signal AI code review prompts — fast, local, and repo-safe.
 
@@ -16,7 +20,30 @@ Turn your Git diffs into beautiful, high-signal AI code review prompts — fast,
 
 Most AI reviews are noisy. diff2ai generates a focused prompt from your actual diff, with a strict schema that forces actionable feedback (severity, file/line ranges, proposed fix). Paste it into your favorite AI coding agent and get a concise, useful review.
 
-### 10-second Quickstart
+---
+
+## Installation
+
+Requirements
+- Node.js >= 18
+
+Global install (recommended)
+```bash
+npm i -g diff2ai
+diff2ai --version   # verify (e.g., 0.0.3)
+```
+
+Use without installing (npx)
+```bash
+npx diff2ai --help
+```
+
+Upgrade to latest
+```bash
+npm i -g diff2ai@latest
+```
+
+## Quickstart
 
 ```bash
 # Generate AI-ready prompt for your MR against main
@@ -24,27 +51,6 @@ git fetch origin main
 diff2ai review feature/my-branch --target main --copy
 
 # Paste the generated prompt from your clipboard into Claude, Cursor, or Copilot
-```
-
----
-
-## Quickstart
-
-Local usage (dev):
-
-```bash
-npm install
-npm run build
-node dist/cli.js --help
-```
-
-Global usage (link):
-
-```bash
-npm run build
-npm link
-# Now available everywhere
-diff2ai --help
 ```
 
 ---
@@ -206,6 +212,15 @@ Profiles (token budgets):
 - `claude-large` ≈ 150k tokens
 - `generic-large` ≈ 100k tokens
 - `generic-medium` ≈ 30k tokens
+
+---
+
+## Troubleshooting
+
+- Templates directory not found
+  - Fixed in >= 0.0.2. Update to latest: `npm i -g diff2ai@latest`.
+  - If developing locally, ensure `npm run build` copied `templates/` into `dist/templates/`.
+  - Project-local `templates/` in your CWD are also supported.
 
 ---
 
