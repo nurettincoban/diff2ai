@@ -19,9 +19,9 @@ Most AI reviews are noisy. diff2ai generates a focused prompt from your actual d
 ```bash
 # Generate AI-ready prompt for your MR against main
 git fetch origin main
-diff2ai review feature/my-branch --target main
+diff2ai review feature/my-branch --target main --copy
 
-# Paste the generated *.md file into Claude, Cursor, or Copilot
+# Paste the generated prompt from your clipboard into Claude, Cursor, or Copilot
 ```
 
 ---
@@ -47,12 +47,12 @@ diff2ai --help
 
 ## CLI at a glance
 
-- `review <ref>`: end‑to‑end — generate a diff from a branch/ref and immediately produce an AI prompt (default template).
+- `review <ref>`: end‑to‑end — generate a diff from a branch/ref and immediately produce an AI prompt (default template). Add `--copy` to place the prompt on your clipboard. Use `--save-diff` if you also want the raw `.diff` file written.
 - `prompt <diff>`: render an AI prompt from an existing `.diff` file.
 - `diff [--staged]`: write a `.diff` from your working tree (or staged changes).
 - `show <sha>`: write a `.diff` for a specific commit.
 - `chunk <diff>`: split a large `.diff` into `batch_*.md` files + index.
-- `doctor`: diagnose repo state (dirty, behind/ahead, last fetch, etc.).
+ 
 
 Global flags (MVP):
 - `--no-interactive` Disable prompts (for CI/non‑TTY)
@@ -62,12 +62,13 @@ Global flags (MVP):
 
 ## Demos
 
-Review a branch (auto‑prompt):
+Review a branch (auto‑prompt + copy to clipboard):
 ```bash
-diff2ai review feature/payments
+diff2ai review feature/payments --copy
 # writes:
-#  - review_YYYY-MM-DD_HH-mm-ss-SSS.diff
 #  - review_YYYY-MM-DD_HH-mm-ss-SSS.md  (default template)
+#  - copies prompt content to your clipboard
+#  - add --save-diff to also write review_YYYY-MM-DD_HH-mm-ss-SSS.diff
 ```
 
 Pick a template explicitly:
@@ -81,6 +82,8 @@ Work from an existing diff:
 ```bash
 diff2ai diff --staged         # produce staged_*.diff
 diff2ai prompt staged_*.diff  # produce staged_*.md
+# To save the AI response yourself, use native OS commands, e.g. on macOS:
+# pbpaste > reviews/review_response.md
 ```
 
 Handle big diffs:
@@ -141,18 +144,18 @@ next();
 - Default output location: current working directory.
 - Recommended: use a dedicated `reviews/` directory and add it to `.gitignore`.
 
-- `*.diff` unified diff (input for prompt rendering and chunking)
 - `*.md` AI‑ready prompt (paste into your AI coding agent)
+- `*.diff` unified diff (optional for `review` via `--save-diff`; always produced by `diff`/`show`)
 - `batch_*.md` chunked prompts for large diffs
 - `review_index.md` guidance for merging batch results into a single review
 
 ```bash
-diff2ai review feature/api --target main
-# writes reviews/*.diff and reviews/*.md by default
+diff2ai review feature/api --target main --save-diff
+# writes reviews/*.md and reviews/*.diff (with --save-diff)
 ```
 
 Paste the generated `*.md` into the MR/PR description or as a top comment.
-Use the prompt with your AI reviewer. Save the AI’s response wherever you prefer — PR comments, a `review.md` file, or your internal tooling.
+Use the prompt with your AI reviewer. Save the AI’s response locally with `diff2ai pasteback` and commit or share as needed.
 
 ---
 
