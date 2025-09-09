@@ -5,11 +5,18 @@ import { fileURLToPath } from 'url';
 export type TemplateName = 'basic' | 'default';
 
 function resolveTemplatesDir(cwd: string): string | null {
-  // 1) Next to this module: dist/formatters/markdown.js → dist/templates
+  // 1) Resolve relative to built module location
+  //    - Bundled single-file (moduleDir = dist): check ./templates
+  //    - Separate dirs (moduleDir = dist/formatters): check ../templates
   try {
     const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-    const pkgTemplates = path.resolve(moduleDir, '../templates');
-    if (fs.existsSync(pkgTemplates)) return pkgTemplates;
+    const candidates = [
+      path.resolve(moduleDir, './templates'),
+      path.resolve(moduleDir, '../templates'),
+    ];
+    for (const dir of candidates) {
+      if (fs.existsSync(dir)) return dir;
+    }
   } catch {
     // ignore
   }
@@ -28,16 +35,15 @@ export function renderTemplate(
 ): string {
   const templatesDir = resolveTemplatesDir(cwd);
   if (!templatesDir) {
-    let expected = 'dist/templates (beside installed CLI)';
+    let expectedA = 'dist/templates (alongside installed CLI)';
+    let expectedB = path.join(cwd, 'templates');
     try {
       const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-      expected = path.resolve(moduleDir, '../templates');
+      expectedA = `${path.resolve(moduleDir, './templates')} or ${path.resolve(moduleDir, '../templates')}`;
     } catch {
       // ignore path resolution errors
     }
-    throw new Error(
-      `Templates directory not found. Expected templates at: ${expected} or ${path.join(cwd, 'templates')}`,
-    );
+    throw new Error(`Templates directory not found. Expected templates at: ${expectedA} or ${expectedB}`);
   }
 
   const fileMap: Record<TemplateName, string> = {
