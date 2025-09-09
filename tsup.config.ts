@@ -1,5 +1,6 @@
 import { defineConfig } from 'tsup';
 import copy from 'esbuild-plugin-copy';
+import type { Plugin } from 'esbuild';
 
 export default defineConfig({
   entry: ['src/cli.ts'],
@@ -11,6 +12,6 @@ export default defineConfig({
     copy({
       assets: [{ from: 'templates/**/*', to: 'templates' }],
       verbose: true,
-    }) as any,
+    }) as unknown as Plugin,
   ],
 });

@@ -49,5 +49,3 @@ describe('.aidiffignore integration', () => {
     expect(content).not.toMatch(/ignore.log/);
   });
 });
-
-

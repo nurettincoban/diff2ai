@@ -30,5 +30,3 @@ describe('show integration', () => {
     expect(files.length).toBeGreaterThan(0);
   });
 });
-
-

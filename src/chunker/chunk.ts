@@ -32,7 +32,10 @@ export function chunkDiff(
   }
   if (current) batches.push(current);
 
-  const chunks: Chunk[] = batches.map((b, i) => ({ filename: `batch_${i + 1}.md`, content: wrapAsMarkdown(b) }));
+  const chunks: Chunk[] = batches.map((b, i) => ({
+    filename: `batch_${i + 1}.md`,
+    content: wrapAsMarkdown(b),
+  }));
   return { chunks, warnings };
 }
 

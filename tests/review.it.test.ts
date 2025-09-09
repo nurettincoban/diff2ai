@@ -51,5 +51,3 @@ describe('review integration', () => {
     expect(files2.some((f) => f.endsWith('.diff'))).toBe(true);
   });
 });
-
-

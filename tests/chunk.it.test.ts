@@ -28,5 +28,3 @@ describe('chunk integration', () => {
     expect(files.includes('review_index.md')).toBe(true);
   });
 });
-
-

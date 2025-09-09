@@ -8,7 +8,12 @@ export type PromptOptions = {
 export async function confirm(message: string, opts: PromptOptions = {}): Promise<boolean> {
   if (opts.yes) return true;
   if (opts.interactive === false) return false;
-  const res = await prompts({ type: 'confirm', name: 'ok', message, initial: false } as PromptObject);
+  const res = await prompts({
+    type: 'confirm',
+    name: 'ok',
+    message,
+    initial: false,
+  } as PromptObject);
   return Boolean(res.ok);
 }
 

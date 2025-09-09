@@ -5,7 +5,8 @@ import simpleGit, { SimpleGit } from 'simple-git';
 export function assertGitRepo(cwd: string = process.cwd()): void {
   const gitDir = path.join(cwd, '.git');
   if (!fs.existsSync(gitDir)) {
-    const message = 'Error: Not a git repository. Ensure you are in a project with a .git directory.';
+    const message =
+      'Error: Not a git repository. Ensure you are in a project with a .git directory.';
     throw new Error(message);
   }
 }

@@ -21,14 +21,20 @@ function resolveTemplatesDir(cwd: string): string | null {
   return null;
 }
 
-export function renderTemplate(template: TemplateName, diffContent: string, cwd: string = process.cwd()): string {
+export function renderTemplate(
+  template: TemplateName,
+  diffContent: string,
+  cwd: string = process.cwd(),
+): string {
   const templatesDir = resolveTemplatesDir(cwd);
   if (!templatesDir) {
     let expected = 'dist/templates (beside installed CLI)';
     try {
       const moduleDir = path.dirname(fileURLToPath(import.meta.url));
       expected = path.resolve(moduleDir, '../templates');
-    } catch {}
+    } catch {
+      // ignore path resolution errors
+    }
     throw new Error(
       `Templates directory not found. Expected templates at: ${expected} or ${path.join(cwd, 'templates')}`,
     );

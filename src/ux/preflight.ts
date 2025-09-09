@@ -11,7 +11,7 @@ export type PreflightSummary = {
   hasStash: boolean;
 };
 
-export async function gatherPreflight(target: string): Promise<PreflightSummary> {
+export async function gatherPreflight(_target: string): Promise<PreflightSummary> {
   const git = simpleGit();
   const status = await git.status();
   const isDirty = status.files.length > 0;
@@ -23,8 +23,16 @@ export async function gatherPreflight(target: string): Promise<PreflightSummary>
   let behind = 0;
   try {
     const b = await git.revparse([`--abbrev-ref`, `${currentBranch}@{upstream}`]);
-    const cnt = await git.raw(['rev-list', '--left-right', '--count', `${currentBranch}...${b.trim()}`]);
-    const [left, right] = cnt.trim().split(/\s+/).map((s) => parseInt(s, 10));
+    const cnt = await git.raw([
+      'rev-list',
+      '--left-right',
+      '--count',
+      `${currentBranch}...${b.trim()}`,
+    ]);
+    const [left, right] = cnt
+      .trim()
+      .split(/\s+/)
+      .map((s) => parseInt(s, 10));
     ahead = left || 0;
     behind = right || 0;
   } catch {
@@ -51,5 +59,14 @@ export async function gatherPreflight(target: string): Promise<PreflightSummary>
     // ignore
   }
 
-  return { isDirty, hasUntracked, ongoingMerge, currentBranch, ahead, behind, lastFetchAgoSec, hasStash };
+  return {
+    isDirty,
+    hasUntracked,
+    ongoingMerge,
+    currentBranch,
+    ahead,
+    behind,
+    lastFetchAgoSec,
+    hasStash,
+  };
 }

@@ -1,6 +1,4 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+// imports removed as they were unused
 import { describe, it, expect } from 'vitest';
 import { renderTemplate } from '../src/formatters/markdown.js';
 
@@ -16,5 +14,3 @@ describe('prompt templates', () => {
     expect(mdBasic).toContain(diff);
   });
 });
-
-

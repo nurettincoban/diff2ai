@@ -3,6 +3,7 @@
 This document translates the PRD into small, focused tasks that can be executed independently by an AI coding agent or a human contributor. Each task has clear outcomes and acceptance criteria. Check off boxes as you complete items.
 
 Notes
+
 - Keep solutions simple and aligned with the PRD.
 - Prefer iterating on working code; avoid unnecessary abstractions.
 - All code must have tests (unit and/or integration) and pass linting.
@@ -245,5 +246,3 @@ Notes
 - Commands `mr`, `diff`, `show`, `prompt`, `chunk` function as specified
 - Tests pass; lint passes; build succeeds
 - README and examples updated
-
-

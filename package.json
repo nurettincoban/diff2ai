@@ -4,6 +4,13 @@
   "description": "CLI tool to extract Git diffs and format AI-ready reviews",
   "license": "MIT",
   "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "diff2ai": "dist/cli.js"
   },
@@ -35,18 +42,20 @@
     "@typescript-eslint/parser": "^8.43.0",
     "esbuild-plugin-copy": "^2.1.1",
     "eslint": "^9.35.0",
+    "eslint-plugin-prettier": "^5.5.4",
     "globals": "^16.3.0",
     "prettier": "^3.6.2",
     "tsup": "^8.5.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
+    "typescript-eslint": "^8.43.0",
     "vitest": "^3.2.4"
   },
   "dependencies": {
     "boxen": "^8.0.1",
     "chalk": "^5.6.2",
-    "commander": "^14.0.0",
     "clipboardy": "^4.0.0",
+    "commander": "^14.0.0",
     "json5": "^2.2.3",
     "minimatch": "^10.0.3",
     "ora": "^8.2.0",

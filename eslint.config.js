@@ -4,7 +4,11 @@ import prettier from 'eslint-plugin-prettier';
 import globals from 'globals';
 
 export default [
+  // Ignore build output and non-source config files
+  { ignores: ['dist/**', '.eslintrc.cjs'] },
   js.configs.recommended,
+  // Recommended rules for TypeScript (no type-checking required)
+  ...tseslint.configs.recommended,
   {
     files: ['**/*.ts'],
     languageOptions: {
@@ -23,6 +27,15 @@ export default [
     rules: {
       'prettier/prettier': 'error',
       '@typescript-eslint/no-explicit-any': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
     },
   },
 ];

@@ -7,7 +7,11 @@ export function ensureDir(dirPath: string): void {
   }
 }
 
-export function writeDiffFile(prefix: string, contents: string, outDir: string = path.join(process.cwd(), 'reviews')): string {
+export function writeDiffFile(
+  prefix: string,
+  contents: string,
+  outDir: string = path.join(process.cwd(), 'reviews'),
+): string {
   const timestamp = new Date()
     .toISOString()
     .replace(/[:.]/g, '-')

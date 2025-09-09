@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Minimatch } from 'minimatch';
 
-export type IgnoreFilter = (relativePath: string) => boolean;
+export type IgnoreFilter = (rel: string) => boolean;
 
 export function loadIgnore(cwd: string = process.cwd()): IgnoreFilter {
   const ignorePath = path.join(cwd, '.aidiffignore');

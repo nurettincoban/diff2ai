@@ -13,9 +13,11 @@ Turn your Git diffs into beautiful, high-signal AI code review prompts — fast,
 ---
 
 ## Why diff2ai?
+
 Most AI reviews are noisy. diff2ai generates a focused prompt from your actual diff, with a strict schema that forces actionable feedback (severity, file/line ranges, proposed fix). Paste it into your favorite AI coding agent and get a concise, useful review.
 
 ### 10-second Quickstart
+
 ```bash
 # Generate AI-ready prompt for your MR against main
 git fetch origin main
@@ -29,6 +31,7 @@ diff2ai review feature/my-branch --target main --copy
 ## Quickstart
 
 Local usage (dev):
+
 ```bash
 npm install
 npm run build
@@ -36,6 +39,7 @@ node dist/cli.js --help
 ```
 
 Global usage (link):
+
 ```bash
 npm run build
 npm link
@@ -52,9 +56,9 @@ diff2ai --help
 - `diff [--staged]`: write a `.diff` from your working tree (or staged changes).
 - `show <sha>`: write a `.diff` for a specific commit.
 - `chunk <diff>`: split a large `.diff` into `batch_*.md` files + index.
- 
 
 Global flags (MVP):
+
 - `--no-interactive` Disable prompts (for CI/non‑TTY)
 - `--yes` Auto‑confirm safe prompts
 
@@ -63,6 +67,7 @@ Global flags (MVP):
 ## Demos
 
 Review a branch (auto‑prompt + copy to clipboard):
+
 ```bash
 diff2ai review feature/payments --copy
 # writes:
@@ -72,6 +77,7 @@ diff2ai review feature/payments --copy
 ```
 
 Pick a template explicitly:
+
 ```bash
 diff2ai review feature/api --template default
 # or a minimal one
@@ -79,6 +85,7 @@ diff2ai review feature/api --template basic
 ```
 
 Work from an existing diff:
+
 ```bash
 diff2ai diff --staged         # produce staged_*.diff
 diff2ai prompt staged_*.diff  # produce staged_*.md
@@ -87,6 +94,7 @@ diff2ai prompt staged_*.diff  # produce staged_*.md
 ```
 
 Handle big diffs:
+
 ```bash
 diff2ai chunk huge.diff --profile generic-medium
 # writes batch_*.md and review_index.md (merge instructions included)
@@ -95,9 +103,11 @@ diff2ai chunk huge.diff --profile generic-medium
 ---
 
 ## The default template (strict)
+
 The default template enforces a clean, repeatable review structure. AI reviewers must output only numbered issue blocks — no preambles, no conclusions, no diff echo.
 
 Issue block schema:
+
 ```text
 ## <n>) Severity: CRITICAL|HIGH|MEDIUM|LOW|INFO | Type: Implementation|Bug|Security|Test|Performance|Style|Doc|Maintainability
 Title: <short imperative>
@@ -117,10 +127,12 @@ Proposed fix:
 For chunked reviews: “Do not assume context outside this chunk; if cross‑file risks are suspected, note briefly.”
 
 Templates available:
+
 - `default` (strict, recommended)
 - `basic` (lightweight)
 
 ## Example output
+
 ```text
 ## 1) Severity: HIGH | Type: Implementation
 Title: Avoid mutation of request body in middleware
@@ -141,6 +153,7 @@ next();
 ---
 
 ## Output files
+
 - Default output location: current working directory.
 - Recommended: use a dedicated `reviews/` directory and add it to `.gitignore`.
 
@@ -160,6 +173,7 @@ Use the prompt with your AI reviewer. Save the AI’s response locally with `dif
 ---
 
 ## Safety & behavior
+
 - Preflight checks warn about dirty/untracked files, stash, and divergence.
 - Interactive prompts guide target selection; non‑interactive mode stays quiet.
 - No destructive actions are taken without explicit confirmation.
@@ -167,17 +181,20 @@ Use the prompt with your AI reviewer. Save the AI’s response locally with `dif
 ---
 
 ## Configuration
+
 Create `.aidiff.json` (JSON5 supported):
+
 ```json5
 {
-  "target": "main",                 // default target branch
-  "profile": "generic-medium",      // default chunking profile
-  "include": ["src/**", "apps/**"],
-  "exclude": ["**/*.lock", "dist/**", "**/*.min.*"]
+  target: 'main', // default target branch
+  profile: 'generic-medium', // default chunking profile
+  include: ['src/**', 'apps/**'],
+  exclude: ['**/*.lock', 'dist/**', '**/*.min.*'],
 }
 ```
 
 Ignore paths in `.aidiffignore` (minimatch):
+
 ```
 **/*.lock
 **/dist/**
@@ -185,6 +202,7 @@ Ignore paths in `.aidiffignore` (minimatch):
 ```
 
 Profiles (token budgets):
+
 - `claude-large` ≈ 150k tokens
 - `generic-large` ≈ 100k tokens
 - `generic-medium` ≈ 30k tokens
@@ -192,13 +210,16 @@ Profiles (token budgets):
 ---
 
 ## Contributing
+
 We welcome contributions! Ways to help:
+
 - Improve templates and review schema
 - Enhance chunking heuristics and performance
 - Add tests and fixtures for edge cases
 - Polish CLI UX and docs
 
 Dev setup:
+
 ```bash
 npm install
 npm run build
@@ -208,6 +229,7 @@ npm run format
 ```
 
 Conventional flow:
+
 1. Fork & branch (small, focused changes)
 2. Add tests when adding features/fixing bugs
 3. Keep files < 300 lines where practical
@@ -217,6 +239,7 @@ Conventional flow:
 ---
 
 ## FAQ
+
 - “Why did `chunk` produce only one file?”
   - Your diff likely fits within the selected profile’s token budget; that’s expected.
 - “Where do I put the AI’s response?”
@@ -234,4 +257,5 @@ Conventional flow:
 ---
 
 ## License
+
 MIT

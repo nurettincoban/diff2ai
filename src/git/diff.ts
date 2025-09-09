@@ -11,7 +11,10 @@ export type DiffOptions = {
   ignore?: IgnoreFilter;
 };
 
-export async function generateUnifiedDiff(options: DiffOptions = {}, cwd: string = process.cwd()): Promise<string> {
+export async function generateUnifiedDiff(
+  options: DiffOptions = {},
+  cwd: string = process.cwd(),
+): Promise<string> {
   const git: SimpleGit = simpleGit({ baseDir: cwd });
 
   if (options.commitSha) {

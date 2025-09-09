@@ -30,7 +30,8 @@ export function registerCommands(program: Command): void {
       try {
         assertGitRepo();
         const globalOpts = program.opts();
-        const interactive: boolean = globalOpts.interactive === false ? false : process.stdout.isTTY;
+        const interactive: boolean =
+          globalOpts.interactive === false ? false : process.stdout.isTTY;
         const yes: boolean | undefined = globalOpts.yes;
 
         const { config, warnings } = loadConfig();
@@ -39,10 +40,13 @@ export function registerCommands(program: Command): void {
 
         const pre = await gatherPreflight(config.target);
         if (pre.isDirty && !opts.staged) {
-          const proceed = await confirm('Working tree is dirty. Continue diff against target anyway?', {
-            interactive,
-            yes,
-          });
+          const proceed = await confirm(
+            'Working tree is dirty. Continue diff against target anyway?',
+            {
+              interactive,
+              yes,
+            },
+          );
           if (!proceed) return void console.log(chalk.gray('Aborted.'));
         }
 
@@ -52,15 +56,23 @@ export function registerCommands(program: Command): void {
           try {
             const remotes = await listRemoteBranches();
             const originBranches = remotes.filter((b) => b.startsWith('origin/'));
-            const choices = originBranches.map((b) => ({ title: b, value: b }));
-            const picked = await select('Select target branch', choices as any, { interactive, yes });
+            const choices: { title: string; value: string }[] = originBranches.map((b) => ({
+              title: b,
+              value: b,
+            }));
+            const picked = await select<string>('Select target branch', choices, {
+              interactive,
+              yes,
+            });
             if (picked) selectedTarget = (picked as string).replace(/^origin\//, '');
           } catch {
             // ignore selection errors
           }
         }
 
-        console.log(header('diff2ai diff', `${opts.staged ? 'mode: staged' : `target: ${selectedTarget}`}`));
+        console.log(
+          header('diff2ai diff', `${opts.staged ? 'mode: staged' : `target: ${selectedTarget}`}`),
+        );
 
         const targetRef = `origin/${selectedTarget}`;
         const spin = ora('Generating diff...').start();

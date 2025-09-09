@@ -16,7 +16,10 @@ const DEFAULT_CONFIG: AidiffConfig = {
   exclude: ['**/*.lock', 'dist/**', '**/*.min.*'],
 };
 
-export function loadConfig(cwd: string = process.cwd()): { config: AidiffConfig; warnings: string[] } {
+export function loadConfig(cwd: string = process.cwd()): {
+  config: AidiffConfig;
+  warnings: string[];
+} {
   const warnings: string[] = [];
   const configPath = path.join(cwd, '.aidiff.json');
 
@@ -35,7 +38,7 @@ export function loadConfig(cwd: string = process.cwd()): { config: AidiffConfig;
       exclude: Array.isArray(parsed.exclude) ? parsed.exclude : DEFAULT_CONFIG.exclude,
     };
     return { config: merged, warnings };
-  } catch (error) {
+  } catch {
     warnings.push('Failed to parse .aidiff.json. Falling back to defaults.');
     return { config: DEFAULT_CONFIG, warnings };
   }
