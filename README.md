@@ -3,8 +3,12 @@
 [![npm version](https://img.shields.io/npm/v/diff2ai.svg?logo=npm&label=npm)](https://www.npmjs.com/package/diff2ai)
 [![npm downloads](https://img.shields.io/npm/dm/diff2ai.svg?color=blue)](https://www.npmjs.com/package/diff2ai)
 ![node version](https://img.shields.io/badge/node-%3E%3D18.0-brightgreen)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license) [![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue?logo=typescript)](#)
+> ⭐️ If you find diff2ai useful, please give it a star on GitHub — it helps a lot!
 
 Public CLI — made with ❤️ in Finland.
+
+Quick links: [Installation](#installation) • [Quickstart](#quickstart) • [CLI](#cli-at-a-glance) • [Demos](#demos) • [Configuration](#configuration)
 
 Turn your Git diffs into beautiful, high-signal AI code review prompts — fast, local, and repo-safe.
 
@@ -16,13 +20,13 @@ Turn your Git diffs into beautiful, high-signal AI code review prompts — fast,
 
 ---
 
-## Why diff2ai?
+## ✨ Why diff2ai?
 
 Most AI reviews are noisy. diff2ai generates a focused prompt from your actual diff, with a strict schema that forces actionable feedback (severity, file/line ranges, proposed fix). Paste it into your favorite AI coding agent and get a concise, useful review.
 
 ---
 
-## Installation
+## 📦 Installation
 
 Requirements
 - Node.js >= 18
@@ -43,7 +47,7 @@ Upgrade to latest
 npm i -g diff2ai@latest
 ```
 
-## Quickstart
+## 🚀 Quickstart
 
 ```bash
 # Generate AI-ready prompt for your MR against main
@@ -58,7 +62,7 @@ diff2ai review feature/my-branch --target main --copy --switch --fetch
 
 ---
 
-## CLI at a glance
+## 🧰 CLI at a glance
 
 - `review <ref>`: end‑to‑end — generate a diff from a branch/ref and immediately produce an AI prompt (default template). Add `--copy` to place the prompt on your clipboard. Use `--save-diff` if you also want the raw `.diff` file written.
   - Flags:
@@ -76,7 +80,9 @@ Global flags (MVP):
 
 ---
 
-## Demos
+## 🎬 Demos
+<details>
+<summary>Show demos</summary>
 
 Review a branch (auto‑prompt + copy to clipboard):
 
@@ -115,9 +121,12 @@ diff2ai chunk huge.diff --profile generic-medium
 # writes batch_*.md and review_index.md (merge instructions included)
 ```
 
+``` 
+</details>
+
 ---
 
-## The default template (strict)
+## 🧱 The default template (strict)
 
 The default template enforces a clean, repeatable review structure. AI reviewers must output only numbered issue blocks — no preambles, no conclusions, no diff echo.
 
@@ -146,7 +155,7 @@ Templates available:
 - `default` (strict, recommended)
 - `basic` (lightweight)
 
-## Example output
+## 🧪 Example output
 
 ```text
 ## 1) Severity: HIGH | Type: Implementation
@@ -167,7 +176,7 @@ next();
 
 ---
 
-## Output files
+## 🗂️ Output files
 
 - Default output location: current working directory.
 - Recommended: use a dedicated `reviews/` directory and add it to `.gitignore`.
@@ -187,7 +196,7 @@ Use the prompt with your AI reviewer. Save the AI’s response locally with `dif
 
 ---
 
-## Safety & behavior
+## 🛡️ Safety & behavior
 
 - Preflight checks warn about dirty/untracked files, stash, and divergence.
 - Interactive prompts guide target selection; non‑interactive mode stays quiet.
@@ -196,7 +205,7 @@ Use the prompt with your AI reviewer. Save the AI’s response locally with `dif
 
 ---
 
-## Configuration
+## ⚙️ Configuration
 
 Create `.aidiff.json` (JSON5 supported):
 
@@ -225,7 +234,7 @@ Profiles (token budgets):
 
 ---
 
-## Troubleshooting
+## 🧯 Troubleshooting
 
 - Templates directory not found
   - Fixed in >= 0.0.2. Update to latest: `npm i -g diff2ai@latest`.
@@ -234,7 +243,7 @@ Profiles (token budgets):
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
 We welcome contributions! Ways to help:
 
@@ -263,7 +272,7 @@ Conventional flow:
 
 ---
 
-## FAQ
+## ❓ FAQ
 
 - “Why did `chunk` produce only one file?”
   - Your diff likely fits within the selected profile’s token budget; that’s expected.
@@ -281,6 +290,6 @@ Conventional flow:
 
 ---
 
-## License
+## 🪪 License
 
 MIT
