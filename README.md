@@ -50,6 +50,9 @@ npm i -g diff2ai@latest
 git fetch origin main
 diff2ai review feature/my-branch --target main --copy
 
+# Optional: let diff2ai switch to the branch for you (repo will remain on it)
+diff2ai review feature/my-branch --target main --copy --switch --fetch
+
 # Paste the generated prompt from your clipboard into Claude, Cursor, or Copilot
 ```
 
@@ -58,6 +61,9 @@ diff2ai review feature/my-branch --target main --copy
 ## CLI at a glance
 
 - `review <ref>`: end‑to‑end — generate a diff from a branch/ref and immediately produce an AI prompt (default template). Add `--copy` to place the prompt on your clipboard. Use `--save-diff` if you also want the raw `.diff` file written.
+  - Flags:
+    - `--switch` Switch to `<ref>` before running (refuses if dirty/untracked unless `--yes`)
+    - `--fetch`  Fetch `origin/<target>` and `origin/<ref>` before running
 - `prompt <diff>`: render an AI prompt from an existing `.diff` file.
 - `diff [--staged]`: write a `.diff` from your working tree (or staged changes).
 - `show <sha>`: write a `.diff` for a specific commit.
@@ -80,6 +86,9 @@ diff2ai review feature/payments --copy
 #  - review_YYYY-MM-DD_HH-mm-ss-SSS.md  (default template)
 #  - copies prompt content to your clipboard
 #  - add --save-diff to also write review_YYYY-MM-DD_HH-mm-ss-SSS.diff
+# Recommended for AI agents (Cursor/Claude):
+# Ensure the tool is on the branch being reviewed and fetch refs
+diff2ai review feature/payments --target main --copy --switch --fetch
 ```
 
 Pick a template explicitly:
@@ -183,6 +192,7 @@ Use the prompt with your AI reviewer. Save the AI’s response locally with `dif
 - Preflight checks warn about dirty/untracked files, stash, and divergence.
 - Interactive prompts guide target selection; non‑interactive mode stays quiet.
 - No destructive actions are taken without explicit confirmation.
+- `--switch` will refuse to change branches if the working tree is dirty or has untracked files unless you pass `--yes`. The repository remains on `<ref>` after completion.
 
 ---
 

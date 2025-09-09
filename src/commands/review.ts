@@ -11,6 +11,8 @@ import path from 'path';
 // no chunking in this command
 import type { ProfileName } from '../chunker/profiles.js';
 import { header, success } from '../ux/theme.js';
+import { simpleGit } from 'simple-git';
+import { gatherPreflight } from '../ux/preflight.js';
 
 export function registerReview(program: Command): void {
   program
@@ -22,6 +24,8 @@ export function registerReview(program: Command): void {
     .option('--profile <name>', 'Chunking profile', 'generic-medium')
     .option('--copy', 'Copy generated prompt to clipboard')
     .option('--save-diff', 'Also write the raw .diff file')
+    .option('--switch', 'Switch to <ref> before running review (repo stays on <ref>)')
+    .option('--fetch', 'Fetch origin/<target> and origin/<ref> before running')
     .action(
       async (
         ref: string,
@@ -32,11 +36,17 @@ export function registerReview(program: Command): void {
           out?: string;
           copy?: boolean;
           saveDiff?: boolean;
+          switch?: boolean;
+          fetch?: boolean;
         },
+        cmd: Command,
       ) => {
         try {
           assertGitRepo();
           const { config } = loadConfig();
+          const globalOpts = (cmd?.parent as unknown as { opts?: () => { interactive?: boolean; yes?: boolean } })?.opts?.() ?? {};
+          const interactive: boolean = globalOpts.interactive === false ? false : process.stdout.isTTY;
+          const yes: boolean | undefined = globalOpts.yes;
 
           console.log(
             header('diff2ai review', `ref: ${ref}  •  target: ${opts.target ?? config.target}`),
@@ -44,6 +54,58 @@ export function registerReview(program: Command): void {
 
           const targetBranch = opts.target ?? config.target;
           const targetRef = `origin/${targetBranch}`;
+
+          const git = simpleGit();
+
+          // Optional fetch of target and/or ref regardless of switching
+          if (opts.fetch) {
+            try {
+              await git.fetch('origin', targetBranch);
+            } catch {
+              // ignore fetch errors for target
+            }
+            try {
+              await git.fetch('origin', ref);
+            } catch {
+              // ignore fetch errors for ref (may be a commit or local-only branch)
+            }
+          }
+
+          // Optional: switch to the provided ref (for agent workflows)
+          if (opts.switch) {
+            const pre = await gatherPreflight(targetBranch);
+            if ((pre.isDirty || pre.hasUntracked || pre.ongoingMerge) && !yes) {
+              console.error(
+                chalk.red(
+                  'Refusing to switch branches: working tree is dirty, has untracked files, or a merge is in progress. Re-run with --yes to proceed.',
+                ),
+              );
+              return;
+            }
+
+            console.log(
+              header(
+                'Switching branch',
+                chalk.dim(`Switching to ${ref}; repository will remain on this ref after review.`),
+              ),
+            );
+
+            // Try to switch using git switch, fallback to checkout
+            try {
+              await git.raw(['switch', ref]);
+            } catch (e1) {
+              try {
+                await git.checkout([ref]);
+              } catch (e2) {
+                console.error(
+                  chalk.red(
+                    `Failed to switch to ${ref}. If it's a remote branch, try: git fetch origin ${ref}:${ref}`,
+                  ),
+                );
+                return;
+              }
+            }
+          }
 
           const spin = ora('Generating diff...').start();
           const diff = await generateUnifiedDiff({ targetRef, compareRef: ref });
