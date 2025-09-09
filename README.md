@@ -121,8 +121,7 @@ diff2ai chunk huge.diff --profile generic-medium
 # writes batch_*.md and review_index.md (merge instructions included)
 ```
 
-``` 
-</details>
+ </details>
 
 ---
 
