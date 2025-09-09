@@ -1,6 +1,6 @@
 {
   "name": "diff2ai",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "CLI tool to extract Git diffs and format AI-ready reviews",
   "license": "MIT",
   "type": "module",
@@ -28,7 +28,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://example.com/diff2ai.git"
+    "url": "git+https://github.com/nurettincoban/diff2ai.git"
+  },
+  "homepage": "https://github.com/nurettincoban/diff2ai#readme",
+  "bugs": {
+    "url": "https://github.com/nurettincoban/diff2ai/issues"
   },
   "keywords": [
     "git",
