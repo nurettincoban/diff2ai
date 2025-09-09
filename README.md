@@ -6,8 +6,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license) [![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue?logo=typescript)](#)
 > ⭐️ If you find diff2ai useful, please give it a star on GitHub — it helps a lot!
 
-Public CLI — made with ❤️ in Finland.
-
 Quick links: [Installation](#installation) • [Quickstart](#quickstart) • [CLI](#cli-at-a-glance) • [Demos](#demos) • [Configuration](#configuration)
 
 Turn your Git diffs into beautiful, high-signal AI code review prompts — fast, local, and repo-safe.
