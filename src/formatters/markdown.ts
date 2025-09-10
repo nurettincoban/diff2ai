@@ -9,7 +9,7 @@ type RenderOptions = {
   templatesDir?: string;
 };
 
-function resolveBuiltInTemplatesDir(): string | null {
+export function resolveBuiltInTemplatesDir(): string | null {
   try {
     const moduleDir = path.dirname(fileURLToPath(import.meta.url));
     const candidates = [
@@ -82,23 +82,31 @@ export function renderTemplate(
     }
   }
 
-  // Built-ins (and allow overriding only for known names already checked above)
+  // Built-ins (generic lookup by name, then fallback map for legacy names)
   const builtInMap: Record<BuiltInTemplateName, string> = {
     basic: 'basic.md',
     default: 'default.md',
   };
-  const isBuiltInName = Object.prototype.hasOwnProperty.call(builtInMap, name);
-  if (isBuiltInName && builtInDir) {
-    const candidate = path.join(builtInDir, builtInMap[name as BuiltInTemplateName]);
-    const raw = readTemplateFileOrThrow(candidate);
-    return raw.replace('{diff_content}', diffContent);
+  if (builtInDir) {
+    // First try generic <name>.md in packaged templates
+    const generic = path.join(builtInDir, `${name}.md`);
+    if (fs.existsSync(generic)) {
+      const raw = readTemplateFileOrThrow(generic);
+      return raw.replace('{diff_content}', diffContent);
+    }
+    // Then fallback to legacy name map
+    const isBuiltInName = Object.prototype.hasOwnProperty.call(builtInMap, name);
+    if (isBuiltInName) {
+      const candidate = path.join(builtInDir, builtInMap[name as BuiltInTemplateName]);
+      const raw = readTemplateFileOrThrow(candidate);
+      return raw.replace('{diff_content}', diffContent);
+    }
   }
 
   // If a templatesDir was explicitly provided but not found
   const checked: string[] = [];
   if (projectDir) checked.push(path.join(projectDir, candidateFile));
-  if (builtInDir && isBuiltInName)
-    checked.push(path.join(builtInDir, builtInMap[name as BuiltInTemplateName]));
+  if (builtInDir) checked.push(path.join(builtInDir, candidateFile));
 
   throw new Error(
     `Template "${name}" not found. Checked: ${checked.length ? checked.join(', ') : 'no candidate locations'}.

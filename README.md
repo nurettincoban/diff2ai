@@ -73,8 +73,9 @@ diff2ai review feature/my-branch --target main --copy --switch --fetch
     - `--fetch` Fetch `origin/<target>` and `origin/<ref>` before running
 - `prompt <diff>`: render an AI prompt from an existing `.diff` file.
   - Flags:
-    - `--template <nameOrPath>` Use a template by name (from project `./templates/`) or a direct `.md` file path (absolute or relative)
+    - `--template <nameOrPath>` Use a template by name (project `./templates/` or packaged) or a direct `.md` file path (absolute or relative)
     - `--templates-dir <dir>` Directory to resolve named templates from (defaults to project `./templates/`)
+- `templates`: list available templates (project and packaged)
 - `diff [--staged]`: write a `.diff` from your working tree (or staged changes).
 - `show <sha>`: write a `.diff` for a specific commit.
 - `chunk <diff>`: split a large `.diff` into `batch_*.md` files + index.
@@ -116,6 +117,11 @@ diff2ai review feature/api --template my-template
 diff2ai review feature/api --template ./templates/my-template.md
 # specify a custom templates directory
 diff2ai review feature/api --templates-dir ./my-templates --template code-review
+# use packaged templates by name (no copying needed)
+diff2ai review feature/api --template security
+diff2ai review feature/api --template api-best-practices
+diff2ai review feature/api --template reliability
+diff2ai review feature/api --template event-driven
 ```
 
 Work from an existing diff:
@@ -263,6 +269,7 @@ Profiles (token budgets):
 - Custom template not found
   - When using a name (e.g., `--template my-template`), diff2ai looks for `./templates/my-template.md` by default, or under `--templates-dir`/`templatesDir` if provided.
   - You can also pass a direct path: `--template ./my-templates/review.md`.
+  - Packaged templates can be used by name without copying (e.g., `--template security`).
 
 - "Missing required placeholder {diff_content}"
   - Your custom template must include `{diff_content}` where you want the unified diff injected.

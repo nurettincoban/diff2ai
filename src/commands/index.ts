@@ -4,7 +4,7 @@ import { loadIgnore } from '../config/ignore.js';
 import { assertGitRepo, listRemoteBranches } from '../git/repo.js';
 import { generateUnifiedDiff } from '../git/diff.js';
 import { writeDiffFile, ensureDir } from '../formatters/diff.js';
-import { renderTemplate } from '../formatters/markdown.js';
+import { renderTemplate, resolveBuiltInTemplatesDir } from '../formatters/markdown.js';
 import fs from 'fs';
 import path from 'path';
 import { chunkDiff } from '../chunker/chunk.js';
@@ -225,6 +225,47 @@ export function registerCommands(program: Command): void {
             chalk.dim(`index:   ${path.basename(indexPath)}`),
           ]),
         );
+      } catch (error: unknown) {
+        console.error((error as Error)?.message ?? String(error));
+        process.exitCode = 1;
+      }
+    });
+
+  program
+    .command('templates')
+    .description('List available templates (project and packaged)')
+    .action(() => {
+      try {
+        const cwd = process.cwd();
+        const projectDir = path.join(cwd, 'templates');
+        const builtInDir = resolveBuiltInTemplatesDir();
+        const project: string[] = [];
+        const builtins: string[] = [];
+
+        if (fs.existsSync(projectDir) && fs.statSync(projectDir).isDirectory()) {
+          for (const f of fs.readdirSync(projectDir)) {
+            if (f.endsWith('.md')) project.push(f.replace(/\.md$/i, ''));
+          }
+        }
+        if (builtInDir && fs.existsSync(builtInDir)) {
+          for (const f of fs.readdirSync(builtInDir)) {
+            if (f.endsWith('.md')) builtins.push(f.replace(/\.md$/i, ''));
+          }
+        }
+
+        console.log(header('diff2ai templates', 'Available templates'));
+        if (project.length) {
+          console.log(chalk.green('Project templates:'));
+          for (const t of project.sort()) console.log(`  - ${t}`);
+        } else {
+          console.log(chalk.dim('Project templates: (none found)'));
+        }
+        if (builtins.length) {
+          console.log(chalk.green('\nPackaged templates:'));
+          for (const t of builtins.sort()) console.log(`  - ${t}`);
+        } else {
+          console.log(chalk.dim('\nPackaged templates: (none found)'));
+        }
       } catch (error: unknown) {
         console.error((error as Error)?.message ?? String(error));
         process.exitCode = 1;
