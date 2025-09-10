@@ -2,12 +2,14 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-export type TemplateName = 'basic' | 'default';
+export type BuiltInTemplateName = 'basic' | 'default';
 
-function resolveTemplatesDir(cwd: string): string | null {
-  // 1) Resolve relative to built module location
-  //    - Bundled single-file (moduleDir = dist): check ./templates
-  //    - Separate dirs (moduleDir = dist/formatters): check ../templates
+type RenderOptions = {
+  cwd?: string;
+  templatesDir?: string;
+};
+
+function resolveBuiltInTemplatesDir(): string | null {
   try {
     const moduleDir = path.dirname(fileURLToPath(import.meta.url));
     const candidates = [
@@ -20,42 +22,86 @@ function resolveTemplatesDir(cwd: string): string | null {
   } catch {
     // ignore
   }
-
-  // 2) Project-local templates in current working directory (useful for dev)
-  const localTemplates = path.join(cwd, 'templates');
-  if (fs.existsSync(localTemplates)) return localTemplates;
-
   return null;
 }
 
+function resolveProjectTemplatesDir(cwd: string, override?: string): string | null {
+  if (override) {
+    const abs = path.isAbsolute(override) ? override : path.resolve(cwd, override);
+    if (fs.existsSync(abs) && fs.statSync(abs).isDirectory()) return abs;
+  }
+  const localTemplates = path.join(cwd, 'templates');
+  if (fs.existsSync(localTemplates) && fs.statSync(localTemplates).isDirectory())
+    return localTemplates;
+  return null;
+}
+
+function isPathLike(input: string): boolean {
+  return input.endsWith('.md') || input.includes('/') || input.includes('\\');
+}
+
+function readTemplateFileOrThrow(templatePath: string): string {
+  if (!fs.existsSync(templatePath)) {
+    throw new Error(`Template file not found: ${templatePath}`);
+  }
+  const raw = fs.readFileSync(templatePath, 'utf-8');
+  if (!raw.includes('{diff_content}')) {
+    throw new Error(
+      `Invalid template (${templatePath}): missing required placeholder {diff_content}`,
+    );
+  }
+  return raw;
+}
+
 export function renderTemplate(
-  template: TemplateName,
+  templateSpec: string,
   diffContent: string,
-  cwd: string = process.cwd(),
+  opts: RenderOptions = {},
 ): string {
-  const templatesDir = resolveTemplatesDir(cwd);
-  if (!templatesDir) {
-    let expectedA = 'dist/templates (alongside installed CLI)';
-    let expectedB = path.join(cwd, 'templates');
-    try {
-      const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-      expectedA = `${path.resolve(moduleDir, './templates')} or ${path.resolve(moduleDir, '../templates')}`;
-    } catch {
-      // ignore path resolution errors
-    }
-    throw new Error(`Templates directory not found. Expected templates at: ${expectedA} or ${expectedB}`);
+  const cwd = opts.cwd ?? process.cwd();
+  const projectDir = resolveProjectTemplatesDir(cwd, opts.templatesDir ?? undefined);
+  const builtInDir = resolveBuiltInTemplatesDir();
+
+  // 1) Path-like input: load directly
+  if (isPathLike(templateSpec)) {
+    const abs = path.isAbsolute(templateSpec) ? templateSpec : path.resolve(cwd, templateSpec);
+    const raw = readTemplateFileOrThrow(abs);
+    return raw.replace('{diff_content}', diffContent);
   }
 
-  const fileMap: Record<TemplateName, string> = {
+  // 2) Name-based input
+  const name = templateSpec as string;
+  const candidateFile = `${name}.md`;
+
+  // Project templates take precedence
+  if (projectDir) {
+    const candidate = path.join(projectDir, candidateFile);
+    if (fs.existsSync(candidate)) {
+      const raw = readTemplateFileOrThrow(candidate);
+      return raw.replace('{diff_content}', diffContent);
+    }
+  }
+
+  // Built-ins (and allow overriding only for known names already checked above)
+  const builtInMap: Record<BuiltInTemplateName, string> = {
     basic: 'basic.md',
     default: 'default.md',
   };
-
-  const templatePath = path.join(templatesDir, fileMap[template]);
-  if (!fs.existsSync(templatePath)) {
-    throw new Error(`Template file missing: ${templatePath}`);
+  const isBuiltInName = Object.prototype.hasOwnProperty.call(builtInMap, name);
+  if (isBuiltInName && builtInDir) {
+    const candidate = path.join(builtInDir, builtInMap[name as BuiltInTemplateName]);
+    const raw = readTemplateFileOrThrow(candidate);
+    return raw.replace('{diff_content}', diffContent);
   }
 
-  const raw = fs.readFileSync(templatePath, 'utf-8');
-  return raw.replace('{diff_content}', diffContent);
+  // If a templatesDir was explicitly provided but not found
+  const checked: string[] = [];
+  if (projectDir) checked.push(path.join(projectDir, candidateFile));
+  if (builtInDir && isBuiltInName)
+    checked.push(path.join(builtInDir, builtInMap[name as BuiltInTemplateName]));
+
+  throw new Error(
+    `Template "${name}" not found. Checked: ${checked.length ? checked.join(', ') : 'no candidate locations'}.
+If you intended a file path, pass a relative/absolute path ending with .md, or place ${candidateFile} under ./templates/.`,
+  );
 }

@@ -7,6 +7,8 @@ export type AidiffConfig = {
   profile: 'claude-large' | 'generic-large' | 'generic-medium';
   include: string[];
   exclude: string[];
+  template?: string;
+  templatesDir?: string;
 };
 
 const DEFAULT_CONFIG: AidiffConfig = {
@@ -14,6 +16,8 @@ const DEFAULT_CONFIG: AidiffConfig = {
   profile: 'generic-large',
   include: ['src/**', 'apps/**'],
   exclude: ['**/*.lock', 'dist/**', '**/*.min.*'],
+  template: undefined,
+  templatesDir: undefined,
 };
 
 export function loadConfig(cwd: string = process.cwd()): {
@@ -36,6 +40,9 @@ export function loadConfig(cwd: string = process.cwd()): {
       profile: (parsed.profile as AidiffConfig['profile']) ?? DEFAULT_CONFIG.profile,
       include: Array.isArray(parsed.include) ? parsed.include : DEFAULT_CONFIG.include,
       exclude: Array.isArray(parsed.exclude) ? parsed.exclude : DEFAULT_CONFIG.exclude,
+      template: typeof parsed.template === 'string' ? parsed.template : DEFAULT_CONFIG.template,
+      templatesDir:
+        typeof parsed.templatesDir === 'string' ? parsed.templatesDir : DEFAULT_CONFIG.templatesDir,
     };
     return { config: merged, warnings };
   } catch {

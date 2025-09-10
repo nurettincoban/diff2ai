@@ -39,8 +39,6 @@ describe('review integration', () => {
     run('git add file.txt', tmp);
     run('git commit -m "feat: add file"', tmp);
 
-    
-
     // default: md only
     const out1 = run(`node ${cli} review feature/test --target main`, tmp);
     expect(out1).toMatch(/Review prompt ready/);
@@ -82,8 +80,6 @@ describe('review integration', () => {
     // go back to main to force an actual switch
     run('git checkout main', tmp);
 
-    
-
     run(`node ${cli} review feature/switch --target main --switch`, tmp);
 
     const head = run('git rev-parse --abbrev-ref HEAD', tmp).trim();
@@ -115,8 +111,6 @@ describe('review integration', () => {
     // back to main, add an untracked file
     run('git checkout main', tmp);
     fs.writeFileSync(path.join(tmp, 'untracked.txt'), 'u\n');
-
-    
 
     // Without --yes: should refuse and not create reviews dir, and stay on main
     run(`node ${cli} review feature/pre --target main --switch`, tmp);
@@ -167,8 +161,6 @@ describe('review integration', () => {
 
     // Get old remote-tracking SHA in local repo
     const beforeSha = run('git rev-parse origin/main', tmp).trim();
-
-    
 
     // Run review with --fetch to update origin/main
     run(`node ${cli} review feature/fetch --target main --fetch`, tmp);

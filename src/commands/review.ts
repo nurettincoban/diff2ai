@@ -20,7 +20,15 @@ export function registerReview(program: Command): void {
     .description('Review a branch or git ref against target (pure git)')
     .option('--target <branch>', 'Target branch (default from config)')
     .option('--out <dir>', 'Output directory (default: reviews/)')
-    .option('--template <name>', 'Template for prompt generation (basic|default)', 'default')
+    .option(
+      '--template <nameOrPath>',
+      'Template for prompt generation (name or .md path)',
+      'default',
+    )
+    .option(
+      '--templates-dir <dir>',
+      'Directory for resolving named templates (default: ./templates)',
+    )
     .option('--profile <name>', 'Chunking profile', 'generic-medium')
     .option('--copy', 'Copy generated prompt to clipboard')
     .option('--save-diff', 'Also write the raw .diff file')
@@ -31,7 +39,8 @@ export function registerReview(program: Command): void {
         ref: string,
         opts: {
           target?: string;
-          template: 'basic' | 'default';
+          template: string;
+          templatesDir?: string;
           profile: ProfileName;
           out?: string;
           copy?: boolean;
@@ -44,8 +53,12 @@ export function registerReview(program: Command): void {
         try {
           assertGitRepo();
           const { config } = loadConfig();
-          const globalOpts = (cmd?.parent as unknown as { opts?: () => { interactive?: boolean; yes?: boolean } })?.opts?.() ?? {};
-          const interactive: boolean = globalOpts.interactive === false ? false : process.stdout.isTTY;
+          const globalOpts =
+            (
+              cmd?.parent as unknown as { opts?: () => { interactive?: boolean; yes?: boolean } }
+            )?.opts?.() ?? {};
+          const _interactive: boolean =
+            globalOpts.interactive === false ? false : process.stdout.isTTY;
           const yes: boolean | undefined = globalOpts.yes;
 
           console.log(
@@ -93,10 +106,10 @@ export function registerReview(program: Command): void {
             // Try to switch using git switch, fallback to checkout
             try {
               await git.raw(['switch', ref]);
-            } catch (e1) {
+            } catch (_e1) {
               try {
                 await git.checkout([ref]);
-              } catch (e2) {
+              } catch (_e2) {
                 console.error(
                   chalk.red(
                     `Failed to switch to ${ref}. If it's a remote branch, try: git fetch origin ${ref}:${ref}`,
@@ -124,7 +137,10 @@ export function registerReview(program: Command): void {
             spin.succeed(chalk.green('Generated diff in memory'));
           }
 
-          const md = renderTemplate(opts.template ?? 'default', diff);
+          const md = renderTemplate(opts.template ?? config.template ?? 'default', diff, {
+            cwd: process.cwd(),
+            templatesDir: opts.templatesDir ?? config.templatesDir,
+          });
           let out: string;
           if (diffPath) {
             out = diffPath.replace(/\.diff$/i, '.md');

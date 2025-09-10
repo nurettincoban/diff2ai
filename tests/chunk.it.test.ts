@@ -24,8 +24,6 @@ describe('chunk integration', () => {
     const content = Array.from({ length: 200 }, (_, i) => `+ line ${i}`).join('\n');
     fs.writeFileSync(diffPath, `diff --git a/a b/a\n${content}\n`);
 
-    
-
     const out = run(`node ${cli} chunk ${diffPath} --profile generic-medium`, tmp);
     expect(out).toMatch(/Chunking complete/);
     const reviewsDir = path.join(tmp, 'reviews');

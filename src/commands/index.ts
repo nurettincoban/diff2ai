@@ -4,7 +4,7 @@ import { loadIgnore } from '../config/ignore.js';
 import { assertGitRepo, listRemoteBranches } from '../git/repo.js';
 import { generateUnifiedDiff } from '../git/diff.js';
 import { writeDiffFile, ensureDir } from '../formatters/diff.js';
-import { renderTemplate, type TemplateName } from '../formatters/markdown.js';
+import { renderTemplate } from '../formatters/markdown.js';
 import fs from 'fs';
 import path from 'path';
 import { chunkDiff } from '../chunker/chunk.js';
@@ -148,9 +148,13 @@ export function registerCommands(program: Command): void {
   program
     .command('prompt <diffFile>')
     .description('Generate AI-ready markdown prompt from a diff file')
-    .option('--template <name>', 'Template: basic|default', 'default')
+    .option('--template <nameOrPath>', 'Template: name or .md path', 'default')
+    .option(
+      '--templates-dir <dir>',
+      'Directory for resolving named templates (default: ./templates)',
+    )
     .option('--out <dir>', 'Output directory (default: reviews/)')
-    .action((diffFile: string, opts: { template: TemplateName; out?: string }) => {
+    .action((diffFile: string, opts: { template: string; templatesDir?: string; out?: string }) => {
       try {
         const abs = diffFile;
         console.log(header('diff2ai prompt', `template: ${opts.template}`));
@@ -160,7 +164,11 @@ export function registerCommands(program: Command): void {
           return;
         }
         const diffContent = fs.readFileSync(abs, 'utf-8');
-        const md = renderTemplate(opts.template ?? 'default', diffContent);
+        const { config } = loadConfig();
+        const md = renderTemplate(opts.template ?? config.template ?? 'default', diffContent, {
+          cwd: process.cwd(),
+          templatesDir: opts.templatesDir ?? config.templatesDir,
+        });
         const outDir = opts.out ?? path.join(process.cwd(), 'reviews');
         ensureDir(outDir);
         const outPath = path.join(outDir, path.basename(abs).replace(/\.diff$/i, '.md'));

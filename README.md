@@ -4,6 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/diff2ai.svg?color=blue)](https://www.npmjs.com/package/diff2ai)
 ![node version](https://img.shields.io/badge/node-%3E%3D18.0-brightgreen)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license) [![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue?logo=typescript)](#)
+
 > ⭐️ If you find diff2ai useful, please give it a star on GitHub — it helps a lot!
 
 Quick links: [Installation](#installation) • [Quickstart](#quickstart) • [CLI](#cli-at-a-glance) • [Demos](#demos) • [Configuration](#configuration)
@@ -27,20 +28,24 @@ Most AI reviews are noisy. diff2ai generates a focused prompt from your actual d
 ## 📦 Installation
 
 Requirements
+
 - Node.js >= 18
 
 Global install (recommended)
+
 ```bash
 npm i -g diff2ai
 diff2ai --version   # verify (e.g., 0.0.3)
 ```
 
 Use without installing (npx)
+
 ```bash
 npx diff2ai --help
 ```
 
 Upgrade to latest
+
 ```bash
 npm i -g diff2ai@latest
 ```
@@ -65,8 +70,11 @@ diff2ai review feature/my-branch --target main --copy --switch --fetch
 - `review <ref>`: end‑to‑end — generate a diff from a branch/ref and immediately produce an AI prompt (default template). Add `--copy` to place the prompt on your clipboard. Use `--save-diff` if you also want the raw `.diff` file written.
   - Flags:
     - `--switch` Switch to `<ref>` before running (refuses if dirty/untracked unless `--yes`)
-    - `--fetch`  Fetch `origin/<target>` and `origin/<ref>` before running
+    - `--fetch` Fetch `origin/<target>` and `origin/<ref>` before running
 - `prompt <diff>`: render an AI prompt from an existing `.diff` file.
+  - Flags:
+    - `--template <nameOrPath>` Use a template by name (from project `./templates/`) or a direct `.md` file path (absolute or relative)
+    - `--templates-dir <dir>` Directory to resolve named templates from (defaults to project `./templates/`)
 - `diff [--staged]`: write a `.diff` from your working tree (or staged changes).
 - `show <sha>`: write a `.diff` for a specific commit.
 - `chunk <diff>`: split a large `.diff` into `batch_*.md` files + index.
@@ -79,6 +87,7 @@ Global flags (MVP):
 ---
 
 ## 🎬 Demos
+
 <details>
 <summary>Show demos</summary>
 
@@ -101,13 +110,21 @@ Pick a template explicitly:
 diff2ai review feature/api --template default
 # or a minimal one
 diff2ai review feature/api --template basic
+# or your own project template (./templates/my-template.md)
+diff2ai review feature/api --template my-template
+# or via direct file path
+diff2ai review feature/api --template ./templates/my-template.md
+# specify a custom templates directory
+diff2ai review feature/api --templates-dir ./my-templates --template code-review
 ```
 
 Work from an existing diff:
 
 ```bash
 diff2ai diff --staged         # produce staged_*.diff
-diff2ai prompt staged_*.diff  # produce staged_*.md
+diff2ai prompt staged_*.diff  # produce staged_*.md (uses default template)
+# with a custom template
+diff2ai prompt staged_*.diff --template my-template
 # To save the AI response yourself, use native OS commands, e.g. on macOS:
 # pbpaste > reviews/review_response.md
 ```
@@ -212,6 +229,11 @@ Create `.aidiff.json` (JSON5 supported):
   profile: 'generic-medium', // default chunking profile
   include: ['src/**', 'apps/**'],
   exclude: ['**/*.lock', 'dist/**', '**/*.min.*'],
+  // Optional: default template config
+  // Use a name (resolved from project ./templates by default) or a file path
+  template: 'my-template',
+  // Optional: where to resolve named templates from (defaults to ./templates)
+  templatesDir: './templates',
 }
 ```
 
@@ -237,6 +259,13 @@ Profiles (token budgets):
   - Fixed in >= 0.0.2. Update to latest: `npm i -g diff2ai@latest`.
   - If developing locally, ensure `npm run build` copied `templates/` into `dist/templates/`.
   - Project-local `templates/` in your CWD are also supported.
+
+- Custom template not found
+  - When using a name (e.g., `--template my-template`), diff2ai looks for `./templates/my-template.md` by default, or under `--templates-dir`/`templatesDir` if provided.
+  - You can also pass a direct path: `--template ./my-templates/review.md`.
+
+- "Missing required placeholder {diff_content}"
+  - Your custom template must include `{diff_content}` where you want the unified diff injected.
 
 ---
 
