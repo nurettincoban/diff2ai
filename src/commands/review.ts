@@ -34,7 +34,10 @@ export function registerReview(program: Command): void {
       '--profile <name>',
       'Chunking profile; prompts larger than its token budget are split into batches (default: from .aidiff.json or generic-medium)',
     )
-    .option('--copy', 'Copy generated prompt to clipboard')
+    .option(
+      '--copy',
+      'Copy generated prompt to clipboard instead of writing a file (combine with --out or --save-diff to also write it)',
+    )
     .option('--save-diff', 'Also write the raw .diff file')
     .option('--switch', 'Switch to <ref> before running review (repo stays on <ref>)')
     .option('--fetch', 'Fetch origin/<target> and origin/<ref> before running')
@@ -135,7 +138,6 @@ export function registerReview(program: Command): void {
             return;
           }
           const outDir = opts.out ?? path.join(process.cwd(), 'reviews');
-          ensureDir(outDir);
           let diffPath: string | undefined;
           if (opts.saveDiff) {
             diffPath = writeDiffFile('review', diff, outDir);
@@ -150,11 +152,16 @@ export function registerReview(program: Command): void {
             templatesDir: opts.templatesDir ?? config.templatesDir,
           };
 
+          // --copy alone means clipboard-only output; --out or --save-diff opt back into files
+          const copyOnly = Boolean(opts.copy) && !opts.out && !opts.saveDiff;
+
           let promptLabel: string;
           let clipboardContent: string;
           let copyLabel = 'clipboard';
+          let writeSinglePrompt: (() => string) | undefined;
           if (approxTokens(diff) > PROFILES[profile].tokenBudget) {
-            // Diff exceeds the profile budget: split into template-wrapped batches
+            // Diff exceeds the profile budget: split into template-wrapped batches.
+            // Batches are always written — the clipboard can only hold one of them.
             const { chunks, warnings } = chunkDiff(diff, profile, (d) =>
               renderTemplate(templateSpec, d, renderOpts),
             );
@@ -165,20 +172,26 @@ export function registerReview(program: Command): void {
             copyLabel = `clipboard (batch_1.md of ${chunks.length})`;
           } else {
             const md = renderTemplate(templateSpec, diff, renderOpts);
-            let out: string;
-            if (diffPath) {
-              out = diffPath.replace(/\.diff$/i, '.md');
-            } else {
-              const timestamp = new Date()
-                .toISOString()
-                .replace(/[:.]/g, '-')
-                .replace('T', '_')
-                .replace('Z', '');
-              out = path.join(outDir, `review_${timestamp}.md`);
-            }
-            fs.writeFileSync(out, md, 'utf-8');
-            promptLabel = out;
             clipboardContent = md;
+            writeSinglePrompt = () => {
+              let out: string;
+              if (diffPath) {
+                out = diffPath.replace(/\.diff$/i, '.md');
+              } else {
+                const timestamp = new Date()
+                  .toISOString()
+                  .replace(/[:.]/g, '-')
+                  .replace('T', '_')
+                  .replace('Z', '');
+                out = path.join(outDir, `review_${timestamp}.md`);
+              }
+              ensureDir(outDir);
+              fs.writeFileSync(out, md, 'utf-8');
+              return out;
+            };
+            promptLabel = copyOnly
+              ? 'clipboard only (use --out to also write a file)'
+              : writeSinglePrompt();
           }
           if (opts.copy) {
             try {
@@ -193,7 +206,18 @@ export function registerReview(program: Command): void {
                 throw new Error('clipboardy not available');
               }
             } catch {
-              console.warn(chalk.yellow('Warning: Failed to copy prompt to clipboard.'));
+              if (copyOnly && writeSinglePrompt) {
+                // Don't lose the prompt: fall back to writing the file
+                promptLabel = writeSinglePrompt();
+                copyLabel = 'failed — wrote prompt file instead';
+                console.warn(
+                  chalk.yellow(
+                    'Warning: Failed to copy to clipboard; wrote the prompt to a file instead.',
+                  ),
+                );
+              } else {
+                console.warn(chalk.yellow('Warning: Failed to copy prompt to clipboard.'));
+              }
             }
           }
           console.log(
@@ -201,7 +225,7 @@ export function registerReview(program: Command): void {
               chalk.green('Review prompt ready'),
               diffPath
                 ? chalk.dim(`diff:    ${diffPath}`)
-                : chalk.dim('diff:    (not saved, use --save-diff)'),
+                : chalk.dim('diff:    raw .diff not saved (use --save-diff)'),
               chalk.dim(`prompt:  ${promptLabel}`),
               opts.copy ? chalk.dim(`copied:  ${copyLabel}`) : '',
               '',

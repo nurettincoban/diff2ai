@@ -129,6 +129,39 @@ describe('review integration', () => {
     expect(files.some((f) => f.endsWith('.md'))).toBe(true);
   });
 
+  it('--copy alone skips the prompt file; --copy --save-diff still writes it', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'diff2ai-review-copy-'));
+
+    run('git init', tmp);
+    fs.writeFileSync(path.join(tmp, 'README.md'), '# temp\n');
+    run('git add README.md', tmp);
+    run('git commit -m "init"', tmp);
+    run('git branch -M main', tmp);
+
+    run('git checkout -b feature/copy', tmp);
+    fs.writeFileSync(path.join(tmp, 'c.txt'), 'copy\n');
+    run('git add c.txt', tmp);
+    run('git commit -m "feat: add c"', tmp);
+
+    // copy-only: no reviews/ output (unless clipboard failed and it fell back)
+    const out1 = run(`node ${cli} review feature/copy --target main --copy 2>&1`, tmp);
+    expect(out1).toMatch(/Review prompt ready/);
+    const reviewsDir = path.join(tmp, 'reviews');
+    if (out1.includes('Failed to copy')) {
+      // headless environment: fallback file is expected instead
+      expect(fs.readdirSync(reviewsDir).some((f) => f.endsWith('.md'))).toBe(true);
+    } else {
+      expect(out1).toMatch(/clipboard only/);
+      expect(fs.existsSync(reviewsDir)).toBe(false);
+    }
+
+    // --copy with --save-diff keeps writing both files
+    run(`node ${cli} review feature/copy --target main --copy --save-diff 2>&1`, tmp);
+    const files = fs.readdirSync(reviewsDir);
+    expect(files.some((f) => f.endsWith('.diff'))).toBe(true);
+    expect(files.some((f) => f.endsWith('.md'))).toBe(true);
+  });
+
   it('works in a repo with no origin remote (falls back to local target)', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'diff2ai-review-local-'));
 
