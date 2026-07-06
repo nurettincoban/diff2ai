@@ -2,14 +2,15 @@ import { Command } from 'commander';
 import ora from 'ora';
 import chalk from 'chalk';
 import { loadConfig } from '../config/loadConfig.js';
-import { assertGitRepo } from '../git/repo.js';
+import { loadIgnore } from '../config/ignore.js';
+import { assertGitRepo, resolveTargetRef } from '../git/repo.js';
 import { generateUnifiedDiff } from '../git/diff.js';
-import { writeDiffFile, ensureDir } from '../formatters/diff.js';
+import { writeDiffFile, ensureDir, writeBatchFiles } from '../formatters/diff.js';
 import { renderTemplate } from '../formatters/markdown.js';
 import fs from 'fs';
 import path from 'path';
-// no chunking in this command
-import type { ProfileName } from '../chunker/profiles.js';
+import { chunkDiff, approxTokens } from '../chunker/chunk.js';
+import { PROFILES, resolveProfile } from '../chunker/profiles.js';
 import { header, success } from '../ux/theme.js';
 import { simpleGit } from 'simple-git';
 import { gatherPreflight } from '../ux/preflight.js';
@@ -29,7 +30,10 @@ export function registerReview(program: Command): void {
       '--templates-dir <dir>',
       'Directory for resolving named templates (default: ./templates)',
     )
-    .option('--profile <name>', 'Chunking profile', 'generic-medium')
+    .option(
+      '--profile <name>',
+      'Chunking profile; prompts larger than its token budget are split into batches (default: from .aidiff.json or generic-medium)',
+    )
     .option('--copy', 'Copy generated prompt to clipboard')
     .option('--save-diff', 'Also write the raw .diff file')
     .option('--switch', 'Switch to <ref> before running review (repo stays on <ref>)')
@@ -41,7 +45,7 @@ export function registerReview(program: Command): void {
           target?: string;
           template: string;
           templatesDir?: string;
-          profile: ProfileName;
+          profile?: string;
           out?: string;
           copy?: boolean;
           saveDiff?: boolean;
@@ -57,16 +61,14 @@ export function registerReview(program: Command): void {
             (
               cmd?.parent as unknown as { opts?: () => { interactive?: boolean; yes?: boolean } }
             )?.opts?.() ?? {};
-          const _interactive: boolean =
-            globalOpts.interactive === false ? false : process.stdout.isTTY;
           const yes: boolean | undefined = globalOpts.yes;
+          const profile = resolveProfile(opts.profile, config.profile);
 
           console.log(
             header('diff2ai review', `ref: ${ref}  •  target: ${opts.target ?? config.target}`),
           );
 
           const targetBranch = opts.target ?? config.target;
-          const targetRef = `origin/${targetBranch}`;
 
           const git = simpleGit();
 
@@ -120,8 +122,13 @@ export function registerReview(program: Command): void {
             }
           }
 
+          const targetRef = await resolveTargetRef(targetBranch);
           const spin = ora('Generating diff...').start();
-          const diff = await generateUnifiedDiff({ targetRef, compareRef: ref });
+          const diff = await generateUnifiedDiff({
+            targetRef,
+            compareRef: ref,
+            ignore: loadIgnore(),
+          });
           if (!diff || diff.trim().length === 0) {
             spin.stop();
             console.log(chalk.gray('No changes detected.'));
@@ -137,22 +144,42 @@ export function registerReview(program: Command): void {
             spin.succeed(chalk.green('Generated diff in memory'));
           }
 
-          const md = renderTemplate(opts.template ?? config.template ?? 'default', diff, {
+          const templateSpec = opts.template ?? config.template ?? 'default';
+          const renderOpts = {
             cwd: process.cwd(),
             templatesDir: opts.templatesDir ?? config.templatesDir,
-          });
-          let out: string;
-          if (diffPath) {
-            out = diffPath.replace(/\.diff$/i, '.md');
+          };
+
+          let promptLabel: string;
+          let clipboardContent: string;
+          let copyLabel = 'clipboard';
+          if (approxTokens(diff) > PROFILES[profile].tokenBudget) {
+            // Diff exceeds the profile budget: split into template-wrapped batches
+            const { chunks, warnings } = chunkDiff(diff, profile, (d) =>
+              renderTemplate(templateSpec, d, renderOpts),
+            );
+            for (const w of warnings) console.warn(chalk.yellow(w));
+            const { indexPath } = writeBatchFiles(chunks, outDir);
+            promptLabel = `${chunks.length} batch file(s) + ${path.basename(indexPath)} in ${outDir}`;
+            clipboardContent = chunks[0].content;
+            copyLabel = `clipboard (batch_1.md of ${chunks.length})`;
           } else {
-            const timestamp = new Date()
-              .toISOString()
-              .replace(/[:.]/g, '-')
-              .replace('T', '_')
-              .replace('Z', '');
-            out = path.join(outDir, `review_${timestamp}.md`);
+            const md = renderTemplate(templateSpec, diff, renderOpts);
+            let out: string;
+            if (diffPath) {
+              out = diffPath.replace(/\.diff$/i, '.md');
+            } else {
+              const timestamp = new Date()
+                .toISOString()
+                .replace(/[:.]/g, '-')
+                .replace('T', '_')
+                .replace('Z', '');
+              out = path.join(outDir, `review_${timestamp}.md`);
+            }
+            fs.writeFileSync(out, md, 'utf-8');
+            promptLabel = out;
+            clipboardContent = md;
           }
-          fs.writeFileSync(out, md, 'utf-8');
           if (opts.copy) {
             try {
               const mod = (await import('clipboardy')) as unknown as {
@@ -161,7 +188,7 @@ export function registerReview(program: Command): void {
               };
               const clip = mod?.default ?? mod;
               if (clip && typeof clip.write === 'function') {
-                await clip.write(md);
+                await clip.write(clipboardContent);
               } else {
                 throw new Error('clipboardy not available');
               }
@@ -175,8 +202,8 @@ export function registerReview(program: Command): void {
               diffPath
                 ? chalk.dim(`diff:    ${diffPath}`)
                 : chalk.dim('diff:    (not saved, use --save-diff)'),
-              chalk.dim(`prompt:  ${out}`),
-              opts.copy ? chalk.dim('copied:  clipboard') : '',
+              chalk.dim(`prompt:  ${promptLabel}`),
+              opts.copy ? chalk.dim(`copied:  ${copyLabel}`) : '',
               '',
               'Next:',
               '- Use this prompt with your AI reviewer (paste into your AI tool).',

@@ -129,6 +129,67 @@ describe('review integration', () => {
     expect(files.some((f) => f.endsWith('.md'))).toBe(true);
   });
 
+  it('works in a repo with no origin remote (falls back to local target)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'diff2ai-review-local-'));
+
+    run('git init', tmp);
+    fs.writeFileSync(path.join(tmp, 'README.md'), '# temp\n');
+    run('git add README.md', tmp);
+    run('git commit -m "init"', tmp);
+    run('git branch -M main', tmp);
+
+    run('git checkout -b feature/local', tmp);
+    fs.writeFileSync(path.join(tmp, 'local.txt'), 'local\n');
+    run('git add local.txt', tmp);
+    run('git commit -m "feat: local"', tmp);
+
+    const out = run(`node ${cli} review feature/local --target main`, tmp);
+    expect(out).toMatch(/Review prompt ready/);
+    const files = fs.readdirSync(path.join(tmp, 'reviews'));
+    expect(files.some((f) => f.endsWith('.md'))).toBe(true);
+  });
+
+  it('errors clearly when the target branch does not exist anywhere', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'diff2ai-review-notarget-'));
+    run('git init', tmp);
+    fs.writeFileSync(path.join(tmp, 'README.md'), '# temp\n');
+    run('git add README.md', tmp);
+    run('git commit -m "init"', tmp);
+    run('git branch -M main', tmp);
+
+    const out = run(`node ${cli} review main --target does-not-exist 2>&1 || true`, tmp);
+    expect(out).toMatch(/Target "does-not-exist" not found/);
+  });
+
+  it('auto-chunks the prompt when the diff exceeds the profile budget', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'diff2ai-review-chunk-'));
+
+    run('git init', tmp);
+    fs.writeFileSync(path.join(tmp, 'README.md'), '# temp\n');
+    run('git add README.md', tmp);
+    run('git commit -m "init"', tmp);
+    run('git branch -M main', tmp);
+
+    // large diff: several files well past the generic-medium budget (~120k chars)
+    run('git checkout -b feature/big', tmp);
+    for (let i = 0; i < 4; i++) {
+      const lines = Array.from({ length: 800 }, (_, n) => `line ${n} ${'x'.repeat(60)}`);
+      fs.writeFileSync(path.join(tmp, `big_${i}.txt`), lines.join('\n') + '\n');
+    }
+    run('git add .', tmp);
+    run('git commit -m "feat: big files"', tmp);
+
+    const out = run(`node ${cli} review feature/big --target main --profile generic-medium`, tmp);
+    expect(out).toMatch(/Review prompt ready/);
+    const files = fs.readdirSync(path.join(tmp, 'reviews'));
+    expect(files.filter((f) => /^batch_\d+\.md$/.test(f)).length).toBeGreaterThan(1);
+    expect(files).toContain('review_index.md');
+
+    // each batch is wrapped in the template and carries file headers
+    const batch1 = fs.readFileSync(path.join(tmp, 'reviews', 'batch_1.md'), 'utf-8');
+    expect(batch1).toMatch(/diff --git a\/big_0\.txt/);
+  });
+
   it('fetches origin/<target> when --fetch is provided', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'diff2ai-review-fetch-'));
 

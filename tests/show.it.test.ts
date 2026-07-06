@@ -22,11 +22,34 @@ describe('show integration', () => {
 
     const projectRoot = path.resolve(process.cwd());
     const cli = path.join(projectRoot, 'dist', 'cli.js');
-    run('npm run -s build', projectRoot);
+    if (!fs.existsSync(cli)) run('npm run -s build', projectRoot);
 
     const out = run(`node ${cli} show ${sha}`, tmp);
     expect(out).toMatch(/Wrote diff:/);
     const files = fs.readdirSync(path.join(tmp, 'reviews')).filter((f) => f.endsWith('.diff'));
     expect(files.length).toBeGreaterThan(0);
+  });
+
+  it('applies .aidiffignore to the commit diff', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'diff2ai-show-ignore-'));
+    run('git init', tmp);
+    fs.writeFileSync(path.join(tmp, 'keep.txt'), 'keep\n');
+    fs.writeFileSync(path.join(tmp, 'noise.log'), 'log\n');
+    run('git add keep.txt noise.log', tmp);
+    run('git commit -m "both"', tmp);
+    const sha = run('git rev-parse HEAD', tmp).trim();
+
+    fs.writeFileSync(path.join(tmp, '.aidiffignore'), '*.log\n');
+
+    const projectRoot = path.resolve(process.cwd());
+    const cli = path.join(projectRoot, 'dist', 'cli.js');
+    if (!fs.existsSync(cli)) run('npm run -s build', projectRoot);
+
+    run(`node ${cli} show ${sha}`, tmp);
+    const reviewsDir = path.join(tmp, 'reviews');
+    const diffFile = fs.readdirSync(reviewsDir).find((f) => f.endsWith('.diff'))!;
+    const content = fs.readFileSync(path.join(reviewsDir, diffFile), 'utf-8');
+    expect(content).toMatch(/keep\.txt/);
+    expect(content).not.toMatch(/noise\.log/);
   });
 });

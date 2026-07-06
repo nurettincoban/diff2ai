@@ -40,6 +40,13 @@ describe('prompt templates', () => {
     fs.unlinkSync(abs);
   });
 
+  it('preserves $-sequences in diff content verbatim', () => {
+    const diff = 'diff --git a/s.sh b/s.sh\n+echo "$& $` $\' $1 $$"\n';
+    const out = renderTemplate('default', diff);
+    expect(out).toContain(diff);
+    expect(out).not.toContain('{diff_content}');
+  });
+
   it('errors if placeholder is missing', () => {
     const cwd = process.cwd();
     const abs = path.join(cwd, 'bad.md');

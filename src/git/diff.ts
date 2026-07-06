@@ -19,12 +19,12 @@ export async function generateUnifiedDiff(
 
   if (options.commitSha) {
     const diff = await git.raw(['show', '-p', options.commitSha]);
-    return diff;
+    return applyIgnoreFilter(diff, options.ignore);
   }
 
   if (options.staged) {
     const diff = await git.diff(['--staged']);
-    return diff;
+    return applyIgnoreFilter(diff, options.ignore);
   }
 
   const targetRef = options.targetRef ?? 'origin/main';

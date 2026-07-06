@@ -35,7 +35,7 @@ describe('.aidiffignore integration', () => {
 
     const projectRoot = path.resolve(process.cwd());
     const cli = path.join(projectRoot, 'dist', 'cli.js');
-    run('npm run -s build', projectRoot);
+    if (!fs.existsSync(cli)) run('npm run -s build', projectRoot);
 
     // run diff against origin/main...HEAD (default of diff command)
     const out = run(`node ${cli} diff --no-interactive --yes`, tmp);
@@ -45,6 +45,32 @@ describe('.aidiffignore integration', () => {
     const diffFile = fs.readdirSync(reviewsDir).find((f) => f.endsWith('.diff'))!;
     const content = fs.readFileSync(path.join(reviewsDir, diffFile), 'utf-8');
 
+    expect(content).toMatch(/keep.txt/);
+    expect(content).not.toMatch(/ignore.log/);
+  });
+
+  it('excludes ignored files from staged diffs', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'diff2ai-ignore-staged-'));
+    run('git init', tmp);
+    fs.writeFileSync(path.join(tmp, 'init.txt'), 'init\n');
+    run('git add init.txt', tmp);
+    run('git commit -m "init"', tmp);
+
+    fs.writeFileSync(path.join(tmp, 'keep.txt'), 'keep\n');
+    fs.writeFileSync(path.join(tmp, 'ignore.log'), 'log\n');
+    run('git add keep.txt ignore.log', tmp);
+    fs.writeFileSync(path.join(tmp, '.aidiffignore'), '*.log\n');
+
+    const projectRoot = path.resolve(process.cwd());
+    const cli = path.join(projectRoot, 'dist', 'cli.js');
+    if (!fs.existsSync(cli)) run('npm run -s build', projectRoot);
+
+    const out = run(`node ${cli} diff --staged --no-interactive --yes`, tmp);
+    expect(out).toMatch(/Wrote diff:/);
+
+    const reviewsDir = path.join(tmp, 'reviews');
+    const diffFile = fs.readdirSync(reviewsDir).find((f) => f.endsWith('.diff'))!;
+    const content = fs.readFileSync(path.join(reviewsDir, diffFile), 'utf-8');
     expect(content).toMatch(/keep.txt/);
     expect(content).not.toMatch(/ignore.log/);
   });

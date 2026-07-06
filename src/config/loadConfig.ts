@@ -13,7 +13,7 @@ export type AidiffConfig = {
 
 const DEFAULT_CONFIG: AidiffConfig = {
   target: 'main',
-  profile: 'generic-large',
+  profile: 'generic-medium',
   include: ['src/**', 'apps/**'],
   exclude: ['**/*.lock', 'dist/**', '**/*.min.*'],
   template: undefined,

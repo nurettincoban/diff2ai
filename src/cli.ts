@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { registerCommands } from './commands/index.js';
+import { errorBox } from './ux/theme.js';
 import { createRequire } from 'module';
 import fs from 'fs';
 import path from 'path';
@@ -12,7 +13,7 @@ function resolvePackageVersion(): string {
   // Prefer reading from installed package.json at runtime
   try {
     const require = createRequire(import.meta.url);
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+
     const pkg = require('../package.json');
     if (pkg?.version) return String(pkg.version);
   } catch {
@@ -48,4 +49,8 @@ program
     program.outputHelp();
   });
 
-program.parseAsync(process.argv);
+program.parseAsync(process.argv).catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(errorBox([message]));
+  process.exit(1);
+});

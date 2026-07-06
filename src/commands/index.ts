@@ -1,14 +1,14 @@
 import { Command } from 'commander';
 import { loadConfig } from '../config/loadConfig.js';
 import { loadIgnore } from '../config/ignore.js';
-import { assertGitRepo, listRemoteBranches } from '../git/repo.js';
+import { assertGitRepo, listRemoteBranches, resolveTargetRef } from '../git/repo.js';
 import { generateUnifiedDiff } from '../git/diff.js';
-import { writeDiffFile, ensureDir } from '../formatters/diff.js';
+import { writeDiffFile, ensureDir, writeBatchFiles } from '../formatters/diff.js';
 import { renderTemplate, resolveBuiltInTemplatesDir } from '../formatters/markdown.js';
 import fs from 'fs';
 import path from 'path';
 import { chunkDiff } from '../chunker/chunk.js';
-import type { ProfileName } from '../chunker/profiles.js';
+import { resolveProfile } from '../chunker/profiles.js';
 import { gatherPreflight } from '../ux/preflight.js';
 import { confirm, select } from '../ux/prompt.js';
 import { registerDoctor } from './doctor.js';
@@ -74,7 +74,7 @@ export function registerCommands(program: Command): void {
           header('diff2ai diff', `${opts.staged ? 'mode: staged' : `target: ${selectedTarget}`}`),
         );
 
-        const targetRef = `origin/${selectedTarget}`;
+        const targetRef = opts.staged ? undefined : await resolveTargetRef(selectedTarget);
         const spin = ora('Generating diff...').start();
         const diff = await generateUnifiedDiff({
           staged: Boolean(opts.staged),
@@ -130,7 +130,7 @@ export function registerCommands(program: Command): void {
       try {
         assertGitRepo();
         console.log(header('diff2ai show', `sha: ${sha}`));
-        const diff = await generateUnifiedDiff({ commitSha: sha });
+        const diff = await generateUnifiedDiff({ commitSha: sha, ignore: loadIgnore() });
         if (!diff || diff.trim().length === 0) {
           console.log(chalk.gray('No changes detected.'));
           return;
@@ -186,37 +186,25 @@ export function registerCommands(program: Command): void {
     .description('Chunk large diff into batches using a token budget profile')
     .option(
       '--profile <name>',
-      'Profile: claude-large|generic-large|generic-medium',
-      'generic-medium',
+      'Profile: claude-large|generic-large|generic-medium (default: from .aidiff.json or generic-medium)',
     )
     .option('--out <dir>', 'Output directory (default: reviews/)')
-    .action((diffFile: string, opts: { profile: ProfileName; out?: string }) => {
+    .action((diffFile: string, opts: { profile?: string; out?: string }) => {
       try {
         const abs = diffFile;
-        console.log(header('diff2ai chunk', `profile: ${opts.profile}`));
+        const { config } = loadConfig();
+        const profile = resolveProfile(opts.profile, config.profile);
+        console.log(header('diff2ai chunk', `profile: ${profile}`));
         if (!fs.existsSync(abs)) {
           console.error(`Diff file not found: ${abs}`);
           process.exitCode = 1;
           return;
         }
         const diffContent = fs.readFileSync(abs, 'utf-8');
-        const { chunks } = chunkDiff(diffContent, opts.profile ?? 'generic-medium');
-        const indexLines: string[] = [
-          '# Review Batches',
-          '',
-          'Process each batch with your AI reviewer using the same default template.',
-          'Then merge all issue blocks into a single review.md without duplication.',
-          '',
-        ];
+        const { chunks, warnings } = chunkDiff(diffContent, profile);
+        for (const w of warnings) console.warn(chalk.yellow(w));
         const outDir = opts.out ?? path.join(process.cwd(), 'reviews');
-        ensureDir(outDir);
-        for (const c of chunks) {
-          const out = path.join(outDir, c.filename);
-          fs.writeFileSync(out, c.content, 'utf-8');
-          indexLines.push(`- ${path.basename(out)}`);
-        }
-        const indexPath = path.join(outDir, 'review_index.md');
-        fs.writeFileSync(indexPath, indexLines.join('\n') + '\n', 'utf-8');
+        const { indexPath } = writeBatchFiles(chunks, outDir);
         console.log(`Wrote ${chunks.length} batch file(s) and ${path.basename(indexPath)}`);
         console.log(
           success([

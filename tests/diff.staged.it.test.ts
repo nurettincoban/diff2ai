@@ -26,8 +26,8 @@ describe('diff --staged integration', () => {
     const projectRoot = path.resolve(process.cwd());
     const cli = path.join(projectRoot, 'dist', 'cli.js');
 
-    // build before running
-    run('npm run -s build', projectRoot);
+    // build before running (skip if already built by npm test)
+    if (!fs.existsSync(cli)) run('npm run -s build', projectRoot);
 
     const out = run(`node ${cli} diff --staged`, tmp);
     expect(out).toMatch(/Wrote diff:/);

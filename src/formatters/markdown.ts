@@ -40,6 +40,11 @@ function isPathLike(input: string): boolean {
   return input.endsWith('.md') || input.includes('/') || input.includes('\\');
 }
 
+// Replacer function form so `$&`, `$'` etc. in diff content are inserted verbatim
+function substituteDiff(raw: string, diffContent: string): string {
+  return raw.replace('{diff_content}', () => diffContent);
+}
+
 function readTemplateFileOrThrow(templatePath: string): string {
   if (!fs.existsSync(templatePath)) {
     throw new Error(`Template file not found: ${templatePath}`);
@@ -66,7 +71,7 @@ export function renderTemplate(
   if (isPathLike(templateSpec)) {
     const abs = path.isAbsolute(templateSpec) ? templateSpec : path.resolve(cwd, templateSpec);
     const raw = readTemplateFileOrThrow(abs);
-    return raw.replace('{diff_content}', diffContent);
+    return substituteDiff(raw, diffContent);
   }
 
   // 2) Name-based input
@@ -78,7 +83,7 @@ export function renderTemplate(
     const candidate = path.join(projectDir, candidateFile);
     if (fs.existsSync(candidate)) {
       const raw = readTemplateFileOrThrow(candidate);
-      return raw.replace('{diff_content}', diffContent);
+      return substituteDiff(raw, diffContent);
     }
   }
 
@@ -92,14 +97,14 @@ export function renderTemplate(
     const generic = path.join(builtInDir, `${name}.md`);
     if (fs.existsSync(generic)) {
       const raw = readTemplateFileOrThrow(generic);
-      return raw.replace('{diff_content}', diffContent);
+      return substituteDiff(raw, diffContent);
     }
     // Then fallback to legacy name map
     const isBuiltInName = Object.prototype.hasOwnProperty.call(builtInMap, name);
     if (isBuiltInName) {
       const candidate = path.join(builtInDir, builtInMap[name as BuiltInTemplateName]);
       const raw = readTemplateFileOrThrow(candidate);
-      return raw.replace('{diff_content}', diffContent);
+      return substituteDiff(raw, diffContent);
     }
   }
 
