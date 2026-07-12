@@ -1,21 +1,22 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import JSON5 from 'json5';
+import type { RunnerConfig } from '../runners/types.js';
 
 export type AidiffConfig = {
   target: string;
   profile: 'claude-large' | 'generic-large' | 'generic-medium';
-  include: string[];
   exclude: string[];
   template?: string;
   templatesDir?: string;
+  runners?: Record<string, RunnerConfig>;
+  personas?: Record<string, string>;
 };
 
 const DEFAULT_CONFIG: AidiffConfig = {
   target: 'main',
   profile: 'generic-medium',
-  include: ['src/**', 'apps/**'],
-  exclude: ['**/*.lock', 'dist/**', '**/*.min.*'],
+  exclude: ['**/*.lock', '**/dist/**', '**/*.min.*'],
   template: undefined,
   templatesDir: undefined,
 };
@@ -38,11 +39,18 @@ export function loadConfig(cwd: string = process.cwd()): {
     const merged: AidiffConfig = {
       target: parsed.target ?? DEFAULT_CONFIG.target,
       profile: (parsed.profile as AidiffConfig['profile']) ?? DEFAULT_CONFIG.profile,
-      include: Array.isArray(parsed.include) ? parsed.include : DEFAULT_CONFIG.include,
       exclude: Array.isArray(parsed.exclude) ? parsed.exclude : DEFAULT_CONFIG.exclude,
       template: typeof parsed.template === 'string' ? parsed.template : DEFAULT_CONFIG.template,
       templatesDir:
         typeof parsed.templatesDir === 'string' ? parsed.templatesDir : DEFAULT_CONFIG.templatesDir,
+      runners:
+        parsed.runners && typeof parsed.runners === 'object' && !Array.isArray(parsed.runners)
+          ? parsed.runners
+          : undefined,
+      personas:
+        parsed.personas && typeof parsed.personas === 'object' && !Array.isArray(parsed.personas)
+          ? parsed.personas
+          : undefined,
     };
     return { config: merged, warnings };
   } catch {

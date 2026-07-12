@@ -1,156 +1,147 @@
 # diff2ai
 
+[![CI](https://github.com/nurettincoban/diff2ai/actions/workflows/ci.yml/badge.svg)](https://github.com/nurettincoban/diff2ai/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/diff2ai.svg?logo=npm&label=npm)](https://www.npmjs.com/package/diff2ai)
 [![npm downloads](https://img.shields.io/npm/dm/diff2ai.svg?color=blue)](https://www.npmjs.com/package/diff2ai)
-![node version](https://img.shields.io/badge/node-%3E%3D18.0-brightgreen)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license) [![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue?logo=typescript)](#)
+![node version](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> ⭐️ If you find diff2ai useful, please give it a star on GitHub — it helps a lot!
+Turn your Git diffs into high-signal AI code reviews — fast, local, and repo-safe.
 
-Quick links: [Installation](#installation) • [Quickstart](#quickstart) • [CLI](#cli-at-a-glance) • [Demos](#demos) • [Configuration](#configuration)
+- 🤖 **Runs your AI for you**: `--run claude` opens a Claude chat already loaded with the review prompt
+- 🧑‍⚖️ **Multi-reviewer consensus**: `--iterations 5` runs five reviewer personas + a judge that validates every finding against the diff
+- ⚡️ **Local-first** — pure git; nothing leaves your machine unless _you_ run an AI
+- 🧠 **Strict default template** that forces actionable feedback (severity, file/line ranges, proposed fix) instead of AI rambling
+- 🧩 **Smart chunking** for diffs that exceed your model's context budget, with merge guidance
+- 🎯 **6 packaged templates**: `default`, `basic`, `security`, `api-best-practices`, `reliability`, `event-driven` — plus your own
+- 🛡️ **Safety preflight**: refuses to switch branches over dirty trees or mid-merge repos
 
-Turn your Git diffs into beautiful, high-signal AI code review prompts — fast, local, and repo-safe.
-
-- ⚡️ Zero network by default (pure git)
-- 🧠 Strict, opinionated default template that drives high‑quality AI feedback
-- 🧩 Smart chunking for large diffs with merge guidance
-- 🛡️ Safety preflight checks; no destructive actions without consent
-- 🖼️ Pretty CLI output in TTY; stays script‑friendly for CI
+Quick links: [Install](#-installation) • [Quickstart](#-quickstart) • [Run the AI](#-run-the-ai-directly---run) • [Consensus reviews](#%EF%B8%8F-multi-reviewer-consensus---iterations) • [Commands](#-commands) • [Templates](#-templates) • [Configuration](#%EF%B8%8F-configuration)
 
 ---
 
 ## ✨ Why diff2ai?
 
-Most AI reviews are noisy. diff2ai generates a focused prompt from your actual diff, with a strict schema that forces actionable feedback (severity, file/line ranges, proposed fix). Paste it into your favorite AI coding agent and get a concise, useful review.
-
----
+Pasting a raw diff into a chat window gets you noisy, unstructured feedback. diff2ai generates a focused prompt from your actual diff with a strict output schema, so the review you get back has severities, exact file/line references, and concrete fixes — ready to act on. It works with any AI tool you already use: Claude, Cursor, Copilot, ChatGPT, or a local model.
 
 ## 📦 Installation
 
-Requirements
-
-- Node.js >= 18
-
-Global install (recommended)
+Requires Node.js >= 18.
 
 ```bash
-npm i -g diff2ai
-diff2ai --version   # verify (e.g., 0.0.3)
-```
+npm i -g diff2ai        # global install (recommended)
+diff2ai --version
 
-Use without installing (npx)
-
-```bash
-npx diff2ai --help
-```
-
-Upgrade to latest
-
-```bash
-npm i -g diff2ai@latest
+npx diff2ai --help      # or run without installing
 ```
 
 ## 🚀 Quickstart
 
 ```bash
-# Generate AI-ready prompt for your MR against main
-git fetch origin main
+# One command: diff your branch vs main and open a Claude chat reviewing it
+diff2ai review feature/my-branch --target main --run claude
+
+# Serious mode: 5 independent reviewer personas + a validating judge
+diff2ai review feature/my-branch --target main --run claude --iterations 5
+
+# Classic mode: just generate the prompt and copy it for any AI tool
 diff2ai review feature/my-branch --target main --copy
-
-# Optional: let diff2ai switch to the branch for you (repo will remain on it)
-diff2ai review feature/my-branch --target main --copy --switch --fetch
-
-# Paste the generated prompt from your clipboard into Claude, Cursor, or Copilot
 ```
 
----
+## 🤖 Run the AI directly (`--run`)
 
-## 🧰 CLI at a glance
+`--run claude` hands the generated prompt straight to the [Claude Code CLI](https://www.npmjs.com/package/@anthropic-ai/claude-code):
 
-- `review <ref>`: end‑to‑end — generate a diff from a branch/ref and immediately produce an AI prompt (default template). Add `--copy` to place the prompt on your clipboard. Use `--save-diff` if you also want the raw `.diff` file written.
-  - Flags:
-    - `--switch` Switch to `<ref>` before running (refuses if dirty/untracked unless `--yes`)
-    - `--fetch` Fetch `origin/<target>` and `origin/<ref>` before running
-- `prompt <diff>`: render an AI prompt from an existing `.diff` file.
-  - Flags:
-    - `--template <nameOrPath>` Use a template by name (project `./templates/` or packaged) or a direct `.md` file path (absolute or relative)
-    - `--templates-dir <dir>` Directory to resolve named templates from (defaults to project `./templates/`)
-- `templates`: list available templates (project and packaged)
-- `diff [--staged]`: write a `.diff` from your working tree (or staged changes).
-- `show <sha>`: write a `.diff` for a specific commit.
-- `chunk <diff>`: split a large `.diff` into `batch_*.md` files + index.
+- **In a terminal (TTY)** it launches an interactive `claude` chat seeded with the review prompt — you land directly in a session that's already reviewing your diff.
+- **In scripts/CI (non-TTY)** it runs headlessly (`claude -p`) and saves the structured review next to the prompt as `*.response.md`.
 
-Global flags (MVP):
+Any AI CLI works — define your own runners in `.aidiff.json`:
 
-- `--no-interactive` Disable prompts (for CI/non‑TTY)
-- `--yes` Auto‑confirm safe prompts
+```json5
+{
+  runners: {
+    mytool: {
+      command: 'mytool',
+      args: ['--model', 'fast'], // always prepended
+      headless: { args: ['--pipe'], input: 'stdin' }, // or input: 'promptFileArg'
+      interactive: { args: ['{promptFileInstruction}'] },
+      timeoutMs: 600000,
+    },
+  },
+}
+```
 
----
+## 🧑‍⚖️ Multi-reviewer consensus (`--iterations`)
 
-## 🎬 Demos
-
-<details>
-<summary>Show demos</summary>
-
-Review a branch (auto‑prompt + copy to clipboard):
+One AI review can hallucinate or miss things. `--iterations 5` runs **five independent reviewer passes**, each with a different persona, then a **judge pass** that cross-checks everything:
 
 ```bash
-diff2ai review feature/payments --copy
-# writes:
-#  - review_YYYY-MM-DD_HH-mm-ss-SSS.md  (default template)
-#  - copies prompt content to your clipboard
-#  - add --save-diff to also write review_YYYY-MM-DD_HH-mm-ss-SSS.diff
-# Recommended for AI agents (Cursor/Claude):
-# Ensure the tool is on the branch being reviewed and fetch refs
-diff2ai review feature/payments --target main --copy --switch --fetch
+diff2ai review feature/payments --run claude --iterations 5
 ```
 
-Pick a template explicitly:
+1. Each persona reviews the same diff in isolation: **Bug Hunter**, **Security Auditor**, **Performance Engineer**, **API & Maintainability Reviewer**, **Test Engineer** (add your own via `personas` in `.aidiff.json`).
+2. The judge receives the raw diff (ground truth) plus all reviews and must **validate every finding against the diff** — findings referencing files or code not in the diff are discarded — then deduplicate and score consensus.
+3. You get one consolidated review where every issue carries a `Consensus: k/N reviewers` line, sorted by severity and agreement, and (in a TTY) a Claude chat opens to walk through the findings and apply fixes.
+
+All artifacts are kept under `reviews/run_<timestamp>/` (per-persona prompts and responses, `judge.prompt.md`, `consolidated.md`), so you can audit exactly what each reviewer said or re-run the judge by hand. If a pass fails, the run continues as long as at least two reviewers succeeded (the consolidated review notes who dropped out).
+
+## 🧰 Commands
+
+### `review <ref>` — end to end
+
+Diffs `<ref>` against the target branch (three-dot: `target...ref`) and renders an AI prompt in one step.
 
 ```bash
-diff2ai review feature/api --template default
-# or a minimal one
-diff2ai review feature/api --template basic
-# or your own project template (./templates/my-template.md)
-diff2ai review feature/api --template my-template
-# or via direct file path
-diff2ai review feature/api --template ./templates/my-template.md
-# specify a custom templates directory
-diff2ai review feature/api --templates-dir ./my-templates --template code-review
-# use packaged templates by name (no copying needed)
-diff2ai review feature/api --template security
-diff2ai review feature/api --template api-best-practices
-diff2ai review feature/api --template reliability
-diff2ai review feature/api --template event-driven
+diff2ai review feature/payments                  # writes reviews/review_<timestamp>.md
+diff2ai review feature/payments --copy           # clipboard only, no file
+diff2ai review feature/payments --save-diff      # also keep the raw .diff
+diff2ai review feature/payments --template security
 ```
 
-Work from an existing diff:
+| Flag                      | Effect                                                                                                            |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `--target <branch>`       | Target branch (default: `main`, or `target` from `.aidiff.json`)                                                  |
+| `--template <name\|path>` | Template name (project or packaged) or a direct `.md` path                                                        |
+| `--templates-dir <dir>`   | Where to resolve named templates (default: `./templates`)                                                         |
+| `--profile <name>`        | Token budget profile; larger diffs are auto-split into batches                                                    |
+| `--copy`                  | Copy the prompt to the clipboard instead of writing a file (falls back to a file if the clipboard is unavailable) |
+| `--save-diff`             | Also write the raw `.diff`                                                                                        |
+| `--out <dir>`             | Output directory (default: `reviews/`)                                                                            |
+| `--switch`                | Switch to `<ref>` first; refuses if dirty/untracked/mid-merge unless `--yes`                                      |
+| `--fetch`                 | `git fetch origin <target>` and `<ref>` first                                                                     |
+| `--run <runner>`          | Execute the review with an AI runner (`claude` built in; custom runners via config)                               |
+| `--iterations <n>`        | Multi-reviewer consensus mode: n persona passes + validating judge (requires `--run`, n ≥ 2)                      |
+
+If the diff exceeds the profile's token budget, diff2ai automatically writes `batch_*.md` files plus a `review_index.md` with merge instructions (with `--copy`, batch 1 goes to the clipboard). `--run` needs the whole diff in one prompt, so oversized diffs are refused with a hint to use `--profile claude-large`.
+
+### The rest
 
 ```bash
-diff2ai diff --staged         # produce staged_*.diff
-diff2ai prompt staged_*.diff  # produce staged_*.md (uses default template)
-# with a custom template
-diff2ai prompt staged_*.diff --template my-template
-# To save the AI response yourself, use native OS commands, e.g. on macOS:
-# pbpaste > reviews/review_response.md
+diff2ai diff                   # working tree vs target → reviews/diff_<timestamp>.diff
+diff2ai diff --staged          # staged changes → reviews/staged_<timestamp>.diff
+diff2ai show <sha>             # one commit → reviews/commit_<sha>_<timestamp>.diff
+diff2ai prompt <file.diff>     # render a prompt from an existing diff (--template, --out)
+diff2ai chunk <file.diff>      # split a big diff into batch_*.md + review_index.md (--profile)
+diff2ai templates              # list project + packaged templates
+diff2ai doctor                 # diagnose repo state (dirty tree, divergence, stale fetch...)
 ```
 
-Handle big diffs:
+Global flags: `--no-interactive` (disable prompts, for CI/non-TTY) and `--yes` (auto-confirm safe prompts).
 
-```bash
-diff2ai chunk huge.diff --profile generic-medium
-# writes batch_*.md and review_index.md (merge instructions included)
-```
+## 🧱 Templates
 
- </details>
+Packaged templates (use by name, no copying needed):
 
----
+| Template             | Focus                                                        |
+| -------------------- | ------------------------------------------------------------ |
+| `default`            | Strict, structured general review (recommended)              |
+| `basic`              | Lightweight, minimal instructions                            |
+| `security`           | Injection, authz/authn, secrets, unsafe deserialization      |
+| `api-best-practices` | REST/HTTP semantics, versioning, error contracts             |
+| `reliability`        | Error handling, retries, timeouts, resource leaks            |
+| `event-driven`       | Message contracts, idempotency, ordering, delivery semantics |
 
-## 🧱 The default template (strict)
-
-The default template enforces a clean, repeatable review structure. AI reviewers must output only numbered issue blocks — no preambles, no conclusions, no diff echo.
-
-Issue block schema:
+The default template enforces numbered issue blocks — no preamble, no diff echo:
 
 ```text
 ## <n>) Severity: CRITICAL|HIGH|MEDIUM|LOW|INFO | Type: Implementation|Bug|Security|Test|Performance|Style|Doc|Maintainability
@@ -168,161 +159,85 @@ Proposed fix:
 ~~~
 ```
 
-For chunked reviews: “Do not assume context outside this chunk; if cross‑file risks are suspected, note briefly.”
+### Custom templates
 
-Templates available:
-
-- `default` (strict, recommended)
-- `basic` (lightweight)
-
-## 🧪 Example output
-
-```text
-## 1) Severity: HIGH | Type: Implementation
-Title: Avoid mutation of request body in middleware
-
-Affected:
-- src/middleware/auth.ts:42-57
-
-Explanation:
-Mutating the incoming request object can introduce side effects across downstream handlers. Use a cloned object or limit changes to a derived value.
-
-Proposed fix:
-~~~ts
-const sanitized = { ...req.body, password: undefined };
-next();
-~~~
-```
-
----
-
-## 🗂️ Output files
-
-- Default output location: current working directory.
-- Recommended: use a dedicated `reviews/` directory and add it to `.gitignore`.
-
-- `*.md` AI‑ready prompt (paste into your AI coding agent)
-- `*.diff` unified diff (optional for `review` via `--save-diff`; always produced by `diff`/`show`)
-- `batch_*.md` chunked prompts for large diffs
-- `review_index.md` guidance for merging batch results into a single review
+Any `.md` file containing the `{diff_content}` placeholder works:
 
 ```bash
-diff2ai review feature/api --target main --save-diff
-# writes reviews/*.md and reviews/*.diff (with --save-diff)
+diff2ai review feature/api --template my-template          # resolves ./templates/my-template.md
+diff2ai review feature/api --template ./docs/review.md     # or a direct path
+diff2ai review feature/api --templates-dir ./my-templates --template code-review
 ```
 
-Paste the generated `*.md` into the MR/PR description or as a top comment.
-Use the prompt with your AI reviewer. Save the AI’s response locally with `diff2ai pasteback` and commit or share as needed.
-
----
-
-## 🛡️ Safety & behavior
-
-- Preflight checks warn about dirty/untracked files, stash, and divergence.
-- Interactive prompts guide target selection; non‑interactive mode stays quiet.
-- No destructive actions are taken without explicit confirmation.
-- `--switch` will refuse to change branches if the working tree is dirty or has untracked files unless you pass `--yes`. The repository remains on `<ref>` after completion.
-
----
+Resolution order: direct path → project `templates/` (or `--templates-dir`) → packaged templates.
 
 ## ⚙️ Configuration
 
-Create `.aidiff.json` (JSON5 supported):
+Optional `.aidiff.json` in your repo root (JSON5 — comments and trailing commas allowed):
 
 ```json5
 {
   target: 'main', // default target branch
   profile: 'generic-medium', // default chunking profile
-  include: ['src/**', 'apps/**'],
-  exclude: ['**/*.lock', 'dist/**', '**/*.min.*'],
-  // Optional: default template config
-  // Use a name (resolved from project ./templates by default) or a file path
-  template: 'my-template',
-  // Optional: where to resolve named templates from (defaults to ./templates)
-  templatesDir: './templates',
+  exclude: ['**/*.lock', '**/dist/**', '**/*.min.*'], // globs dropped from every diff (these are the defaults)
+  template: 'my-template', // default template (name or path)
+  templatesDir: './templates', // where named templates live
+  runners: {
+    // custom AI runners for --run (see "Run the AI directly" above)
+  },
+  personas: {
+    // extra reviewer personas for --iterations, or overrides of built-in slugs
+    concurrency: 'Focus exclusively on race conditions, locking, and async ordering.',
+  },
 }
 ```
 
-Ignore paths in `.aidiffignore` (minimatch):
+Additional per-file exclusions go in `.aidiffignore` (minimatch, one pattern per line):
 
 ```
-**/*.lock
-**/dist/**
-**/*.min.*
+**/*.snap
+**/generated/**
 ```
 
-Profiles (token budgets):
+Lockfiles, `dist/` output, and minified files are excluded by default so they don't waste your AI context — pass `exclude: []` to disable. The CLI tells you when files were excluded.
 
-- `claude-large` ≈ 150k tokens
-- `generic-large` ≈ 100k tokens
-- `generic-medium` ≈ 30k tokens
+Chunking profiles (approximate token budgets): `claude-large` ≈ 150k • `generic-large` ≈ 100k • `generic-medium` ≈ 30k (default).
 
----
+## 🗂️ Output
+
+Everything is written to `reviews/` by default (override with `--out`). Add `reviews/` to your `.gitignore`.
+
+| File              | What it is                                                                               |
+| ----------------- | ---------------------------------------------------------------------------------------- |
+| `review_*.md`     | AI-ready prompt (paste into your AI tool)                                                |
+| `*.response.md`   | AI review output from headless `--run`                                                   |
+| `run_*/`          | Multi-reviewer runs: per-persona prompts/responses, `judge.prompt.md`, `consolidated.md` |
+| `*.diff`          | Raw unified diff (`diff`/`show`; `review --save-diff`)                                   |
+| `batch_*.md`      | Chunked prompts for large diffs                                                          |
+| `review_index.md` | Instructions for merging batch results                                                   |
+
+## 🛡️ Safety
+
+- Never modifies your repo unless you pass `--switch` (and even then refuses over dirty/untracked trees or an in-progress merge/rebase without `--yes`).
+- No network calls by diff2ai itself — `--fetch` is opt-in git, and `--run` executes the AI CLI _you_ choose with _your_ credentials.
+- Reviewer passes run with tools disabled: the AI sees exactly the prompt (template + diff), nothing else.
 
 ## 🧯 Troubleshooting
 
-- Templates directory not found
-  - Fixed in >= 0.0.2. Update to latest: `npm i -g diff2ai@latest`.
-  - If developing locally, ensure `npm run build` copied `templates/` into `dist/templates/`.
-  - Project-local `templates/` in your CWD are also supported.
-
-- Custom template not found
-  - When using a name (e.g., `--template my-template`), diff2ai looks for `./templates/my-template.md` by default, or under `--templates-dir`/`templatesDir` if provided.
-  - You can also pass a direct path: `--template ./my-templates/review.md`.
-  - Packaged templates can be used by name without copying (e.g., `--template security`).
-
-- "Missing required placeholder {diff_content}"
-  - Your custom template must include `{diff_content}` where you want the unified diff injected.
-
----
+- **"Template ... not found"** — named templates resolve from `./templates/` (or `--templates-dir`), then packaged ones. Pass a path ending in `.md` to load a file directly.
+- **"Missing required placeholder {diff_content}"** — add `{diff_content}` to your custom template where the diff should be injected.
+- **"Target ... not found"** — run `git fetch origin <branch>` first, or pass an existing branch via `--target`.
+- **`chunk` produced one file** — your diff fits the profile budget; that's expected.
+- **Clipboard copy failed** — on headless Linux install `xsel`/`xclip`; with `--copy` alone diff2ai writes the prompt to a file instead so nothing is lost.
 
 ## 🤝 Contributing
 
-We welcome contributions! Ways to help:
-
-- Improve templates and review schema
-- Enhance chunking heuristics and performance
-- Add tests and fixtures for edge cases
-- Polish CLI UX and docs
-
-Dev setup:
+PRs welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, project layout, and guidelines. Good first areas: new templates, chunking heuristics, CLI UX.
 
 ```bash
-npm install
-npm run build
-npm test
-npm run lint
-npm run format
+npm install && npm test && npm run lint && npm run typecheck
 ```
-
-Conventional flow:
-
-1. Fork & branch (small, focused changes)
-2. Add tests when adding features/fixing bugs
-3. Keep files < 300 lines where practical
-4. Ensure `npm test` and `npm run lint` pass
-5. Open a PR with a clear description and screenshots/terminal output when relevant
-
----
-
-## ❓ FAQ
-
-- “Why did `chunk` produce only one file?”
-  - Your diff likely fits within the selected profile’s token budget; that’s expected.
-- “Where do I put the AI’s response?”
-  - Wherever you prefer: PR comments, a `review.md` file, or your internal tools.
-- “Can I script this in CI?”
-  - Yes. Use `--no-interactive` (and `--yes` if needed).
-
-- “Does this upload my code anywhere?”
-  - No. It runs 100% locally and writes to your filesystem. You decide what to paste into an AI.
-- “How do I handle huge MRs?”
-  - Use `diff2ai chunk <diff> --profile <name>`, paste each `batch_*.md` to your AI, then merge the results guided by `review_index.md`.
-- “Can I use this on GitLab MRs?”
-  - Yes. Checkout the MR branch locally (or fetch the refs), then run `diff2ai review <branch> --target <base>`.
-
----
 
 ## 🪪 License
 
-MIT
+[MIT](LICENSE) © Nurettin Coban

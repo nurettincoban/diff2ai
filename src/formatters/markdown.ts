@@ -2,8 +2,6 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-export type BuiltInTemplateName = 'basic' | 'default';
-
 type RenderOptions = {
   cwd?: string;
   templatesDir?: string;
@@ -87,23 +85,11 @@ export function renderTemplate(
     }
   }
 
-  // Built-ins (generic lookup by name, then fallback map for legacy names)
-  const builtInMap: Record<BuiltInTemplateName, string> = {
-    basic: 'basic.md',
-    default: 'default.md',
-  };
+  // Packaged templates: <name>.md
   if (builtInDir) {
-    // First try generic <name>.md in packaged templates
     const generic = path.join(builtInDir, `${name}.md`);
     if (fs.existsSync(generic)) {
       const raw = readTemplateFileOrThrow(generic);
-      return substituteDiff(raw, diffContent);
-    }
-    // Then fallback to legacy name map
-    const isBuiltInName = Object.prototype.hasOwnProperty.call(builtInMap, name);
-    if (isBuiltInName) {
-      const candidate = path.join(builtInDir, builtInMap[name as BuiltInTemplateName]);
-      const raw = readTemplateFileOrThrow(candidate);
       return substituteDiff(raw, diffContent);
     }
   }

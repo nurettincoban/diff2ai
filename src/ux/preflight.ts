@@ -1,4 +1,6 @@
-import simpleGit from 'simple-git';
+import fs from 'node:fs';
+import path from 'node:path';
+import { simpleGit } from 'simple-git';
 
 export type PreflightSummary = {
   isDirty: boolean;
@@ -11,13 +13,23 @@ export type PreflightSummary = {
   hasStash: boolean;
 };
 
-export async function gatherPreflight(_target: string): Promise<PreflightSummary> {
+export async function gatherPreflight(): Promise<PreflightSummary> {
   const git = simpleGit();
   const status = await git.status();
   const isDirty = status.files.length > 0;
   const hasUntracked = status.not_added.length > 0;
-  const ongoingMerge = Boolean(status.rebase || status.merging);
   const currentBranch = status.current ?? null;
+
+  // StatusResult has no merge/rebase info; check the git dir markers directly.
+  let ongoingMerge = false;
+  try {
+    const gitDir = (await git.revparse(['--git-dir'])).trim();
+    ongoingMerge = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'rebase-merge', 'rebase-apply'].some((f) =>
+      fs.existsSync(path.join(gitDir, f)),
+    );
+  } catch {
+    // ignore
+  }
 
   let ahead = 0;
   let behind = 0;

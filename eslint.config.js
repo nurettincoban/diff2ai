@@ -4,9 +4,14 @@ import prettier from 'eslint-plugin-prettier';
 import globals from 'globals';
 
 export default [
-  // Ignore build output and non-source config files
-  { ignores: ['dist/**', '.eslintrc.cjs'] },
+  // Ignore build output
+  { ignores: ['dist/**'] },
   js.configs.recommended,
+  // Plain JS (e.g. test fixtures) runs on Node
+  {
+    files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
+    languageOptions: { globals: globals.node },
+  },
   // Recommended rules for TypeScript (no type-checking required)
   ...tseslint.configs.recommended,
   {

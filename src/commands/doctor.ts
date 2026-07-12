@@ -10,7 +10,7 @@ export function registerDoctor(program: Command): void {
     .action(async () => {
       const spinner = ora('Checking repository state...').start();
       try {
-        const pre = await gatherPreflight('main');
+        const pre = await gatherPreflight();
         spinner.succeed('Repository status');
 
         console.log(

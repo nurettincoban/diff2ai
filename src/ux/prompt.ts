@@ -17,10 +17,12 @@ export async function confirm(message: string, opts: PromptOptions = {}): Promis
   return Boolean(res.ok);
 }
 
+// Selection has no safe auto-answer, so unlike confirm() there is no `yes` shortcut:
+// non-interactive callers get null and should fall back to their default.
 export async function select<T extends string>(
   message: string,
   choices: { title: string; value: T }[],
-  opts: PromptOptions = {},
+  opts: Pick<PromptOptions, 'interactive'> = {},
 ): Promise<T | null> {
   if (opts.interactive === false) return null;
   const res = await prompts({ type: 'select', name: 'val', message, choices });

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import simpleGit, { SimpleGit } from 'simple-git';
+import { simpleGit, type SimpleGit } from 'simple-git';
 
 export function assertGitRepo(cwd: string = process.cwd()): void {
   const gitDir = path.join(cwd, '.git');

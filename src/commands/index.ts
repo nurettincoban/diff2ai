@@ -17,6 +17,15 @@ import chalk from 'chalk';
 import { registerReview } from './review.js';
 import { header, success } from '../ux/theme.js';
 
+function reportExcluded(excluded: string[]): void {
+  if (excluded.length === 0) return;
+  console.log(
+    chalk.dim(
+      `Excluded ${excluded.length} file(s) via exclude patterns (.aidiff.json / .aidiffignore).`,
+    ),
+  );
+}
+
 export function registerCommands(program: Command): void {
   registerDoctor(program);
   registerReview(program);
@@ -35,10 +44,10 @@ export function registerCommands(program: Command): void {
         const yes: boolean | undefined = globalOpts.yes;
 
         const { config, warnings } = loadConfig();
-        const ignore = loadIgnore();
+        const ignore = loadIgnore(process.cwd(), config.exclude);
         for (const w of warnings) console.warn(chalk.yellow(w));
 
-        const pre = await gatherPreflight(config.target);
+        const pre = await gatherPreflight();
         if (pre.isDirty && !opts.staged) {
           const proceed = await confirm(
             'Working tree is dirty. Continue diff against target anyway?',
@@ -62,7 +71,6 @@ export function registerCommands(program: Command): void {
             }));
             const picked = await select<string>('Select target branch', choices, {
               interactive,
-              yes,
             });
             if (picked) selectedTarget = (picked as string).replace(/^origin\//, '');
           } catch {
@@ -76,14 +84,17 @@ export function registerCommands(program: Command): void {
 
         const targetRef = opts.staged ? undefined : await resolveTargetRef(selectedTarget);
         const spin = ora('Generating diff...').start();
+        const excluded: string[] = [];
         const diff = await generateUnifiedDiff({
           staged: Boolean(opts.staged),
           targetRef,
           ignore,
+          onExclude: (f) => excluded.push(f),
         });
 
         if (!diff || diff.trim().length === 0) {
           spin.stop();
+          reportExcluded(excluded);
           console.log(chalk.gray('No changes detected.'));
           return;
         }
@@ -91,6 +102,7 @@ export function registerCommands(program: Command): void {
         const outDir = opts.out ?? path.join(process.cwd(), 'reviews');
         const filePath = writeDiffFile(opts.staged ? 'staged' : 'diff', diff, outDir);
         spin.stop();
+        reportExcluded(excluded);
         console.log(`Wrote diff: ${filePath}`);
         console.log(
           success([
@@ -130,7 +142,14 @@ export function registerCommands(program: Command): void {
       try {
         assertGitRepo();
         console.log(header('diff2ai show', `sha: ${sha}`));
-        const diff = await generateUnifiedDiff({ commitSha: sha, ignore: loadIgnore() });
+        const { config } = loadConfig();
+        const excluded: string[] = [];
+        const diff = await generateUnifiedDiff({
+          commitSha: sha,
+          ignore: loadIgnore(process.cwd(), config.exclude),
+          onExclude: (f) => excluded.push(f),
+        });
+        reportExcluded(excluded);
         if (!diff || diff.trim().length === 0) {
           console.log(chalk.gray('No changes detected.'));
           return;

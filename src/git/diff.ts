@@ -6,9 +6,8 @@ export type DiffOptions = {
   compareRef?: string; // e.g., pr-123 (local ref) or any commit-ish
   staged?: boolean;
   commitSha?: string;
-  includeGlobs?: string[];
-  excludeGlobs?: string[];
   ignore?: IgnoreFilter;
+  onExclude?: (file: string) => void; // called for each file dropped by the ignore filter
 };
 
 export async function generateUnifiedDiff(
@@ -19,12 +18,12 @@ export async function generateUnifiedDiff(
 
   if (options.commitSha) {
     const diff = await git.raw(['show', '-p', options.commitSha]);
-    return applyIgnoreFilter(diff, options.ignore);
+    return applyIgnoreFilter(diff, options.ignore, options.onExclude);
   }
 
   if (options.staged) {
     const diff = await git.diff(['--staged']);
-    return applyIgnoreFilter(diff, options.ignore);
+    return applyIgnoreFilter(diff, options.ignore, options.onExclude);
   }
 
   const targetRef = options.targetRef ?? 'origin/main';
@@ -32,15 +31,19 @@ export async function generateUnifiedDiff(
   if (options.compareRef) {
     const range = `${targetRef}...${options.compareRef}`;
     const diff = await git.diff([range]);
-    return applyIgnoreFilter(diff, options.ignore);
+    return applyIgnoreFilter(diff, options.ignore, options.onExclude);
   }
 
   const range = `${targetRef}...HEAD`;
   const diff = await git.diff([range]);
-  return applyIgnoreFilter(diff, options.ignore);
+  return applyIgnoreFilter(diff, options.ignore, options.onExclude);
 }
 
-function applyIgnoreFilter(unifiedDiff: string, ignore?: IgnoreFilter): string {
+function applyIgnoreFilter(
+  unifiedDiff: string,
+  ignore?: IgnoreFilter,
+  onExclude?: (file: string) => void,
+): string {
   if (!ignore) return unifiedDiff;
   if (!unifiedDiff || unifiedDiff.trim().length === 0) return unifiedDiff;
 
@@ -52,7 +55,7 @@ function applyIgnoreFilter(unifiedDiff: string, ignore?: IgnoreFilter): string {
   const flush = () => {
     if (buffer.length === 0) return;
     if (currentFile && ignore(currentFile)) {
-      // drop
+      onExclude?.(currentFile);
     } else {
       result.push(...buffer);
     }

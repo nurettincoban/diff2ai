@@ -1,8 +1,9 @@
 {
   "name": "diff2ai",
   "version": "0.2.1",
-  "description": "CLI tool to extract Git diffs and format AI-ready reviews",
+  "description": "Turn Git diffs into AI-ready code review prompts — local, fast, zero network calls",
   "license": "MIT",
+  "author": "Nurettin Coban",
   "type": "module",
   "files": [
     "dist",
@@ -23,6 +24,7 @@
     "start": "node dist/cli.js",
     "prepare": "npm run build",
     "test": "npm run build && vitest run",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
@@ -37,11 +39,20 @@
   "keywords": [
     "git",
     "diff",
+    "code-review",
+    "ai",
+    "llm",
+    "prompt",
     "review",
-    "cli"
+    "cli",
+    "claude",
+    "copilot",
+    "cursor"
   ],
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/node": "^24.3.1",
+    "@types/prompts": "^2.4.9",
     "@typescript-eslint/eslint-plugin": "^8.43.0",
     "@typescript-eslint/parser": "^8.43.0",
     "esbuild-plugin-copy": "^2.1.1",

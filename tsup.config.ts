@@ -1,5 +1,5 @@
 import { defineConfig } from 'tsup';
-import copy from 'esbuild-plugin-copy';
+import { copy } from 'esbuild-plugin-copy';
 import type { Plugin } from 'esbuild';
 
 export default defineConfig({
