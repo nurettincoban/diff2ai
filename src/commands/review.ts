@@ -16,9 +16,17 @@ import { simpleGit } from 'simple-git';
 import { gatherPreflight } from '../ux/preflight.js';
 import { resolveRunner } from '../runners/resolve.js';
 import type { ResolvedRunner } from '../runners/types.js';
-import { selectPersonas, type Persona } from '../orchestrator/personas.js';
-import { runSingleReview, runConsensusReview } from '../orchestrator/run.js';
+import {
+  selectPersonas,
+  personasBySlugs,
+  personaPool,
+  type Persona,
+} from '../orchestrator/personas.js';
+import { runSingleReview, runConsensusReview, type PostReviewAction } from '../orchestrator/run.js';
+import { estimateConsensusTokens, formatTokens } from '../orchestrator/estimate.js';
+import { approxTokens as approxPromptTokens } from '../chunker/chunk.js';
 import { copyToClipboard } from '../ux/clipboard.js';
+import { confirm, multiselect } from '../ux/prompt.js';
 
 function parseIterations(value: string): number {
   const n = Number.parseInt(value, 10);
@@ -26,6 +34,11 @@ function parseIterations(value: string): number {
     throw new InvalidArgumentError('--iterations must be an integer >= 2.');
   }
   return n;
+}
+
+function parseThen(value: string): PostReviewAction {
+  if (value === 'fix' || value === 'comment' || value === 'none') return value;
+  throw new InvalidArgumentError('--then must be one of: fix, comment, none.');
 }
 
 export function registerReview(program: Command): void {
@@ -63,6 +76,15 @@ export function registerReview(program: Command): void {
       'Run N reviewer passes with different personas, then a judge pass that validates and consolidates the findings (requires --run)',
       parseIterations,
     )
+    .option(
+      '--personas <slugs>',
+      'Comma-separated reviewer personas for the consensus run (e.g. correctness,security); overrides the interactive picker and --iterations count',
+    )
+    .option(
+      '--then <action>',
+      "After a consensus run: 'fix' (chat to apply fixes), 'comment' (chat to draft MR/PR comments, no code changes), 'none'. Default: ask in a TTY",
+      parseThen,
+    )
     .action(
       async (
         ref: string,
@@ -78,30 +100,69 @@ export function registerReview(program: Command): void {
           fetch?: boolean;
           run?: string;
           iterations?: number;
+          personas?: string;
+          then?: PostReviewAction;
         },
         cmd: Command,
       ) => {
         try {
           assertGitRepo();
           const { config } = loadConfig();
-
-          // Fail fast on runner/iteration problems before any git side effects
-          let runner: ResolvedRunner | undefined;
-          let personas: Persona[] | undefined;
-          if (opts.iterations && !opts.run) {
-            throw new Error(
-              '--iterations requires --run <runner> (the reviewer passes execute headlessly). Example: --run claude --iterations 5',
-            );
-          }
-          if (opts.run) {
-            runner = resolveRunner(opts.run, config.runners);
-            if (opts.iterations) personas = selectPersonas(opts.iterations, config.personas);
-          }
           const globalOpts =
             (
               cmd?.parent as unknown as { opts?: () => { interactive?: boolean; yes?: boolean } }
             )?.opts?.() ?? {};
           const yes: boolean | undefined = globalOpts.yes;
+          const interactiveMode =
+            globalOpts.interactive === false
+              ? false
+              : Boolean(process.stdout.isTTY && process.stdin.isTTY);
+
+          // Fail fast on runner/persona problems before any git side effects
+          let runner: ResolvedRunner | undefined;
+          let personas: Persona[] | undefined;
+          if ((opts.iterations || opts.personas) && !opts.run) {
+            throw new Error(
+              '--iterations/--personas require --run <runner> (the reviewer passes execute headlessly). Example: --run claude --iterations 5',
+            );
+          }
+          if (opts.run) {
+            runner = resolveRunner(opts.run, config.runners);
+            if (opts.personas) {
+              personas = personasBySlugs(opts.personas.split(','), config.personas);
+              if (opts.iterations && opts.iterations !== personas.length) {
+                console.log(
+                  chalk.dim(
+                    `Note: --personas selects ${personas.length} reviewer(s); ignoring --iterations ${opts.iterations}.`,
+                  ),
+                );
+              }
+            } else if (opts.iterations) {
+              if (interactiveMode) {
+                const pool = personaPool(config.personas);
+                const picked = await multiselect<string>(
+                  `Select reviewer personas (${opts.iterations} preselected)`,
+                  pool.map((p, idx) => ({
+                    title: `${p.name} (${p.slug})`,
+                    value: p.slug,
+                    selected: idx < (opts.iterations as number),
+                  })),
+                  { interactive: true },
+                );
+                personas =
+                  picked === null
+                    ? selectPersonas(opts.iterations, config.personas)
+                    : personasBySlugs(picked, config.personas);
+              } else {
+                personas = selectPersonas(opts.iterations, config.personas);
+              }
+            }
+            if (personas && personas.length < 2) {
+              throw new Error(
+                `A consensus run needs at least 2 reviewer personas (got ${personas.length}).`,
+              );
+            }
+          }
           const profile = resolveProfile(opts.profile, config.profile);
 
           console.log(
@@ -240,6 +301,20 @@ export function registerReview(program: Command): void {
             // Multi-reviewer consensus mode: the orchestrator owns all output
             // (artifacts live under reviews/run_*/), including --copy.
             if (runner && personas) {
+              const est = estimateConsensusTokens(md, diff, personas.length);
+              console.log(
+                chalk.dim(
+                  `Estimated cost: ${est.calls} AI calls (${personas.length} reviewers + judge), ~${formatTokens(est.inputTokens)} input tokens — model output/thinking and CLI overhead come on top.`,
+                ),
+              );
+              const proceed = await confirm(
+                `Run ${personas.length} reviewer passes + judge with "${runner.name}"?`,
+                { interactive: interactiveMode, yes, initial: true },
+              );
+              if (interactiveMode && !proceed) {
+                console.log(chalk.gray('Aborted before any AI calls.'));
+                return;
+              }
               await runConsensusReview({
                 runner,
                 personas,
@@ -248,6 +323,7 @@ export function registerReview(program: Command): void {
                 outDir,
                 isTTY,
                 copy: opts.copy,
+                then: opts.then,
               });
               return;
             }
@@ -313,6 +389,11 @@ export function registerReview(program: Command): void {
           );
 
           if (runner && singlePromptPath) {
+            console.log(
+              chalk.dim(
+                `Estimated cost: 1 AI call, ~${formatTokens(approxPromptTokens(clipboardContent))} input tokens — model output/thinking and CLI overhead come on top.`,
+              ),
+            );
             await runSingleReview(runner, singlePromptPath, { isTTY });
           }
         } catch (error: unknown) {

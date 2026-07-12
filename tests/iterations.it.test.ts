@@ -3,8 +3,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeAll } from 'vitest';
-import { selectPersonas, wrapWithPersona, BUILTIN_PERSONAS } from '../src/orchestrator/personas.js';
+import {
+  selectPersonas,
+  personasBySlugs,
+  wrapWithPersona,
+  BUILTIN_PERSONAS,
+} from '../src/orchestrator/personas.js';
 import { buildJudgePrompt, isValidJudgeOutput } from '../src/orchestrator/judge.js';
+import { estimateConsensusTokens } from '../src/orchestrator/estimate.js';
 import { resolveRunner, listRunnerNames } from '../src/runners/resolve.js';
 
 function run(cmd: string, cwd: string, env: Record<string, string> = {}) {
@@ -171,10 +177,94 @@ describe('review --iterations integration', () => {
       const out =
         String((e as { stdout?: string }).stdout ?? '') +
         String((e as { stderr?: string }).stderr ?? '');
-      expect(out).toMatch(/--iterations requires --run/);
+      expect(out).toMatch(/--iterations\/--personas require --run/);
     }
     expect(failed).toBe(true);
     expect(fs.existsSync(path.join(tmp, 'reviews'))).toBe(false);
+  });
+
+  it('prints a token estimate before running', () => {
+    const tmp = makeRepoWithBranch('diff2ai-iter-estimate-');
+    const out = run(
+      `node ${cli} review feature/iter --target main --run fake --iterations 2 2>&1`,
+      tmp,
+    );
+    expect(out).toMatch(/Estimated cost: 3 AI calls \(2 reviewers \+ judge\)/);
+    expect(out).toMatch(/input tokens/);
+  });
+
+  it('honors an explicit --personas selection (order kept, --iterations ignored)', () => {
+    const tmp = makeRepoWithBranch('diff2ai-iter-personas-');
+    const out = run(
+      `node ${cli} review feature/iter --target main --run fake --personas testing-edge-cases,security --iterations 4 2>&1`,
+      tmp,
+    );
+    expect(out).toMatch(/ignoring --iterations 4/);
+    expect(out).toMatch(/Consensus review ready/);
+    const runDir = runDirOf(tmp);
+    const prompts = fs
+      .readdirSync(runDir)
+      .filter((f) => /^iteration_\d+_.*\.prompt\.md$/.test(f))
+      .sort();
+    expect(prompts).toEqual([
+      'iteration_1_testing-edge-cases.prompt.md',
+      'iteration_2_security.prompt.md',
+    ]);
+  });
+
+  it('rejects unknown and too-few personas', () => {
+    const tmp = makeRepoWithBranch('diff2ai-iter-badpersona-');
+    let failed = false;
+    try {
+      run(
+        `node ${cli} review feature/iter --target main --run fake --personas nope,security 2>&1`,
+        tmp,
+      );
+    } catch (e: unknown) {
+      failed = true;
+      const out =
+        String((e as { stdout?: string }).stdout ?? '') +
+        String((e as { stderr?: string }).stderr ?? '');
+      expect(out).toMatch(/Unknown persona "nope"/);
+      expect(out).toMatch(/correctness/);
+    }
+    expect(failed).toBe(true);
+
+    failed = false;
+    try {
+      run(`node ${cli} review feature/iter --target main --run fake --personas security 2>&1`, tmp);
+    } catch (e: unknown) {
+      failed = true;
+      const out =
+        String((e as { stdout?: string }).stdout ?? '') +
+        String((e as { stderr?: string }).stderr ?? '');
+      expect(out).toMatch(/at least 2 reviewer personas/);
+    }
+    expect(failed).toBe(true);
+  });
+
+  it('rejects invalid --then values', () => {
+    const tmp = makeRepoWithBranch('diff2ai-iter-then-');
+    let failed = false;
+    try {
+      run(
+        `node ${cli} review feature/iter --target main --run fake --iterations 2 --then yolo 2>&1`,
+        tmp,
+      );
+    } catch (e: unknown) {
+      failed = true;
+      const out =
+        String((e as { stdout?: string }).stdout ?? '') +
+        String((e as { stderr?: string }).stderr ?? '');
+      expect(out).toMatch(/--then must be one of: fix, comment, none/);
+    }
+    expect(failed).toBe(true);
+    // valid value passes through (non-TTY: no chat is launched anyway)
+    const out = run(
+      `node ${cli} review feature/iter --target main --run fake --iterations 2 --then comment 2>&1`,
+      tmp,
+    );
+    expect(out).toMatch(/Consensus review ready/);
   });
 
   it('rejects invalid iteration counts', () => {
@@ -235,6 +325,22 @@ describe('orchestrator units', () => {
     expect(isValidJudgeOutput('No validated issues.')).toBe(true);
     expect(isValidJudgeOutput('Sure! Here is my analysis...')).toBe(false);
     expect(isValidJudgeOutput('')).toBe(false);
+  });
+
+  it('personasBySlugs rejects duplicates and keeps order', () => {
+    const picked = personasBySlugs(['security', 'correctness']);
+    expect(picked.map((p) => p.slug)).toEqual(['security', 'correctness']);
+    expect(() => personasBySlugs(['security', 'security'])).toThrow(/Duplicate persona/);
+  });
+
+  it('estimateConsensusTokens scales with reviewers and prompt size', () => {
+    const est = estimateConsensusTokens('x'.repeat(4000), 'y'.repeat(2000), 3);
+    expect(est.calls).toBe(4);
+    // 3 × (~1000 + header) + judge (~700 + 500 + 3×800)
+    expect(est.inputTokens).toBeGreaterThan(3 * 1000);
+    expect(
+      estimateConsensusTokens('x'.repeat(4000), 'y'.repeat(2000), 5).inputTokens,
+    ).toBeGreaterThan(est.inputTokens);
   });
 
   it('resolveRunner merges config over built-ins and validates', () => {

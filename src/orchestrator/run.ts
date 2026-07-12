@@ -9,9 +9,21 @@ import { wrapWithPersona, type Persona } from './personas.js';
 import { buildJudgePrompt, isValidJudgeOutput, type IterationReview } from './judge.js';
 import { success } from '../ux/theme.js';
 import { copyToClipboard } from '../ux/clipboard.js';
+import { select } from '../ux/prompt.js';
+import type { Ora } from 'ora';
 
 function timestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '');
+}
+
+// Keeps a long-running spinner honest by appending elapsed time to its label.
+function startTicker(spin: Ora, label: string): () => void {
+  const started = Date.now();
+  const tick = setInterval(() => {
+    const s = Math.floor((Date.now() - started) / 1000);
+    spin.text = `${label} (${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s)`;
+  }, 1000);
+  return () => clearInterval(tick);
 }
 
 function promptFileInstruction(promptPath: string): string {
@@ -26,6 +38,18 @@ function discussInstruction(consolidatedPath: string): string {
     `Then walk me through only the confirmed findings, starting with the highest severity, and apply fixes where I agree.`
   );
 }
+
+function commentInstruction(consolidatedPath: string, runDir: string): string {
+  return (
+    `Read the file ${consolidatedPath}. It contains a multi-reviewer code review of changes I am reviewing — I may not be the author, so do NOT modify any source files. ` +
+    `The reviewers only saw the diff, not the codebase, so some findings may be false positives. ` +
+    `First verify every finding against the actual code and silently drop confirmed false positives (one-line mention each at the end, at most). ` +
+    `Then turn the confirmed findings into concise, constructive MR/PR review comments — one per finding, with file and line references, ready to paste — and write them to ${runDir}/comments.md. ` +
+    `If I ask, help me post them with a CLI like gh or glab.`
+  );
+}
+
+export type PostReviewAction = 'fix' | 'comment' | 'none';
 
 // Single pass: interactive chat in a TTY, headless (response saved) otherwise.
 export async function runSingleReview(
@@ -44,8 +68,10 @@ export async function runSingleReview(
     chalk.yellow(`stdout is not a TTY; running "${runner.name}" headless and saving the response.`),
   );
   const spin = ora(`Running ${runner.name}...`).start();
+  const stopTicker = startTicker(spin, `Running ${runner.name}...`);
   const prompt = fs.readFileSync(promptPath, 'utf-8');
   const res = await runHeadless(runner, prompt, { promptFile: promptPath });
+  stopTicker();
   if (!res.ok) {
     spin.fail(chalk.red(`${runner.name} failed`));
     throw new Error(res.error);
@@ -64,6 +90,7 @@ export type ConsensusOptions = {
   outDir: string;
   isTTY: boolean;
   copy?: boolean;
+  then?: PostReviewAction; // post-consolidation action; undefined = ask in a TTY
 };
 
 // Multi-reviewer consensus: N persona passes, then a judge pass that validates
@@ -72,6 +99,7 @@ export async function runConsensusReview(o: ConsensusOptions): Promise<void> {
   const runDir = path.join(o.outDir, `run_${timestamp()}`);
   ensureDir(runDir);
   fs.writeFileSync(path.join(runDir, 'prompt.md'), o.renderedPrompt, 'utf-8');
+  console.log(chalk.dim(`Artifacts land in ${runDir} as each pass completes.`));
 
   const reviews: IterationReview[] = [];
   const failed: { persona: Persona; error: string }[] = [];
@@ -84,8 +112,11 @@ export async function runConsensusReview(o: ConsensusOptions): Promise<void> {
     const iterationPromptPath = path.join(runDir, `${base}.prompt.md`);
     fs.writeFileSync(iterationPromptPath, iterationPrompt, 'utf-8');
 
-    const spin = ora(`Reviewer ${i + 1}/${total} — ${persona.name}...`).start();
+    const label = `Reviewer ${i + 1}/${total} — ${persona.name}...`;
+    const spin = ora(label).start();
+    const stopTicker = startTicker(spin, label);
     const res = await runHeadless(o.runner, iterationPrompt, { promptFile: iterationPromptPath });
+    stopTicker();
     if (res.ok) {
       fs.writeFileSync(path.join(runDir, `${base}.response.md`), res.output, 'utf-8');
       reviews.push({ persona, output: res.output });
@@ -107,8 +138,11 @@ export async function runConsensusReview(o: ConsensusOptions): Promise<void> {
   const judgePromptPath = path.join(runDir, 'judge.prompt.md');
   fs.writeFileSync(judgePromptPath, judgePrompt, 'utf-8');
 
-  const spin = ora(`Judge — validating ${reviews.length} reviews against the diff...`).start();
+  const judgeLabel = `Judge — validating ${reviews.length} reviews against the diff...`;
+  const spin = ora(judgeLabel).start();
+  const stopJudgeTicker = startTicker(spin, judgeLabel);
   const judgeRes = await runHeadless(o.runner, judgePrompt, { promptFile: judgePromptPath });
+  stopJudgeTicker();
   if (!judgeRes.ok || !isValidJudgeOutput(judgeRes.output)) {
     spin.fail(chalk.red('Judge pass failed'));
     const reason = judgeRes.ok ? 'output did not match the expected review schema' : judgeRes.error;
@@ -151,15 +185,42 @@ export async function runConsensusReview(o: ConsensusOptions): Promise<void> {
     ),
   );
 
-  if (o.isTTY) {
-    console.log(chalk.dim(`Launching ${o.runner.name} to walk through the findings...`));
-    const res = await runInteractive(o.runner, discussInstruction(consolidatedPath));
-    if (!res.ok) {
-      console.warn(
-        chalk.yellow(
-          `Could not launch ${o.runner.name} chat (${res.error}). The review is at ${consolidatedPath}.`,
-        ),
-      );
-    }
+  if (!o.isTTY) return;
+
+  // Post-consolidation action: --then wins; otherwise ask. Not every review
+  // should end in fixes — reviewing someone else's MR ends in comments.
+  let action: PostReviewAction | undefined = o.then;
+  if (!action) {
+    const picked = await select<PostReviewAction>(
+      'Consensus review done — what next?',
+      [
+        { title: 'Walk through findings and apply fixes', value: 'fix' },
+        { title: 'Draft MR/PR review comments (no code changes)', value: 'comment' },
+        { title: 'Nothing — just keep the files', value: 'none' },
+      ],
+      { interactive: true },
+    );
+    action = picked ?? 'none';
+  }
+  if (action === 'none') return;
+
+  const instruction =
+    action === 'fix'
+      ? discussInstruction(consolidatedPath)
+      : commentInstruction(consolidatedPath, runDir);
+  console.log(
+    chalk.dim(
+      action === 'fix'
+        ? `Launching ${o.runner.name} to walk through the findings...`
+        : `Launching ${o.runner.name} to draft review comments...`,
+    ),
+  );
+  const res = await runInteractive(o.runner, instruction);
+  if (!res.ok) {
+    console.warn(
+      chalk.yellow(
+        `Could not launch ${o.runner.name} chat (${res.error}). The review is at ${consolidatedPath}.`,
+      ),
+    );
   }
 }

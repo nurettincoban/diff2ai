@@ -44,9 +44,9 @@ function slugify(key: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-// Returns the first `n` personas: built-ins first, then any user-defined ones
-// from .aidiff.json `personas` (which can also override a built-in slug).
-export function selectPersonas(n: number, configPersonas?: Record<string, string>): Persona[] {
+// Built-ins first, then user-defined personas from .aidiff.json `personas`
+// (which can also override a built-in slug).
+export function personaPool(configPersonas?: Record<string, string>): Persona[] {
   const pool: Persona[] = [...BUILTIN_PERSONAS];
   for (const [key, instructions] of Object.entries(configPersonas ?? {})) {
     if (typeof instructions !== 'string' || instructions.trim().length === 0) continue;
@@ -56,12 +56,42 @@ export function selectPersonas(n: number, configPersonas?: Record<string, string
     if (existing >= 0) pool[existing] = persona;
     else pool.push(persona);
   }
+  return pool;
+}
+
+// Returns the first `n` personas from the pool.
+export function selectPersonas(n: number, configPersonas?: Record<string, string>): Persona[] {
+  const pool = personaPool(configPersonas);
   if (n > pool.length) {
     throw new Error(
       `--iterations ${n} exceeds the available reviewer personas (${pool.length}). Add more under "personas" in .aidiff.json.`,
     );
   }
   return pool.slice(0, n);
+}
+
+// Resolves an explicit persona selection (e.g. from --personas or the
+// interactive picker) against the pool, preserving the given order.
+export function personasBySlugs(
+  slugs: string[],
+  configPersonas?: Record<string, string>,
+): Persona[] {
+  const pool = personaPool(configPersonas);
+  const seen = new Set<string>();
+  return slugs.map((raw) => {
+    const slug = raw.trim();
+    if (seen.has(slug)) {
+      throw new Error(`Duplicate persona "${slug}" in selection.`);
+    }
+    seen.add(slug);
+    const persona = pool.find((p) => p.slug === slug);
+    if (!persona) {
+      throw new Error(
+        `Unknown persona "${slug}". Available: ${pool.map((p) => p.slug).join(', ')}. Add custom ones under "personas" in .aidiff.json.`,
+      );
+    }
+    return persona;
+  });
 }
 
 // Prepends a persona header to the fully rendered prompt. The rendered prompt
