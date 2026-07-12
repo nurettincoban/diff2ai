@@ -134,6 +134,7 @@ If the diff exceeds the profile's token budget, diff2ai automatically writes `ba
 ### The rest
 
 ```bash
+diff2ai post <review.md>       # post findings to a GitLab MR via glab (see below)
 diff2ai diff                   # working tree vs target → reviews/diff_<timestamp>.diff
 diff2ai diff --staged          # staged changes → reviews/staged_<timestamp>.diff
 diff2ai show <sha>             # one commit → reviews/commit_<sha>_<timestamp>.diff
@@ -144,6 +145,30 @@ diff2ai doctor                 # diagnose repo state (dirty tree, divergence, st
 ```
 
 Global flags: `--no-interactive` (disable prompts, for CI/non-TTY) and `--yes` (auto-confirm safe prompts).
+
+### `post <review.md>` — comment on a GitLab MR
+
+Turns a diff2ai review (a consensus `consolidated.md`, a headless `*.response.md`, or anything in the issue-block schema) into one well-formatted MR comment — severity badges, consensus scores, collapsible findings with proposed fixes — and posts it through **your authenticated [`glab`](https://gitlab.com/gitlab-org/cli) CLI**. diff2ai itself still makes zero network calls.
+
+```bash
+diff2ai post reviews/run_*/consolidated.md --dry-run        # preview the comment
+diff2ai post reviews/run_*/consolidated.md                  # post to the current branch's MR (asks first)
+diff2ai post consolidated.md --mr 123 --min-severity HIGH   # specific MR, drop LOW/INFO noise
+```
+
+| Flag                   | Effect                                                     |
+| ---------------------- | ---------------------------------------------------------- |
+| `--mr <iid>`           | Target MR IID or branch (default: the current branch's MR) |
+| `--min-severity <sev>` | Only post findings at or above this severity               |
+| `--dry-run`            | Print the comment instead of posting                       |
+
+Posting always requires consent: interactive mode asks, non-interactive mode requires an explicit `--yes`. The full GitLab flow, end to end:
+
+```bash
+git fetch origin main
+diff2ai review feature/mr-branch --target main --run claude --iterations 3 --then none --yes
+diff2ai post reviews/run_*/consolidated.md --mr 123 --min-severity MEDIUM --yes
+```
 
 ## 🧱 Templates
 

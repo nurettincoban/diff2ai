@@ -101,6 +101,34 @@ export async function runHeadless(
   });
 }
 
+export type CommandCapture =
+  | { ok: true; stdout: string; stderr: string }
+  | { ok: false; notFound: boolean; code: number | null; stdout: string; stderr: string };
+
+// Generic capture-output spawn for non-runner CLIs (e.g. glab). Kept here so
+// this module stays the only one that touches child_process.
+export async function runCommandCapture(command: string, args: string[]): Promise<CommandCapture> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    child.stdout.on('data', (d: Buffer) => (stdout += d.toString('utf-8')));
+    child.stderr.on('data', (d: Buffer) => (stderr += d.toString('utf-8')));
+    child.on('error', (err: NodeJS.ErrnoException) => {
+      if (settled) return;
+      settled = true;
+      resolve({ ok: false, notFound: err.code === 'ENOENT', code: null, stdout, stderr });
+    });
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      if (code === 0) resolve({ ok: true, stdout, stderr });
+      else resolve({ ok: false, notFound: false, code, stdout, stderr });
+    });
+  });
+}
+
 // Launches the runner as an interactive session attached to the user's
 // terminal, seeded with a short instruction (never the full prompt — argv
 // size limits make that unsafe for large diffs).

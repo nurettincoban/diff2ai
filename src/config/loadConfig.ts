@@ -11,6 +11,7 @@ export type AidiffConfig = {
   templatesDir?: string;
   runners?: Record<string, RunnerConfig>;
   personas?: Record<string, string>;
+  gitlab?: { command?: string; args?: string[] }; // glab CLI override for `post`
 };
 
 const DEFAULT_CONFIG: AidiffConfig = {
@@ -50,6 +51,10 @@ export function loadConfig(cwd: string = process.cwd()): {
       personas:
         parsed.personas && typeof parsed.personas === 'object' && !Array.isArray(parsed.personas)
           ? parsed.personas
+          : undefined,
+      gitlab:
+        parsed.gitlab && typeof parsed.gitlab === 'object' && !Array.isArray(parsed.gitlab)
+          ? parsed.gitlab
           : undefined,
     };
     return { config: merged, warnings };

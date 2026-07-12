@@ -15,6 +15,7 @@ import { registerDoctor } from './doctor.js';
 import ora from 'ora';
 import chalk from 'chalk';
 import { registerReview } from './review.js';
+import { registerPost } from './post.js';
 import { header, success } from '../ux/theme.js';
 
 function reportExcluded(excluded: string[]): void {
@@ -29,6 +30,7 @@ function reportExcluded(excluded: string[]): void {
 export function registerCommands(program: Command): void {
   registerDoctor(program);
   registerReview(program);
+  registerPost(program);
 
   program
     .command('diff')

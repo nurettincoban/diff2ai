@@ -181,6 +181,8 @@ export async function runConsensusReview(o: ConsensusOptions): Promise<void> {
         chalk.dim(`artifacts: ${runDir}`),
         chalk.dim(`final:     ${consolidatedPath}`),
         copiedLine,
+        '',
+        chalk.dim(`GitLab MR: diff2ai post ${consolidatedPath} --dry-run`),
       ].filter(Boolean),
     ),
   );
