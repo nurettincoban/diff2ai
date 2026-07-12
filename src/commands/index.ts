@@ -16,6 +16,7 @@ import ora from 'ora';
 import chalk from 'chalk';
 import { registerReview } from './review.js';
 import { registerPost } from './post.js';
+import { registerClean } from './clean.js';
 import { header, success } from '../ux/theme.js';
 
 function reportExcluded(excluded: string[]): void {
@@ -31,6 +32,7 @@ export function registerCommands(program: Command): void {
   registerDoctor(program);
   registerReview(program);
   registerPost(program);
+  registerClean(program);
 
   program
     .command('diff')

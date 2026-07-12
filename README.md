@@ -135,6 +135,7 @@ If the diff exceeds the profile's token budget, diff2ai automatically writes `ba
 
 ```bash
 diff2ai post <review.md>       # post findings to a GitLab MR via glab (see below)
+diff2ai clean                  # delete generated artifacts in reviews/ (--keep 3, --dry-run)
 diff2ai diff                   # working tree vs target → reviews/diff_<timestamp>.diff
 diff2ai diff --staged          # staged changes → reviews/staged_<timestamp>.diff
 diff2ai show <sha>             # one commit → reviews/commit_<sha>_<timestamp>.diff
@@ -247,7 +248,7 @@ Chunking profiles (approximate token budgets): `claude-large` ≈ 150k • `gene
 
 ## 🗂️ Output
 
-Everything is written to `reviews/` by default (override with `--out`). Add `reviews/` to your `.gitignore`.
+Everything is written to `reviews/` by default (override with `--out`). Add `reviews/` to your `.gitignore`. When artifacts pile up, `diff2ai clean` deletes them (only diff2ai-generated patterns — your own files in `reviews/` are never touched); use `--keep 3` to retain the newest runs and `--dry-run` to preview.
 
 | File              | What it is                                                                                                                 |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
