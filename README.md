@@ -79,13 +79,26 @@ One AI review can hallucinate or miss things. `--iterations 5` runs **five indep
 diff2ai review feature/payments --run claude --iterations 5
 ```
 
-1. **You pick the reviewers.** In a terminal, a multi-select opens with the personas (**Bug Hunter**, **Security Auditor**, **Performance Engineer**, **API & Maintainability Reviewer**, **Test Engineer**, plus your own from `personas` config) — not every change needs a security deep-dive. Script it with `--personas correctness,performance`.
+1. **You pick the reviewers.** In a terminal, a multi-select opens with the personas — not every change needs a security deep-dive. Script it with `--personas correctness,performance`.
+
+   | Persona (slug)                                         | Focus                                           |
+   | ------------------------------------------------------ | ----------------------------------------------- |
+   | Bug Hunter (`correctness`)                             | logic errors, edge cases, broken error handling |
+   | Security Auditor (`security`)                          | injection, authz/authn, secrets, unsafe input   |
+   | Performance Engineer (`performance`)                   | complexity, N+1, leaks, blocking I/O            |
+   | API & Maintainability Reviewer (`api-maintainability`) | interfaces, breaking changes, coupling          |
+   | Test Engineer (`testing-edge-cases`)                   | missing coverage, brittle tests, boundaries     |
+
+   Add your own (or override a built-in) under `personas` in `.aidiff.json`.
+
 2. **You approve the cost first.** Before any AI call, diff2ai prints the estimated input tokens and number of calls (based on your actual diff) and asks to proceed (`--yes` skips).
 3. Each selected persona reviews the same diff in isolation, with a live elapsed-time indicator per pass and artifacts appearing under `reviews/run_*/` as each one finishes.
 4. The judge receives the raw diff (ground truth) plus all reviews and must **validate every finding against the diff** — findings referencing files or code not in the diff are discarded — then deduplicate and score consensus.
 5. You get one consolidated review where every issue carries a `Consensus: k/N reviewers` line, sorted by severity and agreement. Then you choose (or preset with `--then`): **fix** — a chat opens to verify findings against the codebase and apply fixes; **comment** — a chat drafts ready-to-paste MR/PR review comments into `comments.md` without touching code (handy when reviewing someone else's MR); **none** — just keep the files.
 
-All artifacts are kept under `reviews/run_<timestamp>/` (per-persona prompts and responses, `judge.prompt.md`, `consolidated.md`), so you can audit exactly what each reviewer said or re-run the judge by hand. If a pass fails, the run continues as long as at least two reviewers succeeded (the consolidated review notes who dropped out).
+All artifacts are kept under `reviews/run_<timestamp>/` (per-persona prompts and responses, `judge.prompt.md`, `consolidated.md`, and `comments.md` in comment mode), so you can audit exactly what each reviewer said or re-run the judge by hand. If a pass fails, the run continues as long as at least two reviewers succeeded (the consolidated review notes who dropped out).
+
+**Cost & duration, honestly:** every reviewer is a full model invocation over your whole diff, run sequentially, plus the judge — a 5-persona run on a mid-sized diff takes tens of minutes and a meaningful chunk of a subscription rate window. That's why the estimate + confirmation exists. To spend less: pick fewer/targeted personas (3 is usually the sweet spot), tighten `exclude` patterns so noise files never reach the AI, or use plain `--run` without iterations for everyday changes and save consensus mode for risky MRs.
 
 ## 🧰 Commands
 
@@ -211,14 +224,14 @@ Chunking profiles (approximate token budgets): `claude-large` ≈ 150k • `gene
 
 Everything is written to `reviews/` by default (override with `--out`). Add `reviews/` to your `.gitignore`.
 
-| File              | What it is                                                                               |
-| ----------------- | ---------------------------------------------------------------------------------------- |
-| `review_*.md`     | AI-ready prompt (paste into your AI tool)                                                |
-| `*.response.md`   | AI review output from headless `--run`                                                   |
-| `run_*/`          | Multi-reviewer runs: per-persona prompts/responses, `judge.prompt.md`, `consolidated.md` |
-| `*.diff`          | Raw unified diff (`diff`/`show`; `review --save-diff`)                                   |
-| `batch_*.md`      | Chunked prompts for large diffs                                                          |
-| `review_index.md` | Instructions for merging batch results                                                   |
+| File              | What it is                                                                                                                 |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `review_*.md`     | AI-ready prompt (paste into your AI tool)                                                                                  |
+| `*.response.md`   | AI review output from headless `--run`                                                                                     |
+| `run_*/`          | Multi-reviewer runs: per-persona prompts/responses, `judge.prompt.md`, `consolidated.md`, `comments.md` (`--then comment`) |
+| `*.diff`          | Raw unified diff (`diff`/`show`; `review --save-diff`)                                                                     |
+| `batch_*.md`      | Chunked prompts for large diffs                                                                                            |
+| `review_index.md` | Instructions for merging batch results                                                                                     |
 
 ## 🛡️ Safety
 

@@ -38,8 +38,10 @@ node /path/to/diff2ai/dist/cli.js review my-branch --target main
 - `src/chunker/` — token-budget profiles and diff chunking for large changes
 - `src/formatters/` — diff/batch file writing and template rendering
 - `src/config/` — `.aidiff.json` loading and `.aidiffignore` / exclude patterns
+- `src/runners/` — AI runner abstraction for `review --run` (built-in `claude`, custom via config); `execute.ts` is the only module that spawns child processes
+- `src/orchestrator/` — `--iterations` consensus flow: personas, judge prompt, run orchestration, token estimate
 - `templates/` — packaged review templates (copied into `dist/templates` at build)
-- `tests/` — vitest suites; most are integration tests that run the built CLI against throwaway git repos in `os.tmpdir()`
+- `tests/` — vitest suites; most are integration tests that run the built CLI against throwaway git repos in `os.tmpdir()`. AI runners are stubbed with `tests/fixtures/fake-runner.mjs` — never invoke a real AI in tests
 
 ## Guidelines
 
