@@ -101,6 +101,16 @@ export async function runHeadless(
   });
 }
 
+// Runs a command attached to the user's terminal and resolves with its exit
+// code (null when the process couldn't start).
+export async function runCommandInherit(command: string, args: string[]): Promise<number | null> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { stdio: 'inherit' });
+    child.on('error', () => resolve(null));
+    child.on('close', (code) => resolve(code ?? 0));
+  });
+}
+
 export type CommandCapture =
   | { ok: true; stdout: string; stderr: string }
   | { ok: false; notFound: boolean; code: number | null; stdout: string; stderr: string };

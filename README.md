@@ -38,6 +38,9 @@ npx diff2ai --help      # or run without installing
 ## 🚀 Quickstart
 
 ```bash
+# No flags to remember: guided wizard (branch → target → reviewers → outcome)
+diff2ai interactive     # or: diff2ai i
+
 # One command: diff your branch vs main and open a Claude chat reviewing it
 diff2ai review feature/my-branch --target main --run claude
 
@@ -134,6 +137,7 @@ If the diff exceeds the profile's token budget, diff2ai automatically writes `ba
 ### The rest
 
 ```bash
+diff2ai interactive            # guided wizard: branch → target → mode → personas → outcome
 diff2ai post <review.md>       # post findings to a GitLab MR via glab (see below)
 diff2ai clean                  # delete generated artifacts in reviews/ (--keep 3, --dry-run)
 diff2ai diff                   # working tree vs target → reviews/diff_<timestamp>.diff

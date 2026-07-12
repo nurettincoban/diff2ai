@@ -25,7 +25,7 @@ export async function confirm(
 export async function multiselect<T extends string>(
   message: string,
   choices: { title: string; value: T; selected?: boolean }[],
-  opts: Pick<PromptOptions, 'interactive'> = {},
+  opts: Pick<PromptOptions, 'interactive'> & { min?: number } = {},
 ): Promise<T[] | null> {
   if (opts.interactive === false) return null;
   const res = await prompts({
@@ -33,6 +33,7 @@ export async function multiselect<T extends string>(
     name: 'vals',
     message,
     choices,
+    min: opts.min,
     instructions: false,
     hint: 'space toggles, enter confirms',
   } as unknown as PromptObject);

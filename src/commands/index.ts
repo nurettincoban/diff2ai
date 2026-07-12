@@ -17,6 +17,7 @@ import chalk from 'chalk';
 import { registerReview } from './review.js';
 import { registerPost } from './post.js';
 import { registerClean } from './clean.js';
+import { registerInteractive } from './interactive.js';
 import { header, success } from '../ux/theme.js';
 
 function reportExcluded(excluded: string[]): void {
@@ -33,6 +34,7 @@ export function registerCommands(program: Command): void {
   registerReview(program);
   registerPost(program);
   registerClean(program);
+  registerInteractive(program);
 
   program
     .command('diff')
