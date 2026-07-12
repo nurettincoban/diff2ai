@@ -82,7 +82,7 @@ One AI review can hallucinate or miss things. `--iterations 5` runs **five indep
 diff2ai review feature/payments --run claude --iterations 5
 ```
 
-1. **Reviewers are suggested from your diff, and you approve.** diff2ai scans the changed files locally (zero AI calls): auth/SQL code suggests the Security Auditor, route/schema files the API reviewer, code changes without test changes the Test Engineer. In a terminal the picker opens with the suggested personas preselected and labeled with _why_; `--personas auto` takes the suggestions directly, and `--personas correctness,security` stays fully manual.
+1. **Reviewers are suggested, and you approve.** `--personas auto` asks the AI to pick reviewers from a tiny summary of the change (file list + stats + a capped sample — one small call, not a full diff read), falling back to free local heuristics if that fails. In a terminal, the picker opens with heuristic suggestions preselected and labeled with _why_ (auth/SQL → Security Auditor, code without test changes → Test Engineer, ...). `--personas correctness,security` stays fully manual.
 
    | Persona (slug)                                         | Focus                                           |
    | ------------------------------------------------------ | ----------------------------------------------- |
@@ -130,7 +130,7 @@ diff2ai review feature/payments --template security
 | `--fetch`                 | `git fetch origin <target>` and `<ref>` first                                                                     |
 | `--run <runner>`          | Execute the review with an AI runner (`claude` built in; custom runners via config)                               |
 | `--iterations <n>`        | Multi-reviewer consensus mode: n persona passes + validating judge (requires `--run`, n ≥ 2)                      |
-| `--personas <slugs>`      | Reviewer personas: comma-separated slugs, or `auto` to use the diff-signal suggestions; skips the picker          |
+| `--personas <slugs>`      | Reviewer personas: comma-separated slugs, or `auto` = AI picks from a change summary (heuristics fallback)        |
 | `--then <action>`         | After consensus: `fix` (apply-fixes chat), `comment` (draft MR/PR comments, no code changes), `none`              |
 
 If the diff exceeds the profile's token budget, diff2ai automatically writes `batch_*.md` files plus a `review_index.md` with merge instructions (with `--copy`, batch 1 goes to the clipboard). `--run` needs the whole diff in one prompt, so oversized diffs are refused with a hint to use `--profile claude-large`.

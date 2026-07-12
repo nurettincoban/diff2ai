@@ -22,6 +22,11 @@ process.stdin.on('end', () => {
   }
 
   const respond = () => {
+    if (input.includes('Output ONLY persona selections')) {
+      // AI persona-selection mode: deterministic pick for tests.
+      process.stdout.write('security: canned AI selection\ncorrectness: canned AI selection\n');
+      process.exit(0);
+    }
     if (input.includes('# Consolidation and Validation Instructions')) {
       // Judge mode: count the review sections actually present in the prompt
       // so tests can assert the judge saw every successful iteration.

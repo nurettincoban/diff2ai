@@ -5,6 +5,8 @@ import path from 'node:path';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { suggestPersonas, topNPersonaSlugs, changedFiles } from '../src/orchestrator/signals.js';
 import { buildDiffIndex, verifyFindings } from '../src/orchestrator/verify.js';
+import { diffSummary, buildSelectionPrompt, parseSelection } from '../src/orchestrator/aiSelect.js';
+import { BUILTIN_PERSONAS } from '../src/orchestrator/personas.js';
 import { parseFindings } from '../src/formatters/findings.js';
 
 function run(cmd: string, cwd: string, env: Record<string, string> = {}) {
@@ -79,6 +81,35 @@ describe('persona signal suggestions', () => {
   });
 });
 
+describe('AI persona selection units', () => {
+  it('diffSummary reports per-file counts and caps the added-line sample', () => {
+    const summary = diffSummary(
+      fakeDiff([{ path: 'src/a.ts', added: Array.from({ length: 100 }, (_, i) => `line ${i}`) }]),
+    );
+    expect(summary).toContain('- src/a.ts (+100/-0)');
+    // sample capped at 50 lines
+    expect((summary.match(/^line \d+$/gm) ?? []).length).toBeLessThanOrEqual(50);
+  });
+
+  it('buildSelectionPrompt embeds the catalog and the output contract', () => {
+    const prompt = buildSelectionPrompt(
+      fakeDiff([{ path: 'a.ts', added: ['x'] }]),
+      BUILTIN_PERSONAS,
+    );
+    expect(prompt).toContain('- correctness: Bug Hunter');
+    expect(prompt).toContain('Output ONLY persona selections');
+  });
+
+  it('parseSelection validates slugs, dedupes, and rejects unusable output', () => {
+    const parsed = parseSelection(
+      'security: touches auth\n- correctness: logic risk\nsecurity: dup\nnope: invalid\nchatter line',
+      BUILTIN_PERSONAS,
+    );
+    expect(parsed.map((s) => s.slug)).toEqual(['security', 'correctness']);
+    expect(parseSelection('I think you should use all reviewers!', BUILTIN_PERSONAS)).toEqual([]);
+  });
+});
+
 describe('post-judge verification', () => {
   const diff = fakeDiff([{ path: 'src/auth.js', added: ['line1', 'line2', 'line3'] }]);
 
@@ -141,15 +172,15 @@ describe('verification gate + auto personas integration', () => {
     return tmp;
   }
 
-  it('--personas auto picks signal-driven reviewers and prints reasons', () => {
+  it('--personas auto asks the AI and uses its selection', () => {
     const tmp = makeRepo('diff2ai-auto-');
     const out = run(
       `node ${cli} review feature/sig --target main --run fake --personas auto 2>&1`,
       tmp,
     );
-    expect(out).toMatch(/Reviewer selection \(from diff signals\)/);
-    expect(out).toMatch(/security — touches auth\.js/);
-    expect(out).toMatch(/testing-edge-cases — no test changes/);
+    expect(out).toMatch(/Reviewers selected by AI/);
+    expect(out).toMatch(/Reviewer selection \(AI-selected\)/);
+    expect(out).toMatch(/security — canned AI selection/);
     expect(out).toMatch(/Consensus review ready/);
 
     const reviewsDir = path.join(tmp, 'reviews');
@@ -157,8 +188,24 @@ describe('verification gate + auto personas integration', () => {
     const prompts = fs
       .readdirSync(path.join(reviewsDir, runDir))
       .filter((f) => /\.prompt\.md$/.test(f) && f.startsWith('iteration_'));
-    expect(prompts.some((f) => f.includes('security'))).toBe(true);
-    expect(prompts.some((f) => f.includes('correctness'))).toBe(true);
+    expect(prompts).toEqual([
+      'iteration_1_security.prompt.md',
+      'iteration_2_correctness.prompt.md',
+    ]);
+  });
+
+  it('--personas auto falls back to heuristics when the AI selection fails', () => {
+    const tmp = makeRepo('diff2ai-auto-fallback-');
+    const out = run(
+      `node ${cli} review feature/sig --target main --run fake --personas auto 2>&1`,
+      tmp,
+      { FAKE_RUNNER_FAIL_MATCH: 'Output ONLY persona selections' },
+    );
+    expect(out).toMatch(/AI selection unavailable — using local heuristics/);
+    expect(out).toMatch(/Reviewer selection \(from diff signals\)/);
+    expect(out).toMatch(/security — touches auth\.js/);
+    expect(out).toMatch(/testing-edge-cases — no test changes/);
+    expect(out).toMatch(/Consensus review ready/);
   });
 
   it('demotes judge-hallucinated findings and post skips them', () => {

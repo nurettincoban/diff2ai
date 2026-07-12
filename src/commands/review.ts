@@ -18,6 +18,7 @@ import { resolveRunner } from '../runners/resolve.js';
 import type { ResolvedRunner } from '../runners/types.js';
 import { personasBySlugs, personaPool, type Persona } from '../orchestrator/personas.js';
 import { suggestPersonas, topNPersonaSlugs } from '../orchestrator/signals.js';
+import { aiSuggestPersonas } from '../orchestrator/aiSelect.js';
 import { runSingleReview, runConsensusReview, type PostReviewAction } from '../orchestrator/run.js';
 import { estimateConsensusTokens, formatTokens } from '../orchestrator/estimate.js';
 import { approxTokens as approxPromptTokens } from '../chunker/chunk.js';
@@ -278,17 +279,29 @@ export function registerReview(program: Command): void {
             const md = renderTemplate(templateSpec, diff, renderOpts);
             clipboardContent = md;
 
-            // Diff-dependent persona selection: signals from the diff drive
-            // --personas auto and preselect the interactive picker. The user
-            // always approves the run (picker and/or the cost confirm below).
+            // Diff-dependent persona selection: --personas auto asks the AI
+            // with a tiny change summary (heuristics as fallback); the picker
+            // preselects free heuristic suggestions. The user always approves
+            // the run (picker and/or the cost confirm below).
             if (runner && consensusRequested && !personas) {
               const suggestions = suggestPersonas(diff);
               const pool = personaPool(config.personas);
               const reasonOf = new Map(suggestions.map((s) => [s.slug, s.reason]));
+              let active = suggestions;
+              let selectionLabel = 'from diff signals';
 
               if (opts.personas === 'auto') {
+                const spin = ora('Selecting reviewers (one small AI call)...').start();
+                const ai = await aiSuggestPersonas(runner, diff, pool);
+                if (ai) {
+                  active = ai;
+                  selectionLabel = 'AI-selected';
+                  spin.succeed(chalk.green('Reviewers selected by AI'));
+                } else {
+                  spin.warn(chalk.yellow('AI selection unavailable — using local heuristics'));
+                }
                 personas = personasBySlugs(
-                  suggestions.map((s) => s.slug),
+                  active.map((s) => s.slug),
                   config.personas,
                 );
               } else {
@@ -326,9 +339,9 @@ export function registerReview(program: Command): void {
                 );
               }
               const chosen = new Set(personas.map((p) => p.slug));
-              const shownReasons = suggestions.filter((s) => chosen.has(s.slug));
+              const shownReasons = active.filter((s) => chosen.has(s.slug));
               if (shownReasons.length > 0) {
-                console.log(chalk.dim('Reviewer selection (from diff signals):'));
+                console.log(chalk.dim(`Reviewer selection (${selectionLabel}):`));
                 for (const s of shownReasons) {
                   console.log(chalk.dim(`  • ${s.slug} — ${s.reason}`));
                 }

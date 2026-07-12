@@ -137,7 +137,7 @@ export function registerInteractive(program: Command): void {
             'Reviewer personas',
             [
               {
-                title: 'Auto — suggest from what the diff touches (shown before the run)',
+                title: 'Auto — AI picks from a summary of the change (heuristics fallback)',
                 value: 'auto',
               },
               { title: 'Pick manually', value: 'manual' },
