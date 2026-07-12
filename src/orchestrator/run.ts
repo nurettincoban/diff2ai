@@ -19,7 +19,12 @@ function promptFileInstruction(promptPath: string): string {
 }
 
 function discussInstruction(consolidatedPath: string): string {
-  return `Read the file ${consolidatedPath}. It contains a validated multi-reviewer code review of my current changes (findings are deduplicated and each has a Consensus score). Help me walk through the findings, starting with the highest severity, and apply fixes where I agree.`;
+  return (
+    `Read the file ${consolidatedPath}. It contains a multi-reviewer code review of my current changes (findings are deduplicated, each with a Consensus score). ` +
+    `The reviewers only saw the diff, not the codebase, so some findings may be false positives. ` +
+    `First verify every finding against the actual code. Discard the ones you confirm are false positives without asking me about them — at most, list them in one line each at the end with the reason. ` +
+    `Then walk me through only the confirmed findings, starting with the highest severity, and apply fixes where I agree.`
+  );
 }
 
 // Single pass: interactive chat in a TTY, headless (response saved) otherwise.
