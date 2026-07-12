@@ -16,12 +16,8 @@ import { simpleGit } from 'simple-git';
 import { gatherPreflight } from '../ux/preflight.js';
 import { resolveRunner } from '../runners/resolve.js';
 import type { ResolvedRunner } from '../runners/types.js';
-import {
-  selectPersonas,
-  personasBySlugs,
-  personaPool,
-  type Persona,
-} from '../orchestrator/personas.js';
+import { personasBySlugs, personaPool, type Persona } from '../orchestrator/personas.js';
+import { suggestPersonas, topNPersonaSlugs } from '../orchestrator/signals.js';
 import { runSingleReview, runConsensusReview, type PostReviewAction } from '../orchestrator/run.js';
 import { estimateConsensusTokens, formatTokens } from '../orchestrator/estimate.js';
 import { approxTokens as approxPromptTokens } from '../chunker/chunk.js';
@@ -78,7 +74,7 @@ export function registerReview(program: Command): void {
     )
     .option(
       '--personas <slugs>',
-      'Comma-separated reviewer personas for the consensus run (e.g. correctness,security); overrides the interactive picker and --iterations count',
+      "Reviewer personas for the consensus run: comma-separated slugs (e.g. correctness,security) or 'auto' to pick from diff signals; overrides the picker and --iterations count",
     )
     .option(
       '--then <action>',
@@ -118,7 +114,9 @@ export function registerReview(program: Command): void {
               ? false
               : Boolean(process.stdout.isTTY && process.stdin.isTTY);
 
-          // Fail fast on runner/persona problems before any git side effects
+          // Fail fast on runner/persona problems before any git side effects.
+          // Persona selection that depends on the diff (auto-suggestions,
+          // interactive picker) happens later, once the diff exists.
           let runner: ResolvedRunner | undefined;
           let personas: Persona[] | undefined;
           if ((opts.iterations || opts.personas) && !opts.run) {
@@ -126,9 +124,10 @@ export function registerReview(program: Command): void {
               '--iterations/--personas require --run <runner> (the reviewer passes execute headlessly). Example: --run claude --iterations 5',
             );
           }
+          const consensusRequested = Boolean(opts.run && (opts.iterations || opts.personas));
           if (opts.run) {
             runner = resolveRunner(opts.run, config.runners);
-            if (opts.personas) {
+            if (opts.personas && opts.personas !== 'auto') {
               personas = personasBySlugs(opts.personas.split(','), config.personas);
               if (opts.iterations && opts.iterations !== personas.length) {
                 console.log(
@@ -137,30 +136,11 @@ export function registerReview(program: Command): void {
                   ),
                 );
               }
-            } else if (opts.iterations) {
-              if (interactiveMode) {
-                const pool = personaPool(config.personas);
-                const picked = await multiselect<string>(
-                  `Select reviewer personas (${opts.iterations} preselected)`,
-                  pool.map((p, idx) => ({
-                    title: `${p.name} (${p.slug})`,
-                    value: p.slug,
-                    selected: idx < (opts.iterations as number),
-                  })),
-                  { interactive: true },
+              if (personas.length < 2) {
+                throw new Error(
+                  `A consensus run needs at least 2 reviewer personas (got ${personas.length}).`,
                 );
-                personas =
-                  picked === null
-                    ? selectPersonas(opts.iterations, config.personas)
-                    : personasBySlugs(picked, config.personas);
-              } else {
-                personas = selectPersonas(opts.iterations, config.personas);
               }
-            }
-            if (personas && personas.length < 2) {
-              throw new Error(
-                `A consensus run needs at least 2 reviewer personas (got ${personas.length}).`,
-              );
             }
           }
           const profile = resolveProfile(opts.profile, config.profile);
@@ -297,6 +277,63 @@ export function registerReview(program: Command): void {
           } else {
             const md = renderTemplate(templateSpec, diff, renderOpts);
             clipboardContent = md;
+
+            // Diff-dependent persona selection: signals from the diff drive
+            // --personas auto and preselect the interactive picker. The user
+            // always approves the run (picker and/or the cost confirm below).
+            if (runner && consensusRequested && !personas) {
+              const suggestions = suggestPersonas(diff);
+              const pool = personaPool(config.personas);
+              const reasonOf = new Map(suggestions.map((s) => [s.slug, s.reason]));
+
+              if (opts.personas === 'auto') {
+                personas = personasBySlugs(
+                  suggestions.map((s) => s.slug),
+                  config.personas,
+                );
+              } else {
+                const n = opts.iterations as number;
+                if (n > pool.length) {
+                  throw new Error(
+                    `--iterations ${n} exceeds the available reviewer personas (${pool.length}). Add more under "personas" in .aidiff.json.`,
+                  );
+                }
+                const topN = topNPersonaSlugs(
+                  suggestions,
+                  n,
+                  pool.map((p) => p.slug),
+                );
+                if (interactiveMode) {
+                  const picked = await multiselect<string>(
+                    'Reviewer personas (suggested ones preselected)',
+                    pool.map((p) => ({
+                      title: reasonOf.has(p.slug)
+                        ? `${p.name} (${p.slug}) — suggested: ${reasonOf.get(p.slug)}`
+                        : `${p.name} (${p.slug})`,
+                      value: p.slug,
+                      selected: topN.includes(p.slug),
+                    })),
+                    { interactive: true, min: 2 },
+                  );
+                  personas = personasBySlugs(picked ?? topN, config.personas);
+                } else {
+                  personas = personasBySlugs(topN, config.personas);
+                }
+              }
+              if (personas.length < 2) {
+                throw new Error(
+                  `A consensus run needs at least 2 reviewer personas (got ${personas.length}).`,
+                );
+              }
+              const chosen = new Set(personas.map((p) => p.slug));
+              const shownReasons = suggestions.filter((s) => chosen.has(s.slug));
+              if (shownReasons.length > 0) {
+                console.log(chalk.dim('Reviewer selection (from diff signals):'));
+                for (const s of shownReasons) {
+                  console.log(chalk.dim(`  • ${s.slug} — ${s.reason}`));
+                }
+              }
+            }
 
             // Multi-reviewer consensus mode: the orchestrator owns all output
             // (artifacts live under reviews/run_*/), including --copy.

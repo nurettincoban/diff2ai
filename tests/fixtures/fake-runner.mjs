@@ -27,7 +27,7 @@ process.stdin.on('end', () => {
       // so tests can assert the judge saw every successful iteration.
       const reviewCount = (input.match(/^--- REVIEW \d+ \(persona: /gm) ?? []).length;
       const hasDiff = input.includes('--- START DIFF ---');
-      process.stdout.write(
+      const blocks = [
         [
           `## 1) Severity: HIGH | Type: Bug`,
           `Consensus: ${reviewCount}/${reviewCount} reviewers`,
@@ -43,9 +43,25 @@ process.stdin.on('end', () => {
           '~~~txt',
           'fix it',
           '~~~',
-          '',
         ].join('\n'),
-      );
+      ];
+      if (process.env.FAKE_RUNNER_JUDGE_BOGUS === '1') {
+        // A hallucinated finding: ghost.js is not part of any test diff.
+        blocks.push(
+          [
+            `## 2) Severity: CRITICAL | Type: Security`,
+            `Consensus: 1/${reviewCount} reviewers`,
+            'Title: Ghost finding in a file outside the diff',
+            '',
+            'Affected:',
+            '- ghost.js:10-12',
+            '',
+            'Explanation:',
+            'Fabricated by the judge.',
+          ].join('\n'),
+        );
+      }
+      process.stdout.write(blocks.join('\n\n') + '\n');
       process.exit(0);
     }
 

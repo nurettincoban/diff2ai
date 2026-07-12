@@ -79,11 +79,12 @@ describe('review --iterations integration', () => {
     expect(prompts).toHaveLength(3);
     expect(responses).toHaveLength(3);
 
-    // distinct persona slugs in filenames (first 3 built-ins)
+    // distinct persona slugs, signal-suggested first (code-only diff with no
+    // test changes → correctness + testing, padded with security)
     expect(prompts).toEqual([
       'iteration_1_correctness.prompt.md',
-      'iteration_2_security.prompt.md',
-      'iteration_3_performance.prompt.md',
+      'iteration_2_testing-edge-cases.prompt.md',
+      'iteration_3_security.prompt.md',
     ]);
 
     // each iteration prompt = persona header + full base prompt (incl. diff)
@@ -131,7 +132,7 @@ describe('review --iterations integration', () => {
     let failed = false;
     try {
       run(`node ${cli} review feature/iter --target main --run fake --iterations 3 2>&1`, tmp, {
-        FAKE_RUNNER_FAIL_MATCH: 'Persona: (Security Auditor|Performance Engineer)',
+        FAKE_RUNNER_FAIL_MATCH: 'Persona: (Security Auditor|Test Engineer)',
       });
     } catch (e: unknown) {
       failed = true;

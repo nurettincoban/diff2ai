@@ -82,7 +82,7 @@ One AI review can hallucinate or miss things. `--iterations 5` runs **five indep
 diff2ai review feature/payments --run claude --iterations 5
 ```
 
-1. **You pick the reviewers.** In a terminal, a multi-select opens with the personas — not every change needs a security deep-dive. Script it with `--personas correctness,performance`.
+1. **Reviewers are suggested from your diff, and you approve.** diff2ai scans the changed files locally (zero AI calls): auth/SQL code suggests the Security Auditor, route/schema files the API reviewer, code changes without test changes the Test Engineer. In a terminal the picker opens with the suggested personas preselected and labeled with _why_; `--personas auto` takes the suggestions directly, and `--personas correctness,security` stays fully manual.
 
    | Persona (slug)                                         | Focus                                           |
    | ------------------------------------------------------ | ----------------------------------------------- |
@@ -97,7 +97,8 @@ diff2ai review feature/payments --run claude --iterations 5
 2. **You approve the cost first.** Before any AI call, diff2ai prints the estimated input tokens and number of calls (based on your actual diff) and asks to proceed (`--yes` skips).
 3. Each selected persona reviews the same diff in isolation, with a live elapsed-time indicator per pass and artifacts appearing under `reviews/run_*/` as each one finishes.
 4. The judge receives the raw diff (ground truth) plus all reviews and must **validate every finding against the diff** — findings referencing files or code not in the diff are discarded — then deduplicate and score consensus.
-5. You get one consolidated review where every issue carries a `Consensus: k/N reviewers` line, sorted by severity and agreement. Then you choose (or preset with `--then`): **fix** — a chat opens to verify findings against the codebase and apply fixes; **comment** — a chat drafts ready-to-paste MR/PR review comments into `comments.md` without touching code (handy when reviewing someone else's MR); **none** — just keep the files.
+5. **A mechanical gate re-checks the judge.** Because the judge can hallucinate too, diff2ai locally verifies every consolidated finding's `Affected:` file and lines against the actual diff (zero tokens). Failures are demoted to an "⚠ Unverified findings" section instead of standing as results, and `diff2ai post` skips them by default (`--include-unverified` to override).
+6. You get one consolidated review where every issue carries a `Consensus: k/N reviewers` line, sorted by severity and agreement. Then you choose (or preset with `--then`): **fix** — a chat opens to verify findings against the codebase and apply fixes; **comment** — a chat drafts ready-to-paste MR/PR review comments into `comments.md` without touching code (handy when reviewing someone else's MR); **none** — just keep the files.
 
 All artifacts are kept under `reviews/run_<timestamp>/` (per-persona prompts and responses, `judge.prompt.md`, `consolidated.md`, and `comments.md` in comment mode), so you can audit exactly what each reviewer said or re-run the judge by hand. If a pass fails, the run continues as long as at least two reviewers succeeded (the consolidated review notes who dropped out).
 
@@ -129,7 +130,7 @@ diff2ai review feature/payments --template security
 | `--fetch`                 | `git fetch origin <target>` and `<ref>` first                                                                     |
 | `--run <runner>`          | Execute the review with an AI runner (`claude` built in; custom runners via config)                               |
 | `--iterations <n>`        | Multi-reviewer consensus mode: n persona passes + validating judge (requires `--run`, n ≥ 2)                      |
-| `--personas <slugs>`      | Exact reviewer personas for the consensus run (e.g. `correctness,security`); skips the interactive picker         |
+| `--personas <slugs>`      | Reviewer personas: comma-separated slugs, or `auto` to use the diff-signal suggestions; skips the picker          |
 | `--then <action>`         | After consensus: `fix` (apply-fixes chat), `comment` (draft MR/PR comments, no code changes), `none`              |
 
 If the diff exceeds the profile's token budget, diff2ai automatically writes `batch_*.md` files plus a `review_index.md` with merge instructions (with `--copy`, batch 1 goes to the clipboard). `--run` needs the whole diff in one prompt, so oversized diffs are refused with a hint to use `--profile claude-large`.

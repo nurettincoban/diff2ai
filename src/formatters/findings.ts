@@ -10,6 +10,8 @@ export type Finding = {
   affected: string[]; // e.g. ["src/auth.ts:42-57"]
   explanation?: string;
   proposedFix?: string; // fenced snippet, verbatim
+  raw: string; // the whole block, verbatim (for reconstruction)
+  verificationFailed?: boolean; // marked by the post-judge verification gate
 };
 
 export function severityRank(s: Severity): number {
@@ -25,7 +27,7 @@ export function parseSeverity(input: string): Severity {
 function sectionAfter(block: string, label: string): string | undefined {
   // Captures the text following "Label:" up to the next known section or end
   const re = new RegExp(
-    `^${label}:\\s*\\n?([\\s\\S]*?)(?=^(?:Affected|Explanation|Proposed fix|Consensus|Title):|\\n## |$)`,
+    `^${label}:\\s*\\n?([\\s\\S]*?)(?=^(?:Affected|Explanation|Proposed fix|Consensus|Title|Verification):|\\n## |$)`,
     'm',
   );
   const m = re.exec(block);
@@ -82,6 +84,8 @@ export function parseFindings(markdown: string): Finding[] {
       affected,
       explanation,
       proposedFix: fixMatch?.[1],
+      raw: block.trim(),
+      verificationFailed: /^Verification:\s*failed/m.test(block) || undefined,
     });
   }
   return findings;

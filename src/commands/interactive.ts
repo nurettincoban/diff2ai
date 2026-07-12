@@ -15,7 +15,7 @@ export type WizardAnswers = {
   target: string;
   mode: 'prompt' | 'single' | 'consensus';
   runner?: string;
-  personas?: string[];
+  personas?: string[] | 'auto';
   then?: PostReviewAction;
   copy?: boolean;
 };
@@ -29,7 +29,7 @@ export function buildReviewArgs(a: WizardAnswers): string[] {
   }
   args.push('--run', a.runner ?? 'claude');
   if (a.mode === 'consensus') {
-    args.push('--personas', (a.personas ?? []).join(','));
+    args.push('--personas', a.personas === 'auto' ? 'auto' : (a.personas ?? []).join(','));
     if (a.then) args.push('--then', a.then);
   }
   return args;
@@ -131,19 +131,36 @@ export function registerInteractive(program: Command): void {
         }
 
         if (mode === 'consensus') {
-          // 5. Personas
-          const pool = personaPool(config.personas);
-          const picked = await multiselect<string>(
-            'Reviewer personas (pick at least 2)',
-            pool.map((p, idx) => ({
-              title: `${p.name} (${p.slug})`,
-              value: p.slug,
-              selected: idx < 3,
-            })),
-            { interactive: true, min: 2 },
+          // 5. Personas — auto suggests from the diff (approved via the cost
+          // confirm), manual opens the multi-select
+          const personaMode = await select<'auto' | 'manual'>(
+            'Reviewer personas',
+            [
+              {
+                title: 'Auto — suggest from what the diff touches (shown before the run)',
+                value: 'auto',
+              },
+              { title: 'Pick manually', value: 'manual' },
+            ],
+            { interactive: true },
           );
-          if (picked === null || picked.length < 2) return abort();
-          answers.personas = picked;
+          if (personaMode === null) return abort();
+          if (personaMode === 'auto') {
+            answers.personas = 'auto';
+          } else {
+            const pool = personaPool(config.personas);
+            const picked = await multiselect<string>(
+              'Reviewer personas (pick at least 2)',
+              pool.map((p, idx) => ({
+                title: `${p.name} (${p.slug})`,
+                value: p.slug,
+                selected: idx < 3,
+              })),
+              { interactive: true, min: 2 },
+            );
+            if (picked === null || picked.length < 2) return abort();
+            answers.personas = picked;
+          }
 
           // 6. Outcome
           const then = await select<PostReviewAction>(

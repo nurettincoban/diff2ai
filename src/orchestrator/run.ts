@@ -7,6 +7,8 @@ import { runHeadless, runInteractive } from '../runners/execute.js';
 import type { ResolvedRunner } from '../runners/types.js';
 import { wrapWithPersona, type Persona } from './personas.js';
 import { buildJudgePrompt, isValidJudgeOutput, type IterationReview } from './judge.js';
+import { verifyFindings } from './verify.js';
+import { parseFindings, type Finding } from '../formatters/findings.js';
 import { success } from '../ux/theme.js';
 import { copyToClipboard } from '../ux/clipboard.js';
 import { select } from '../ux/prompt.js';
@@ -50,6 +52,14 @@ function commentInstruction(consolidatedPath: string, runDir: string): string {
 }
 
 export type PostReviewAction = 'fix' | 'comment' | 'none';
+
+// Inserts a "Verification: failed" line right under the block header so the
+// marker survives round-trips through parseFindings (and `post` can skip it).
+function markUnverified(finding: Finding, reason: string): string {
+  const lines = finding.raw.split('\n');
+  lines.splice(1, 0, `Verification: failed — ${reason}`);
+  return lines.join('\n');
+}
 
 // Single pass: interactive chat in a TTY, headless (response saved) otherwise.
 export async function runSingleReview(
@@ -153,6 +163,31 @@ export async function runConsensusReview(o: ConsensusOptions): Promise<void> {
   }
   spin.succeed(chalk.green('Judge pass complete'));
 
+  // Mechanical backstop: the judge validates semantically, but can itself
+  // hallucinate. Re-check every finding's Affected reference against the diff
+  // locally (zero tokens) and demote failures instead of trusting them.
+  let consolidatedBody = judgeRes.output;
+  let demoted = 0;
+  const parsedFindings = parseFindings(judgeRes.output);
+  if (parsedFindings.length > 0) {
+    const { verified, unverified } = verifyFindings(parsedFindings, o.diff);
+    console.log(
+      chalk.dim(
+        `Local verification: ${verified.length}/${parsedFindings.length} finding(s) confirmed against the diff.`,
+      ),
+    );
+    if (unverified.length > 0) {
+      demoted = unverified.length;
+      consolidatedBody = [
+        ...verified.map((f) => f.raw),
+        '---',
+        '# ⚠ Unverified findings',
+        'These failed a mechanical check against the diff (file or lines are not part of the change) and may be hallucinated. Verify manually before acting; `diff2ai post` skips them by default.',
+        ...unverified.map(({ finding, reason }) => markUnverified(finding, reason)),
+      ].join('\n\n');
+    }
+  }
+
   const header =
     failed.length > 0
       ? `<!-- Note: ${failed.length} reviewer pass(es) failed (${failed
@@ -160,7 +195,7 @@ export async function runConsensusReview(o: ConsensusOptions): Promise<void> {
           .join(', ')}); consensus is out of ${reviews.length} successful reviewers. -->\n\n`
       : '';
   const consolidatedPath = path.join(runDir, 'consolidated.md');
-  fs.writeFileSync(consolidatedPath, header + judgeRes.output, 'utf-8');
+  fs.writeFileSync(consolidatedPath, header + consolidatedBody, 'utf-8');
 
   let copiedLine = '';
   if (o.copy) {
@@ -180,6 +215,9 @@ export async function runConsensusReview(o: ConsensusOptions): Promise<void> {
           : '',
         chalk.dim(`artifacts: ${runDir}`),
         chalk.dim(`final:     ${consolidatedPath}`),
+        demoted > 0
+          ? chalk.yellow(`unverified: ${demoted} finding(s) demoted (failed the local diff check)`)
+          : '',
         copiedLine,
         '',
         chalk.dim(`GitLab MR: diff2ai post ${consolidatedPath} --dry-run`),

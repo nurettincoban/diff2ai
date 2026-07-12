@@ -188,7 +188,7 @@ describe('findings parsing and formatting units', () => {
     expect(body).toMatch(/2 finding\(s\)/);
     expect(body).toMatch(/<details>/);
     const withHtml = formatMrComment([
-      { severity: 'HIGH', type: 'Bug', title: 'Avoid <script> tags', affected: [] },
+      { severity: 'HIGH', type: 'Bug', title: 'Avoid <script> tags', affected: [], raw: '' },
     ]);
     expect(withHtml).toContain('&lt;script&gt;');
   });

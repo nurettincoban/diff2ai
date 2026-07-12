@@ -32,10 +32,19 @@ export function registerPost(program: Command): void {
       parseMinSeverity,
     )
     .option('--dry-run', 'Print the comment that would be posted, without posting')
+    .option(
+      '--include-unverified',
+      'Also post findings that failed the local diff verification (skipped by default)',
+    )
     .action(
       async (
         reviewFile: string,
-        opts: { mr?: string; minSeverity?: Severity; dryRun?: boolean },
+        opts: {
+          mr?: string;
+          minSeverity?: Severity;
+          dryRun?: boolean;
+          includeUnverified?: boolean;
+        },
         cmd: Command,
       ) => {
         try {
@@ -70,6 +79,21 @@ export function registerPost(program: Command): void {
             throw new Error(
               `No findings parsed from ${reviewFile}. Expected diff2ai issue blocks ("## 1) Severity: ... | Type: ...").`,
             );
+          }
+          if (!opts.includeUnverified) {
+            const unverified = findings.filter((f) => f.verificationFailed).length;
+            if (unverified > 0) {
+              findings = findings.filter((f) => !f.verificationFailed);
+              console.log(
+                chalk.dim(
+                  `Skipped ${unverified} unverified finding(s) (failed the local diff check). Use --include-unverified to post them.`,
+                ),
+              );
+            }
+            if (findings.length === 0) {
+              console.log(chalk.gray('All findings are unverified — nothing to post.'));
+              return;
+            }
           }
           if (opts.minSeverity) {
             const cutoff = severityRank(opts.minSeverity);
