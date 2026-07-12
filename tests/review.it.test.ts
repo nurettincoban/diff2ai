@@ -129,6 +129,41 @@ describe('review integration', () => {
     expect(files.some((f) => f.endsWith('.md'))).toBe(true);
   });
 
+  it('refuses to switch while a merge is in progress unless --yes is provided', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'diff2ai-review-merge-'));
+
+    run('git init', tmp);
+    fs.writeFileSync(path.join(tmp, 'a.txt'), 'base\n');
+    run('git add a.txt', tmp);
+    run('git commit -m "init"', tmp);
+    run('git branch -M main', tmp);
+    const remote = fs.mkdtempSync(path.join(os.tmpdir(), 'diff2ai-remote-'));
+    run('git init --bare', remote);
+    run(`git remote add origin ${remote}`, tmp);
+    run('git push -u origin main', tmp);
+
+    // two branches that conflict on a.txt
+    run('git checkout -b feature/merge-a', tmp);
+    fs.writeFileSync(path.join(tmp, 'a.txt'), 'from-a\n');
+    run('git commit -am "a"', tmp);
+    run('git checkout main -b feature/merge-b', tmp);
+    fs.writeFileSync(path.join(tmp, 'a.txt'), 'from-b\n');
+    run('git commit -am "b"', tmp);
+
+    // start a conflicting merge (leaves MERGE_HEAD behind)
+    try {
+      run('git merge feature/merge-a', tmp);
+    } catch {
+      // conflict expected
+    }
+    expect(fs.existsSync(path.join(tmp, '.git', 'MERGE_HEAD'))).toBe(true);
+
+    const out = run(`node ${cli} review feature/merge-a --target main --switch 2>&1`, tmp);
+    expect(out).toMatch(/Refusing to switch/);
+    const head = run('git rev-parse --abbrev-ref HEAD', tmp).trim();
+    expect(head).toBe('feature/merge-b');
+  });
+
   it('--copy alone skips the prompt file; --copy --save-diff still writes it', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'diff2ai-review-copy-'));
 

@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, InvalidArgumentError } from 'commander';
 import ora from 'ora';
 import chalk from 'chalk';
 import { loadConfig } from '../config/loadConfig.js';
@@ -14,6 +14,19 @@ import { PROFILES, resolveProfile } from '../chunker/profiles.js';
 import { header, success } from '../ux/theme.js';
 import { simpleGit } from 'simple-git';
 import { gatherPreflight } from '../ux/preflight.js';
+import { resolveRunner } from '../runners/resolve.js';
+import type { ResolvedRunner } from '../runners/types.js';
+import { selectPersonas, type Persona } from '../orchestrator/personas.js';
+import { runSingleReview, runConsensusReview } from '../orchestrator/run.js';
+import { copyToClipboard } from '../ux/clipboard.js';
+
+function parseIterations(value: string): number {
+  const n = Number.parseInt(value, 10);
+  if (!Number.isInteger(n) || n < 2) {
+    throw new InvalidArgumentError('--iterations must be an integer >= 2.');
+  }
+  return n;
+}
 
 export function registerReview(program: Command): void {
   program
@@ -41,6 +54,15 @@ export function registerReview(program: Command): void {
     .option('--save-diff', 'Also write the raw .diff file')
     .option('--switch', 'Switch to <ref> before running review (repo stays on <ref>)')
     .option('--fetch', 'Fetch origin/<target> and origin/<ref> before running')
+    .option(
+      '--run <runner>',
+      'Run the review with an AI runner (e.g. claude). Opens an interactive chat in a TTY; runs headless otherwise',
+    )
+    .option(
+      '--iterations <n>',
+      'Run N reviewer passes with different personas, then a judge pass that validates and consolidates the findings (requires --run)',
+      parseIterations,
+    )
     .action(
       async (
         ref: string,
@@ -54,12 +76,27 @@ export function registerReview(program: Command): void {
           saveDiff?: boolean;
           switch?: boolean;
           fetch?: boolean;
+          run?: string;
+          iterations?: number;
         },
         cmd: Command,
       ) => {
         try {
           assertGitRepo();
           const { config } = loadConfig();
+
+          // Fail fast on runner/iteration problems before any git side effects
+          let runner: ResolvedRunner | undefined;
+          let personas: Persona[] | undefined;
+          if (opts.iterations && !opts.run) {
+            throw new Error(
+              '--iterations requires --run <runner> (the reviewer passes execute headlessly). Example: --run claude --iterations 5',
+            );
+          }
+          if (opts.run) {
+            runner = resolveRunner(opts.run, config.runners);
+            if (opts.iterations) personas = selectPersonas(opts.iterations, config.personas);
+          }
           const globalOpts =
             (
               cmd?.parent as unknown as { opts?: () => { interactive?: boolean; yes?: boolean } }
@@ -91,7 +128,7 @@ export function registerReview(program: Command): void {
 
           // Optional: switch to the provided ref (for agent workflows)
           if (opts.switch) {
-            const pre = await gatherPreflight(targetBranch);
+            const pre = await gatherPreflight();
             if ((pre.isDirty || pre.hasUntracked || pre.ongoingMerge) && !yes) {
               console.error(
                 chalk.red(
@@ -127,15 +164,32 @@ export function registerReview(program: Command): void {
 
           const targetRef = await resolveTargetRef(targetBranch);
           const spin = ora('Generating diff...').start();
+          const excluded: string[] = [];
           const diff = await generateUnifiedDiff({
             targetRef,
             compareRef: ref,
-            ignore: loadIgnore(),
+            ignore: loadIgnore(process.cwd(), config.exclude),
+            onExclude: (f) => excluded.push(f),
           });
           if (!diff || diff.trim().length === 0) {
             spin.stop();
+            if (excluded.length > 0) {
+              console.log(
+                chalk.dim(
+                  `Excluded ${excluded.length} file(s) via exclude patterns (.aidiff.json / .aidiffignore).`,
+                ),
+              );
+            }
             console.log(chalk.gray('No changes detected.'));
             return;
+          }
+          if (excluded.length > 0) {
+            spin.info(
+              chalk.dim(
+                `Excluded ${excluded.length} file(s) via exclude patterns (.aidiff.json / .aidiffignore).`,
+              ),
+            );
+            spin.start('Generating diff...');
           }
           const outDir = opts.out ?? path.join(process.cwd(), 'reviews');
           let diffPath: string | undefined;
@@ -155,11 +209,20 @@ export function registerReview(program: Command): void {
           // --copy alone means clipboard-only output; --out or --save-diff opt back into files
           const copyOnly = Boolean(opts.copy) && !opts.out && !opts.saveDiff;
 
+          const isTTY = Boolean(process.stdout.isTTY && process.stdin.isTTY);
+
           let promptLabel: string;
           let clipboardContent: string;
           let copyLabel = 'clipboard';
           let writeSinglePrompt: (() => string) | undefined;
+          let singlePromptPath: string | undefined;
           if (approxTokens(diff) > PROFILES[profile].tokenBudget) {
+            if (runner) {
+              throw new Error(
+                `Diff (~${approxTokens(diff)} tokens) exceeds the "${profile}" profile budget (${PROFILES[profile].tokenBudget}). ` +
+                  '--run needs a single prompt; retry with --profile claude-large or drop --run to get batch files.',
+              );
+            }
             // Diff exceeds the profile budget: split into template-wrapped batches.
             // Batches are always written — the clipboard can only hold one of them.
             const { chunks, warnings } = chunkDiff(diff, profile, (d) =>
@@ -173,6 +236,22 @@ export function registerReview(program: Command): void {
           } else {
             const md = renderTemplate(templateSpec, diff, renderOpts);
             clipboardContent = md;
+
+            // Multi-reviewer consensus mode: the orchestrator owns all output
+            // (artifacts live under reviews/run_*/), including --copy.
+            if (runner && personas) {
+              await runConsensusReview({
+                runner,
+                personas,
+                renderedPrompt: md,
+                diff,
+                outDir,
+                isTTY,
+                copy: opts.copy,
+              });
+              return;
+            }
+
             writeSinglePrompt = () => {
               let out: string;
               if (diffPath) {
@@ -189,24 +268,21 @@ export function registerReview(program: Command): void {
               fs.writeFileSync(out, md, 'utf-8');
               return out;
             };
-            promptLabel = copyOnly
-              ? 'clipboard only (use --out to also write a file)'
-              : writeSinglePrompt();
+            if (runner) {
+              // The chat/headless session reads the prompt from disk, so the
+              // file is always written in --run mode, even with --copy.
+              singlePromptPath = writeSinglePrompt();
+              promptLabel = singlePromptPath;
+            } else {
+              promptLabel = copyOnly
+                ? 'clipboard only (use --out to also write a file)'
+                : writeSinglePrompt();
+            }
           }
           if (opts.copy) {
-            try {
-              const mod = (await import('clipboardy')) as unknown as {
-                default?: { write?: (s: string) => Promise<void> };
-                write?: (s: string) => Promise<void>;
-              };
-              const clip = mod?.default ?? mod;
-              if (clip && typeof clip.write === 'function') {
-                await clip.write(clipboardContent);
-              } else {
-                throw new Error('clipboardy not available');
-              }
-            } catch {
-              if (copyOnly && writeSinglePrompt) {
+            const copied = await copyToClipboard(clipboardContent);
+            if (!copied) {
+              if (copyOnly && writeSinglePrompt && !singlePromptPath) {
                 // Don't lose the prompt: fall back to writing the file
                 promptLabel = writeSinglePrompt();
                 copyLabel = 'failed — wrote prompt file instead';
@@ -230,9 +306,15 @@ export function registerReview(program: Command): void {
               opts.copy ? chalk.dim(`copied:  ${copyLabel}`) : '',
               '',
               'Next:',
-              '- Use this prompt with your AI reviewer (paste into your AI tool).',
+              runner
+                ? `- Handing the prompt to "${runner.name}".`
+                : '- Use this prompt with your AI reviewer (paste into your AI tool).',
             ]),
           );
+
+          if (runner && singlePromptPath) {
+            await runSingleReview(runner, singlePromptPath, { isTTY });
+          }
         } catch (error: unknown) {
           console.error(chalk.red((error as Error)?.message ?? String(error)));
           process.exitCode = 1;
