@@ -170,7 +170,8 @@ async function runReview(refArg: string | undefined, opts: ReviewOptions, cmd: C
   const root = await resolveRepoRoot();
   const config = loadProjectConfig(root);
   const { yes, interactive: interactiveMode } = globalFlags(cmd);
-  const isTTY = Boolean(process.stdout.isTTY && process.stdin.isTTY);
+  // --no-interactive also means "no chat": AI runs go headless
+  const isTTY = interactiveMode;
 
   if (
     [refArg !== undefined, opts.pr !== undefined, opts.mr !== undefined].filter(Boolean).length > 1
