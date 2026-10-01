@@ -74,4 +74,36 @@ describe('.aidiffignore integration', () => {
     expect(content).toMatch(/keep.txt/);
     expect(content).not.toMatch(/ignore.log/);
   });
+
+  it('applies exclude patterns from .aidiff.json (and default lockfile excludes)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'diff2ai-config-exclude-'));
+    run('git init', tmp);
+    fs.writeFileSync(path.join(tmp, 'init.txt'), 'init\n');
+    run('git add init.txt', tmp);
+    run('git commit -m "init"', tmp);
+
+    fs.writeFileSync(path.join(tmp, 'keep.txt'), 'keep\n');
+    fs.writeFileSync(path.join(tmp, 'generated.snap'), 'snapshot\n');
+    fs.writeFileSync(path.join(tmp, 'package-lock.lock'), 'lock\n');
+    run('git add keep.txt generated.snap package-lock.lock', tmp);
+    fs.writeFileSync(
+      path.join(tmp, '.aidiff.json'),
+      JSON.stringify({ exclude: ['**/*.snap', '**/*.lock'] }),
+    );
+
+    const projectRoot = path.resolve(process.cwd());
+    const cli = path.join(projectRoot, 'dist', 'cli.js');
+    if (!fs.existsSync(cli)) run('npm run -s build', projectRoot);
+
+    const out = run(`node ${cli} diff --staged --no-interactive --yes`, tmp);
+    expect(out).toMatch(/Wrote diff:/);
+    expect(out).toMatch(/Excluded 2 file\(s\)/);
+
+    const reviewsDir = path.join(tmp, 'reviews');
+    const diffFile = fs.readdirSync(reviewsDir).find((f) => f.endsWith('.diff'))!;
+    const content = fs.readFileSync(path.join(reviewsDir, diffFile), 'utf-8');
+    expect(content).toMatch(/keep.txt/);
+    expect(content).not.toMatch(/generated.snap/);
+    expect(content).not.toMatch(/package-lock.lock/);
+  });
 });

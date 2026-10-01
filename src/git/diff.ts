@@ -1,75 +1,92 @@
-import { simpleGit, type SimpleGit } from 'simple-git';
 import type { IgnoreFilter } from '../config/ignore.js';
+import { assertSafeRef, gitClient } from './repo.js';
+import { sectionPath, splitFileSections } from './diffParse.js';
+
+// Flags that pin the diff format regardless of the user's git config:
+// color.diff/color.ui=always would inject ANSI codes, diff.noprefix or
+// diff.mnemonicPrefix change the a/ b/ prefixes, and diff.external replaces
+// the unified diff entirely. Each of these silently broke ignore filtering
+// and polluted prompts.
+export const SAFE_DIFF_FLAGS = [
+  '--no-color',
+  '--no-ext-diff',
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
+];
 
 export type DiffOptions = {
   targetRef?: string; // e.g., origin/main
-  compareRef?: string; // e.g., pr-123 (local ref) or any commit-ish
+  compareRef?: string; // e.g., a branch, refs/diff2ai/pr-12, or any commit-ish
   staged?: boolean;
   commitSha?: string;
-  includeGlobs?: string[];
-  excludeGlobs?: string[];
+  // Working tree (staged + unstaged tracked changes) vs merge-base(target, HEAD)
+  worktree?: boolean;
+  contextLines?: number; // -U<n>
+  functionContext?: boolean; // -W: show the whole enclosing function
   ignore?: IgnoreFilter;
+  onExclude?: (file: string) => void; // called for each file dropped by the ignore filter
 };
+
+function formatFlags(options: DiffOptions): string[] {
+  const flags = [...SAFE_DIFF_FLAGS];
+  if (options.contextLines !== undefined) flags.push(`--unified=${options.contextLines}`);
+  if (options.functionContext) flags.push('--function-context');
+  return flags;
+}
 
 export async function generateUnifiedDiff(
   options: DiffOptions = {},
   cwd: string = process.cwd(),
 ): Promise<string> {
-  const git: SimpleGit = simpleGit({ baseDir: cwd });
+  const git = gitClient(cwd);
+  const flags = formatFlags(options);
+  const filter = (diff: string) => applyIgnoreFilter(diff, options.ignore, options.onExclude);
 
   if (options.commitSha) {
-    const diff = await git.raw(['show', '-p', options.commitSha]);
-    return applyIgnoreFilter(diff, options.ignore);
+    const sha = assertSafeRef(options.commitSha, 'commit');
+    // -m --first-parent: a merge commit shows a normal diff against its first
+    // parent instead of a combined `diff --cc` the parser cannot read
+    return filter(
+      await git.raw(['show', ...flags, '--no-show-signature', '-m', '--first-parent', sha]),
+    );
   }
 
   if (options.staged) {
-    const diff = await git.diff(['--staged']);
-    return applyIgnoreFilter(diff, options.ignore);
+    return filter(await git.raw(['diff', ...flags, '--cached']));
   }
 
-  const targetRef = options.targetRef ?? 'origin/main';
+  const targetRef = assertSafeRef(options.targetRef ?? 'origin/main', 'target');
 
-  if (options.compareRef) {
-    const range = `${targetRef}...${options.compareRef}`;
-    const diff = await git.diff([range]);
-    return applyIgnoreFilter(diff, options.ignore);
+  if (options.worktree) {
+    const base = (await git.raw(['merge-base', targetRef, 'HEAD']).catch(() => '')).trim();
+    if (!base) {
+      throw new Error(`No common ancestor between ${targetRef} and HEAD; cannot diff against it.`);
+    }
+    return filter(await git.raw(['diff', ...flags, base]));
   }
 
-  const range = `${targetRef}...HEAD`;
-  const diff = await git.diff([range]);
-  return applyIgnoreFilter(diff, options.ignore);
+  const compareRef = assertSafeRef(options.compareRef ?? 'HEAD');
+  return filter(await git.raw(['diff', ...flags, `${targetRef}...${compareRef}`]));
 }
 
-function applyIgnoreFilter(unifiedDiff: string, ignore?: IgnoreFilter): string {
+// Drops whole file sections whose path matches the ignore filter. Sections
+// are kept byte-for-byte (including CRLF line endings), so a filtered diff
+// still applies cleanly with `git apply`.
+export function applyIgnoreFilter(
+  unifiedDiff: string,
+  ignore?: IgnoreFilter,
+  onExclude?: (file: string) => void,
+): string {
   if (!ignore) return unifiedDiff;
   if (!unifiedDiff || unifiedDiff.trim().length === 0) return unifiedDiff;
-
-  const lines = unifiedDiff.split(/\r?\n/);
-  const result: string[] = [];
-  let buffer: string[] = [];
-  let currentFile: string | null = null;
-
-  const flush = () => {
-    if (buffer.length === 0) return;
-    if (currentFile && ignore(currentFile)) {
-      // drop
-    } else {
-      result.push(...buffer);
-    }
-    buffer = [];
-    currentFile = null;
-  };
-
-  for (const line of lines) {
-    const match = /^diff --git a\/(.*?) b\/(.*)$/.exec(line);
-    if (match) {
-      // start of a new file section
-      flush();
-      currentFile = match[2] ?? match[1];
-    }
-    buffer.push(line);
-  }
-  flush();
-
-  return result.join('\n');
+  return splitFileSections(unifiedDiff)
+    .filter((section) => {
+      const file = sectionPath(section);
+      if (file && ignore(file)) {
+        onExclude?.(file);
+        return false;
+      }
+      return true;
+    })
+    .join('');
 }

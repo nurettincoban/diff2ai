@@ -1,12 +1,15 @@
 {
   "name": "diff2ai",
-  "version": "0.2.1",
-  "description": "CLI tool to extract Git diffs and format AI-ready reviews",
+  "version": "0.3.0",
+  "description": "Turn Git diffs into high-signal AI code reviews: any AI CLI, multi-reviewer consensus, inline PR comments, SARIF",
   "license": "MIT",
+  "author": "Nurettin Coban",
   "type": "module",
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "publishConfig": {
     "access": "public"
@@ -15,7 +18,7 @@
     "diff2ai": "dist/cli.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.13"
   },
   "scripts": {
     "build": "tsup",
@@ -23,6 +26,7 @@
     "start": "node dist/cli.js",
     "prepare": "npm run build",
     "test": "npm run build && vitest run",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
@@ -37,10 +41,23 @@
   "keywords": [
     "git",
     "diff",
+    "code-review",
+    "ai",
+    "llm",
+    "prompt",
     "review",
-    "cli"
+    "cli",
+    "claude",
+    "codex",
+    "gemini",
+    "ollama",
+    "github-action",
+    "sarif",
+    "pull-request"
   ],
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/cross-spawn": "^6.0.6",
     "@types/node": "^24.3.1",
     "@typescript-eslint/eslint-plugin": "^8.43.0",
     "@typescript-eslint/parser": "^8.43.0",
@@ -53,17 +70,18 @@
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.43.0",
-    "vitest": "^3.2.4"
+    "vitest": "^5.0.3"
   },
   "dependencies": {
+    "@inquirer/prompts": "^8.7.2",
     "boxen": "^8.0.1",
     "chalk": "^5.6.2",
     "clipboardy": "^4.0.0",
     "commander": "^14.0.0",
+    "cross-spawn": "^7.0.6",
     "json5": "^2.2.3",
-    "minimatch": "^10.0.3",
+    "minimatch": "^10.2.6",
     "ora": "^8.2.0",
-    "prompts": "^2.4.2",
-    "simple-git": "^3.28.0"
+    "simple-git": "^3.36.0"
   }
 }

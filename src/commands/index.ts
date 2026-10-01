@@ -1,262 +1,378 @@
 import { Command } from 'commander';
-import { loadConfig } from '../config/loadConfig.js';
-import { loadIgnore } from '../config/ignore.js';
-import { assertGitRepo, listRemoteBranches, resolveTargetRef } from '../git/repo.js';
-import { generateUnifiedDiff } from '../git/diff.js';
-import { writeDiffFile, ensureDir, writeBatchFiles } from '../formatters/diff.js';
-import { renderTemplate, resolveBuiltInTemplatesDir } from '../formatters/markdown.js';
-import fs from 'fs';
-import path from 'path';
-import { chunkDiff } from '../chunker/chunk.js';
-import { resolveProfile } from '../chunker/profiles.js';
-import { gatherPreflight } from '../ux/preflight.js';
-import { confirm, select } from '../ux/prompt.js';
-import { registerDoctor } from './doctor.js';
+import fs from 'node:fs';
+import path from 'node:path';
 import ora from 'ora';
 import chalk from 'chalk';
+import { loadIgnore } from '../config/ignore.js';
+import {
+  findProjectRoot,
+  gitClient,
+  listRemoteBranches,
+  resolveRepoRoot,
+  resolveTargetRef,
+  assertSafeRef,
+} from '../git/repo.js';
+import { generateUnifiedDiff } from '../git/diff.js';
+import { writeDiffFile, ensureDir, writeBatchFiles } from '../formatters/diff.js';
+import { resolveBuiltInTemplatesDir, resolveProjectTemplatesDir } from '../formatters/markdown.js';
+import { buildPrompts, renderPrompt } from '../formatters/prompt.js';
+import { resolveBudget } from '../chunker/profiles.js';
+import { gatherPreflight } from '../ux/preflight.js';
+import { select } from '../ux/prompt.js';
+import { registerDoctor } from './doctor.js';
 import { registerReview } from './review.js';
+import { registerPost } from './post.js';
+import { registerClean } from './clean.js';
+import { registerInteractive } from './interactive.js';
+import { registerExport } from './export.js';
 import { header, success } from '../ux/theme.js';
+import {
+  fromCliOr,
+  globalFlags,
+  loadProjectConfig,
+  parseBudgetOption,
+  parseNonNegativeInt,
+  reportExcluded,
+  resolveOutDir,
+  resolveTemplateChoice,
+  withErrors,
+} from './shared.js';
+
+function readDiffFile(diffFile: string): { abs: string; content: string } {
+  const abs = path.resolve(process.cwd(), diffFile);
+  if (!fs.existsSync(abs)) throw new Error(`Diff file not found: ${abs}`);
+  return { abs, content: fs.readFileSync(abs, 'utf-8') };
+}
 
 export function registerCommands(program: Command): void {
   registerDoctor(program);
   registerReview(program);
+  registerPost(program);
+  registerExport(program);
+  registerClean(program);
+  registerInteractive(program);
 
   program
     .command('diff')
-    .description('Generate diff for working tree vs target or staged changes')
-    .option('--staged', 'Use staged changes')
+    .description(
+      'Write a .diff of your work vs the target branch (committed + uncommitted changes), or of staged changes',
+    )
+    .option('--staged', 'Only staged changes')
+    .option('--committed', 'Only committed changes (target...HEAD), ignoring the working tree')
+    .option('--target <branch>', 'Target branch (default from config)')
+    .option(
+      '--context <n>',
+      'Lines of context around each change (git -U)',
+      parseNonNegativeInt('--context'),
+    )
+    .option('--function-context', 'Include the whole enclosing function around each change')
     .option('--out <dir>', 'Output directory (default: reviews/)')
-    .action(async (opts: { staged?: boolean; out?: string }) => {
-      try {
-        assertGitRepo();
-        const globalOpts = program.opts();
-        const interactive: boolean =
-          globalOpts.interactive === false ? false : process.stdout.isTTY;
-        const yes: boolean | undefined = globalOpts.yes;
+    .action(
+      withErrors(
+        async (
+          opts: {
+            staged?: boolean;
+            committed?: boolean;
+            target?: string;
+            context?: number;
+            functionContext?: boolean;
+            out?: string;
+          },
+          cmd: Command,
+        ) => {
+          if (opts.staged && opts.committed) throw new Error('Use either --staged or --committed.');
+          const root = await resolveRepoRoot();
+          const { interactive } = globalFlags(cmd);
+          const config = loadProjectConfig(root);
+          const ignore = loadIgnore(root, config.exclude);
 
-        const { config, warnings } = loadConfig();
-        const ignore = loadIgnore();
-        for (const w of warnings) console.warn(chalk.yellow(w));
+          // Optionally pick the target interactively when none was given
+          let selectedTarget = opts.target ?? config.target;
+          if (!opts.staged && !opts.target && interactive) {
+            const remotes = await listRemoteBranches(root).catch(() => [] as string[]);
+            const choices = remotes
+              .filter((b) => b.startsWith('origin/'))
+              .map((b) => ({ title: b, value: b }));
+            if (choices.length > 0) {
+              const picked = await select<string>('Select target branch', choices, { interactive });
+              if (picked) selectedTarget = picked.replace(/^origin\//, '');
+            }
+          }
 
-        const pre = await gatherPreflight(config.target);
-        if (pre.isDirty && !opts.staged) {
-          const proceed = await confirm(
-            'Working tree is dirty. Continue diff against target anyway?',
-            {
-              interactive,
-              yes,
-            },
+          const mode = opts.staged ? 'staged' : opts.committed ? 'committed' : 'working tree';
+          console.log(
+            header(
+              'diff2ai diff',
+              opts.staged ? 'mode: staged' : `target: ${selectedTarget}  •  mode: ${mode}`,
+            ),
           );
-          if (!proceed) return void console.log(chalk.gray('Aborted.'));
-        }
 
-        // Optionally select target branch interactively
-        let selectedTarget = config.target;
-        if (!opts.staged && interactive) {
-          try {
-            const remotes = await listRemoteBranches();
-            const originBranches = remotes.filter((b) => b.startsWith('origin/'));
-            const choices: { title: string; value: string }[] = originBranches.map((b) => ({
-              title: b,
-              value: b,
-            }));
-            const picked = await select<string>('Select target branch', choices, {
-              interactive,
-              yes,
-            });
-            if (picked) selectedTarget = (picked as string).replace(/^origin\//, '');
-          } catch {
-            // ignore selection errors
+          const pre = await gatherPreflight(root);
+          if (opts.committed && pre.isDirty) {
+            console.log(chalk.dim('Uncommitted changes are not included (--committed).'));
+          } else if (!opts.staged && pre.hasUntracked) {
+            console.log(
+              chalk.dim(
+                'Untracked files are not included; `git add -N <file>` makes git (and diff2ai) see them.',
+              ),
+            );
           }
-        }
 
-        console.log(
-          header('diff2ai diff', `${opts.staged ? 'mode: staged' : `target: ${selectedTarget}`}`),
-        );
-
-        const targetRef = opts.staged ? undefined : await resolveTargetRef(selectedTarget);
-        const spin = ora('Generating diff...').start();
-        const diff = await generateUnifiedDiff({
-          staged: Boolean(opts.staged),
-          targetRef,
-          ignore,
-        });
-
-        if (!diff || diff.trim().length === 0) {
+          const targetRef = opts.staged ? undefined : await resolveTargetRef(selectedTarget, root);
+          const spin = ora('Generating diff...').start();
+          const excluded: string[] = [];
+          const diff = await generateUnifiedDiff(
+            {
+              staged: Boolean(opts.staged),
+              worktree: !opts.staged && !opts.committed,
+              targetRef,
+              compareRef: 'HEAD',
+              contextLines: opts.context ?? config.contextLines,
+              functionContext: opts.functionContext ?? config.functionContext,
+              ignore,
+              onExclude: (f) => excluded.push(f),
+            },
+            root,
+          );
           spin.stop();
-          console.log(chalk.gray('No changes detected.'));
-          return;
-        }
+          reportExcluded(excluded);
 
-        const outDir = opts.out ?? path.join(process.cwd(), 'reviews');
-        const filePath = writeDiffFile(opts.staged ? 'staged' : 'diff', diff, outDir);
-        spin.stop();
-        console.log(`Wrote diff: ${filePath}`);
-        console.log(
-          success([
-            chalk.green('Diff ready'),
-            chalk.dim(`path:   ${filePath}`),
-            '',
-            'Next:',
-            '- Generate prompt: diff2ai prompt <diff> --template default',
-          ]),
-        );
-      } catch (error: unknown) {
-        const message = (error as Error)?.message ?? String(error);
-        if (/Not a git repository/i.test(message)) {
-          console.error(chalk.red('Error: Missing Git repo. Ensure a .git directory exists.'));
-          return;
-        }
-        if (/ambiguous argument|unknown revision|bad revision/i.test(message)) {
-          console.error(chalk.red('Error: Invalid diff target. Available remote branches:'));
-          try {
-            const branches = await listRemoteBranches();
-            for (const b of branches) console.error(chalk.gray(`  ${b}`));
-          } catch {
-            // ignore follow-up errors
+          if (!diff || diff.trim().length === 0) {
+            console.log(chalk.gray('No changes detected.'));
+            return;
           }
-          return;
-        }
-        console.error(chalk.red(message));
-        process.exitCode = 1;
-      }
-    });
+
+          const outDir = resolveOutDir(opts.out, root);
+          const filePath = writeDiffFile(opts.staged ? 'staged' : 'diff', diff, outDir);
+          console.log(`Wrote diff: ${filePath}`);
+          console.log(
+            success([
+              chalk.green('Diff ready'),
+              chalk.dim(`path:   ${filePath}`),
+              '',
+              'Next:',
+              `- Generate prompt: diff2ai prompt ${path.relative(process.cwd(), filePath)}`,
+            ]),
+          );
+        },
+      ),
+    );
 
   program
-    .command('show <sha>')
-    .description('Show commit diff for a specific SHA')
+    .command('show <commit>')
+    .description('Write the diff of a single commit (SHA, branch, tag, HEAD~1...)')
+    .option(
+      '--context <n>',
+      'Lines of context around each change (git -U)',
+      parseNonNegativeInt('--context'),
+    )
+    .option('--function-context', 'Include the whole enclosing function around each change')
     .option('--out <dir>', 'Output directory (default: reviews/)')
-    .action(async (sha: string, opts: { out?: string }) => {
-      try {
-        assertGitRepo();
-        console.log(header('diff2ai show', `sha: ${sha}`));
-        const diff = await generateUnifiedDiff({ commitSha: sha, ignore: loadIgnore() });
-        if (!diff || diff.trim().length === 0) {
-          console.log(chalk.gray('No changes detected.'));
-          return;
-        }
-        const outDir = opts.out ?? path.join(process.cwd(), 'reviews');
-        const filePath = writeDiffFile(`commit_${sha}`, diff, outDir);
-        console.log(`Wrote diff: ${filePath}`);
-        console.log(success([chalk.green('Commit diff ready'), chalk.dim(`path:   ${filePath}`)]));
-      } catch (error: unknown) {
-        console.error((error as Error)?.message ?? String(error));
-        process.exitCode = 1;
-      }
-    });
+    .action(
+      withErrors(
+        async (
+          commit: string,
+          opts: { context?: number; functionContext?: boolean; out?: string },
+        ) => {
+          const root = await resolveRepoRoot();
+          assertSafeRef(commit, 'commit');
+          // Name the file by short SHA: refs like feature/x or HEAD~1 are not
+          // safe file names.
+          const shortSha = (
+            await gitClient(root)
+              .revparse(['--short', `${commit}^{commit}`])
+              .catch(() => '')
+          ).trim();
+          if (!shortSha) throw new Error(`Unknown commit "${commit}".`);
+          console.log(header('diff2ai show', `commit: ${commit} (${shortSha})`));
+          const config = loadProjectConfig(root);
+          const excluded: string[] = [];
+          const diff = await generateUnifiedDiff(
+            {
+              commitSha: shortSha,
+              contextLines: opts.context ?? config.contextLines,
+              functionContext: opts.functionContext ?? config.functionContext,
+              ignore: loadIgnore(root, config.exclude),
+              onExclude: (f) => excluded.push(f),
+            },
+            root,
+          );
+          reportExcluded(excluded);
+          if (!diff || diff.trim().length === 0) {
+            console.log(chalk.gray('No changes detected.'));
+            return;
+          }
+          const outDir = resolveOutDir(opts.out, root);
+          const filePath = writeDiffFile(`commit_${shortSha}`, diff, outDir);
+          console.log(`Wrote diff: ${filePath}`);
+          console.log(
+            success([chalk.green('Commit diff ready'), chalk.dim(`path:   ${filePath}`)]),
+          );
+        },
+      ),
+    );
 
   program
     .command('prompt <diffFile>')
-    .description('Generate AI-ready markdown prompt from a diff file')
-    .option('--template <nameOrPath>', 'Template: name or .md path', 'default')
+    .description('Generate an AI-ready markdown prompt from a .diff file')
+    .option(
+      '--template <nameOrPath>',
+      'Template: name or .md path (default: from config or "default")',
+    )
     .option(
       '--templates-dir <dir>',
       'Directory for resolving named templates (default: ./templates)',
     )
+    .option('--no-line-numbers', 'Do not prefix diff lines with their new-file line numbers')
     .option('--out <dir>', 'Output directory (default: reviews/)')
-    .action((diffFile: string, opts: { template: string; templatesDir?: string; out?: string }) => {
-      try {
-        const abs = diffFile;
-        console.log(header('diff2ai prompt', `template: ${opts.template}`));
-        if (!fs.existsSync(abs)) {
-          console.error(`Diff file not found: ${abs}`);
-          process.exitCode = 1;
-          return;
-        }
-        const diffContent = fs.readFileSync(abs, 'utf-8');
-        const { config } = loadConfig();
-        const md = renderTemplate(opts.template ?? config.template ?? 'default', diffContent, {
-          cwd: process.cwd(),
-          templatesDir: opts.templatesDir ?? config.templatesDir,
-        });
-        const outDir = opts.out ?? path.join(process.cwd(), 'reviews');
-        ensureDir(outDir);
-        const outPath = path.join(outDir, path.basename(abs).replace(/\.diff$/i, '.md'));
-        fs.writeFileSync(outPath, md, 'utf-8');
-        console.log(`Wrote prompt: ${outPath}`);
-        console.log(success([chalk.green('Prompt ready'), chalk.dim(`path:   ${outPath}`)]));
-      } catch (error: unknown) {
-        console.error((error as Error)?.message ?? String(error));
-        process.exitCode = 1;
-      }
-    });
+    .action(
+      withErrors(
+        async (
+          diffFile: string,
+          opts: { template?: string; templatesDir?: string; lineNumbers: boolean; out?: string },
+          cmd: Command,
+        ) => {
+          const { abs, content } = readDiffFile(diffFile);
+          const root = await findProjectRoot();
+          const config = loadProjectConfig(root);
+          const choice = resolveTemplateChoice(opts, config, root);
+          console.log(header('diff2ai prompt', `template: ${choice.template}`));
+          const md = renderPrompt(content, {
+            ...choice,
+            root,
+            lineNumbers: fromCliOr(
+              cmd,
+              'lineNumbers',
+              opts.lineNumbers,
+              config.lineNumbers ?? true,
+            ),
+          });
+          const outDir = resolveOutDir(opts.out, root);
+          ensureDir(outDir);
+          const outPath = path.join(outDir, path.basename(abs).replace(/\.diff$/i, '') + '.md');
+          fs.writeFileSync(outPath, md, 'utf-8');
+          console.log(`Wrote prompt: ${outPath}`);
+          console.log(success([chalk.green('Prompt ready'), chalk.dim(`path:   ${outPath}`)]));
+        },
+      ),
+    );
 
   program
     .command('chunk <diffFile>')
-    .description('Chunk large diff into batches using a token budget profile')
+    .description('Split a large .diff into template-wrapped batch prompts that fit a token budget')
     .option(
       '--profile <name>',
-      'Profile: claude-large|generic-large|generic-medium (default: from .aidiff.json or generic-medium)',
+      'Budget profile: claude-large|generic-large|generic-medium (default: from .aidiff.json or generic-medium)',
     )
+    .option(
+      '--budget <tokens>',
+      'Token budget per batch, e.g. 200000 or 200k (overrides --profile)',
+      parseBudgetOption,
+    )
+    .option(
+      '--template <nameOrPath>',
+      'Template: name or .md path (default: from config or "default")',
+    )
+    .option(
+      '--templates-dir <dir>',
+      'Directory for resolving named templates (default: ./templates)',
+    )
+    .option('--no-line-numbers', 'Do not prefix diff lines with their new-file line numbers')
     .option('--out <dir>', 'Output directory (default: reviews/)')
-    .action((diffFile: string, opts: { profile?: string; out?: string }) => {
-      try {
-        const abs = diffFile;
-        const { config } = loadConfig();
-        const profile = resolveProfile(opts.profile, config.profile);
-        console.log(header('diff2ai chunk', `profile: ${profile}`));
-        if (!fs.existsSync(abs)) {
-          console.error(`Diff file not found: ${abs}`);
-          process.exitCode = 1;
-          return;
-        }
-        const diffContent = fs.readFileSync(abs, 'utf-8');
-        const { chunks, warnings } = chunkDiff(diffContent, profile);
-        for (const w of warnings) console.warn(chalk.yellow(w));
-        const outDir = opts.out ?? path.join(process.cwd(), 'reviews');
-        const { indexPath } = writeBatchFiles(chunks, outDir);
-        console.log(`Wrote ${chunks.length} batch file(s) and ${path.basename(indexPath)}`);
-        console.log(
-          success([
-            chalk.green('Chunking complete'),
-            chalk.dim(`batches: ${chunks.length}`),
-            chalk.dim(`index:   ${path.basename(indexPath)}`),
-          ]),
-        );
-      } catch (error: unknown) {
-        console.error((error as Error)?.message ?? String(error));
-        process.exitCode = 1;
-      }
-    });
+    .action(
+      withErrors(
+        async (
+          diffFile: string,
+          opts: {
+            profile?: string;
+            budget?: number;
+            template?: string;
+            templatesDir?: string;
+            lineNumbers: boolean;
+            out?: string;
+          },
+          cmd: Command,
+        ) => {
+          const { content } = readDiffFile(diffFile);
+          const root = await findProjectRoot();
+          const config = loadProjectConfig(root);
+          const budget = resolveBudget({
+            cliBudget: opts.budget,
+            cliProfile: opts.profile,
+            configBudget: config.budget,
+            configProfile: config.profile,
+          });
+          console.log(header('diff2ai chunk', `budget: ${budget.label} (${budget.budget} tokens)`));
+          const built = buildPrompts(
+            content,
+            {
+              ...resolveTemplateChoice(opts, config, root),
+              root,
+              lineNumbers: fromCliOr(
+                cmd,
+                'lineNumbers',
+                opts.lineNumbers,
+                config.lineNumbers ?? true,
+              ),
+            },
+            budget,
+          );
+          const chunks =
+            built.kind === 'single'
+              ? [{ filename: 'batch_1.md', content: built.prompt }]
+              : built.chunks;
+          if (built.kind === 'batches')
+            for (const w of built.warnings) console.warn(chalk.yellow(w));
+          const outDir = resolveOutDir(opts.out, root);
+          const { indexPath } = writeBatchFiles(chunks, outDir);
+          console.log(`Wrote ${chunks.length} batch file(s) and ${path.basename(indexPath)}`);
+          console.log(
+            success([
+              chalk.green('Chunking complete'),
+              chalk.dim(`batches: ${chunks.length}`),
+              chalk.dim(`index:   ${path.basename(indexPath)}`),
+            ]),
+          );
+        },
+      ),
+    );
 
   program
     .command('templates')
     .description('List available templates (project and packaged)')
-    .action(() => {
-      try {
-        const cwd = process.cwd();
-        const projectDir = path.join(cwd, 'templates');
+    .action(
+      withErrors(async () => {
+        const root = await findProjectRoot();
+        const config = loadProjectConfig(root);
+        const projectDir = resolveProjectTemplatesDir(
+          root,
+          config.templatesDir ? path.resolve(root, config.templatesDir) : undefined,
+        );
         const builtInDir = resolveBuiltInTemplatesDir();
-        const project: string[] = [];
-        const builtins: string[] = [];
-
-        if (fs.existsSync(projectDir) && fs.statSync(projectDir).isDirectory()) {
-          for (const f of fs.readdirSync(projectDir)) {
-            if (f.endsWith('.md')) project.push(f.replace(/\.md$/i, ''));
-          }
-        }
-        if (builtInDir && fs.existsSync(builtInDir)) {
-          for (const f of fs.readdirSync(builtInDir)) {
-            if (f.endsWith('.md')) builtins.push(f.replace(/\.md$/i, ''));
-          }
-        }
+        const list = (dir: string | null) =>
+          dir && fs.existsSync(dir)
+            ? fs
+                .readdirSync(dir)
+                .filter((f) => f.endsWith('.md'))
+                .map((f) => f.replace(/\.md$/i, ''))
+                .sort()
+            : [];
+        const project = projectDir && projectDir !== builtInDir ? list(projectDir) : [];
+        const builtins = list(builtInDir);
 
         console.log(header('diff2ai templates', 'Available templates'));
         if (project.length) {
-          console.log(chalk.green('Project templates:'));
-          for (const t of project.sort()) console.log(`  - ${t}`);
+          console.log(chalk.green(`Project templates (${projectDir}):`));
+          for (const t of project) console.log(`  - ${t}`);
         } else {
           console.log(chalk.dim('Project templates: (none found)'));
         }
         if (builtins.length) {
           console.log(chalk.green('\nPackaged templates:'));
-          for (const t of builtins.sort()) console.log(`  - ${t}`);
+          for (const t of builtins) console.log(`  - ${t}`);
         } else {
           console.log(chalk.dim('\nPackaged templates: (none found)'));
         }
-      } catch (error: unknown) {
-        console.error((error as Error)?.message ?? String(error));
-        process.exitCode = 1;
-      }
-    });
+      }),
+    );
 }

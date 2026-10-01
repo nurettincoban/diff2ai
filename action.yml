@@ -1,0 +1,147 @@
+name: diff2ai review
+description: AI code review for pull requests with any AI CLI — multi-reviewer consensus, inline PR comments, SARIF, severity gates.
+author: Nurettin Coban
+branding:
+  icon: eye
+  color: blue
+
+inputs:
+  runner:
+    description: AI runner — claude, codex, gemini, opencode, cursor, ollama:<model>, or one defined in .aidiff.json
+    default: claude
+  iterations:
+    description: Reviewer passes for a consensus review (2+). Use 1 for a single review pass.
+    default: '3'
+  personas:
+    description: Comma-separated persona slugs or "auto" (overrides iterations)
+    default: ''
+  template:
+    description: Template name or path (default from .aidiff.json, else "default")
+    default: ''
+  target:
+    description: Branch to diff against (default — the pull request's base branch)
+    default: ''
+  post:
+    description: Post the findings on the pull request
+    default: 'true'
+  inline:
+    description: Post findings on changed lines as inline review comments (otherwise one comment)
+    default: 'true'
+  min-severity:
+    description: Only post/export findings at or above this severity (CRITICAL|HIGH|MEDIUM|LOW|INFO)
+    default: ''
+  fail-on:
+    description: Fail the job when a verified finding is at or above this severity
+    default: ''
+  sarif-file:
+    description: Also write the findings as SARIF to this path (upload it with github/codeql-action/upload-sarif)
+    default: ''
+  install-runner:
+    description: Install the runner CLI with npm (claude, codex, gemini, opencode). Set to false if an earlier step installs it.
+    default: 'true'
+  version:
+    description: diff2ai version to run from npm
+    default: latest
+  github-token:
+    description: Token used by gh to read the PR and post the review
+    default: ${{ github.token }}
+
+outputs:
+  review-file:
+    description: Path to the review result (consolidated.md or *.response.md)
+    value: ${{ steps.review.outputs.file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check the event
+      if: github.event.pull_request.number == ''
+      shell: bash
+      run: |
+        echo "::error::diff2ai review runs on pull_request events."
+        exit 1
+
+    - name: Install the runner CLI
+      if: inputs.install-runner == 'true'
+      shell: bash
+      env:
+        RUNNER: ${{ inputs.runner }}
+      run: |
+        case "$RUNNER" in
+          claude) npm install -g @anthropic-ai/claude-code ;;
+          codex) npm install -g @openai/codex ;;
+          gemini) npm install -g @google/gemini-cli ;;
+          opencode) npm install -g opencode-ai ;;
+          *) echo "Not installing '$RUNNER' — install it in an earlier step." ;;
+        esac
+
+    - name: Make sure the merge base is available
+      shell: bash
+      run: |
+        if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+          git fetch --quiet --unshallow origin
+        fi
+
+    - name: Review
+      id: review
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        D2A: diff2ai@${{ inputs.version }}
+        PR: ${{ github.event.pull_request.number }}
+        BASE: ${{ inputs.target || github.event.pull_request.base.ref }}
+        RUNNER: ${{ inputs.runner }}
+        ITERATIONS: ${{ inputs.iterations }}
+        PERSONAS: ${{ inputs.personas }}
+        TEMPLATE: ${{ inputs.template }}
+      run: |
+        args=(review --pr "$PR" --target "$BASE" --run "$RUNNER")
+        if [ -n "$PERSONAS" ]; then
+          args+=(--personas "$PERSONAS" --then none)
+        elif [ "$ITERATIONS" -ge 2 ]; then
+          args+=(--iterations "$ITERATIONS" --then none)
+        fi
+        if [ -n "$TEMPLATE" ]; then args+=(--template "$TEMPLATE"); fi
+        npx --yes "$D2A" --no-interactive --yes "${args[@]}"
+        # Only one of the globs matches (consensus vs single run) and ls exits 2
+        # on the other; tolerate that under the runner's `-eo pipefail`.
+        file=$(ls -t reviews/run_*/consolidated.md reviews/*.response.md 2>/dev/null | head -n 1 || true)
+        echo "file=$file" >> "$GITHUB_OUTPUT"
+
+    - name: Post to the pull request
+      if: inputs.post == 'true' && steps.review.outputs.file != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        D2A: diff2ai@${{ inputs.version }}
+        PR: ${{ github.event.pull_request.number }}
+        FILE: ${{ steps.review.outputs.file }}
+        INLINE: ${{ inputs.inline }}
+        MIN_SEVERITY: ${{ inputs.min-severity }}
+      run: |
+        args=(post "$FILE" --platform github --pr "$PR")
+        if [ "$INLINE" != "true" ]; then args+=(--no-inline); fi
+        if [ -n "$MIN_SEVERITY" ]; then args+=(--min-severity "$MIN_SEVERITY"); fi
+        npx --yes "$D2A" --no-interactive --yes "${args[@]}"
+
+    - name: Write SARIF
+      if: inputs.sarif-file != '' && steps.review.outputs.file != ''
+      shell: bash
+      env:
+        D2A: diff2ai@${{ inputs.version }}
+        FILE: ${{ steps.review.outputs.file }}
+        SARIF: ${{ inputs.sarif-file }}
+        MIN_SEVERITY: ${{ inputs.min-severity }}
+      run: |
+        args=(export "$FILE" --format sarif --out "$SARIF")
+        if [ -n "$MIN_SEVERITY" ]; then args+=(--min-severity "$MIN_SEVERITY"); fi
+        npx --yes "$D2A" "${args[@]}"
+
+    - name: Severity gate
+      if: inputs.fail-on != '' && steps.review.outputs.file != ''
+      shell: bash
+      env:
+        D2A: diff2ai@${{ inputs.version }}
+        FILE: ${{ steps.review.outputs.file }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: npx --yes "$D2A" export "$FILE" --fail-on "$FAIL_ON" > /dev/null

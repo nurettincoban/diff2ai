@@ -80,3 +80,6 @@ temp/
 .DS_Store
 Thumbs.db
 desktop.ini
+# npm pack output
+*.tgz
+release-notes.md

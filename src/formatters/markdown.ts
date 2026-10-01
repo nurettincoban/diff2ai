@@ -2,19 +2,30 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-export type BuiltInTemplateName = 'basic' | 'default';
+// Optional context placeholders. Missing values render as "(not available)",
+// so templates can use them unconditionally.
+export type TemplateVars = {
+  commits?: string; // {commits}: commit subjects/bodies in the reviewed range
+  file_stats?: string; // {file_stats}: changed files with +/- counts
+  branch?: string; // {branch}: the ref under review
+  target?: string; // {target}: the branch it is compared against
+};
+
+export const TEMPLATE_PLACEHOLDERS = ['diff_content', 'commits', 'file_stats', 'branch', 'target'];
 
 type RenderOptions = {
   cwd?: string;
   templatesDir?: string;
+  vars?: TemplateVars;
 };
 
 export function resolveBuiltInTemplatesDir(): string | null {
   try {
     const moduleDir = path.dirname(fileURLToPath(import.meta.url));
     const candidates = [
-      path.resolve(moduleDir, './templates'),
+      path.resolve(moduleDir, './templates'), // dist/cli.js → dist/templates
       path.resolve(moduleDir, '../templates'),
+      path.resolve(moduleDir, '../../templates'), // running from source: src/formatters
     ];
     for (const dir of candidates) {
       if (fs.existsSync(dir)) return dir;
@@ -25,10 +36,11 @@ export function resolveBuiltInTemplatesDir(): string | null {
   return null;
 }
 
-function resolveProjectTemplatesDir(cwd: string, override?: string): string | null {
+export function resolveProjectTemplatesDir(cwd: string, override?: string): string | null {
   if (override) {
     const abs = path.isAbsolute(override) ? override : path.resolve(cwd, override);
     if (fs.existsSync(abs) && fs.statSync(abs).isDirectory()) return abs;
+    throw new Error(`Templates directory not found: ${abs}`);
   }
   const localTemplates = path.join(cwd, 'templates');
   if (fs.existsSync(localTemplates) && fs.statSync(localTemplates).isDirectory())
@@ -36,13 +48,19 @@ function resolveProjectTemplatesDir(cwd: string, override?: string): string | nu
   return null;
 }
 
-function isPathLike(input: string): boolean {
+export function isPathLike(input: string): boolean {
   return input.endsWith('.md') || input.includes('/') || input.includes('\\');
 }
 
-// Replacer function form so `$&`, `$'` etc. in diff content are inserted verbatim
-function substituteDiff(raw: string, diffContent: string): string {
-  return raw.replace('{diff_content}', () => diffContent);
+// One pass over the template with a replacer function: `$&`, `$'` etc. in the
+// diff are inserted verbatim, and placeholder-like text inside the diff or
+// commit messages is never substituted a second time.
+function substitute(raw: string, diffContent: string, vars: TemplateVars = {}): string {
+  return raw.replace(/\{(diff_content|commits|file_stats|branch|target)\}/g, (_m, key: string) => {
+    if (key === 'diff_content') return diffContent;
+    const value = vars[key as keyof TemplateVars];
+    return value && value.trim() ? value : '(not available)';
+  });
 }
 
 function readTemplateFileOrThrow(templatePath: string): string {
@@ -71,7 +89,7 @@ export function renderTemplate(
   if (isPathLike(templateSpec)) {
     const abs = path.isAbsolute(templateSpec) ? templateSpec : path.resolve(cwd, templateSpec);
     const raw = readTemplateFileOrThrow(abs);
-    return substituteDiff(raw, diffContent);
+    return substitute(raw, diffContent, opts.vars);
   }
 
   // 2) Name-based input
@@ -83,28 +101,16 @@ export function renderTemplate(
     const candidate = path.join(projectDir, candidateFile);
     if (fs.existsSync(candidate)) {
       const raw = readTemplateFileOrThrow(candidate);
-      return substituteDiff(raw, diffContent);
+      return substitute(raw, diffContent, opts.vars);
     }
   }
 
-  // Built-ins (generic lookup by name, then fallback map for legacy names)
-  const builtInMap: Record<BuiltInTemplateName, string> = {
-    basic: 'basic.md',
-    default: 'default.md',
-  };
+  // Packaged templates: <name>.md
   if (builtInDir) {
-    // First try generic <name>.md in packaged templates
     const generic = path.join(builtInDir, `${name}.md`);
     if (fs.existsSync(generic)) {
       const raw = readTemplateFileOrThrow(generic);
-      return substituteDiff(raw, diffContent);
-    }
-    // Then fallback to legacy name map
-    const isBuiltInName = Object.prototype.hasOwnProperty.call(builtInMap, name);
-    if (isBuiltInName) {
-      const candidate = path.join(builtInDir, builtInMap[name as BuiltInTemplateName]);
-      const raw = readTemplateFileOrThrow(candidate);
-      return substituteDiff(raw, diffContent);
+      return substitute(raw, diffContent, opts.vars);
     }
   }
 

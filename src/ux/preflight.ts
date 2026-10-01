@@ -1,4 +1,6 @@
-import simpleGit from 'simple-git';
+import fs from 'node:fs';
+import path from 'node:path';
+import { gitClient } from '../git/repo.js';
 
 export type PreflightSummary = {
   isDirty: boolean;
@@ -11,13 +13,38 @@ export type PreflightSummary = {
   hasStash: boolean;
 };
 
-export async function gatherPreflight(_target: string): Promise<PreflightSummary> {
-  const git = simpleGit();
+// Resolves a path inside the git dir (handles worktrees and $GIT_DIR).
+async function gitPath(root: string, name: string): Promise<string | null> {
+  try {
+    const rel = (await gitClient(root).revparse(['--git-path', name])).trim();
+    return rel ? path.resolve(root, rel) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function gatherPreflight(root: string = process.cwd()): Promise<PreflightSummary> {
+  const git = gitClient(root);
   const status = await git.status();
   const isDirty = status.files.length > 0;
   const hasUntracked = status.not_added.length > 0;
-  const ongoingMerge = Boolean(status.rebase || status.merging);
   const currentBranch = status.current ?? null;
+
+  // StatusResult has no merge/rebase info; check the git dir markers directly.
+  let ongoingMerge = false;
+  for (const marker of [
+    'MERGE_HEAD',
+    'CHERRY_PICK_HEAD',
+    'REVERT_HEAD',
+    'rebase-merge',
+    'rebase-apply',
+  ]) {
+    const p = await gitPath(root, marker);
+    if (p && fs.existsSync(p)) {
+      ongoingMerge = true;
+      break;
+    }
+  }
 
   let ahead = 0;
   let behind = 0;
@@ -39,16 +66,11 @@ export async function gatherPreflight(_target: string): Promise<PreflightSummary
     // not tracking upstream
   }
 
+  // Every fetch rewrites FETCH_HEAD; HEAD's reflog never records fetches.
   let lastFetchAgoSec: number | null = null;
-  try {
-    const reflog = await git.raw(['reflog', 'show', '--date=unix', '--grep-reflog', 'fetch']);
-    const match = reflog.match(/@\s(\d+)/);
-    if (match) {
-      const ts = parseInt(match[1], 10) * 1000;
-      lastFetchAgoSec = Math.floor((Date.now() - ts) / 1000);
-    }
-  } catch {
-    // ignore
+  const fetchHead = await gitPath(root, 'FETCH_HEAD');
+  if (fetchHead && fs.existsSync(fetchHead)) {
+    lastFetchAgoSec = Math.max(0, Math.floor((Date.now() - fs.statSync(fetchHead).mtimeMs) / 1000));
   }
 
   let hasStash = false;

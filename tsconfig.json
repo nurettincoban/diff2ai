@@ -8,10 +8,9 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "outDir": "dist",
-    "rootDir": "src",
     "resolveJsonModule": true,
+    "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src", "tests", "tsup.config.ts", "vitest.config.ts"]
 }

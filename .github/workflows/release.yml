@@ -1,0 +1,44 @@
+name: Release
+
+# Publishes to npm when a version tag (v1.2.3) is pushed. Floating action
+# tags like v1 do not match this pattern.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write # create the GitHub Release
+  id-token: write # npm trusted publishing (OIDC) and provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Node 24 ships npm >= 11.5.1, which trusted publishing requires
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - name: Check the tag matches package.json
+        run: |
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json ($version)"
+            exit 1
+          fi
+      # No NPM_TOKEN: npm authenticates with this workflow's OIDC token once
+      # the package has a trusted publisher configured on npmjs.com.
+      # Provenance is generated automatically for public packages.
+      - run: npm publish --access public
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/changelog-section.mjs "${GITHUB_REF_NAME#v}" > release-notes.md
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md --verify-tag
