@@ -1,0 +1,14 @@
+# Global git config for the test suite (GIT_CONFIG_GLOBAL in vitest.config.ts).
+# Keeps integration tests independent of the developer's own ~/.gitconfig
+# (identity, default branch, colors, autocrlf...).
+[user]
+	name = diff2ai tests
+	email = tests@diff2ai.invalid
+[init]
+	defaultBranch = main
+[core]
+	autocrlf = false
+[commit]
+	gpgsign = false
+[tag]
+	gpgsign = false
