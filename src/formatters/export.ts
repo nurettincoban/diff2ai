@@ -50,9 +50,17 @@ export function toJson(findings: Finding[], meta: ExportMeta): string {
   );
 }
 
+// Code scanning rejects results without a location, so SARIF only carries
+// findings that name at least one file.
+export function hasLocation(f: Finding): boolean {
+  return f.affected.some((a) => parseAffected(a) !== null);
+}
+
 // SARIF 2.1.0 — consumable by GitHub code scanning (upload-sarif) and most
-// static-analysis dashboards.
-export function toSarif(findings: Finding[], meta: ExportMeta): string {
+// static-analysis dashboards. Findings without a file location are left out
+// (see hasLocation); callers report how many.
+export function toSarif(allFindings: Finding[], meta: ExportMeta): string {
+  const findings = allFindings.filter(hasLocation);
   const types = [...new Set(findings.map((f) => f.type))];
   const rules = types.map((t) => ({
     id: `diff2ai/${slug(t)}`,

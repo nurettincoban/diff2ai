@@ -7,7 +7,10 @@
 //   FAKE_RUNNER_EMPTY       "1" → exit 0 with no output
 //   FAKE_RUNNER_SLEEP_MS    delay before responding (timeout tests)
 //   FAKE_RUNNER_LOG         file to append {kind, start, end} JSON lines to
+//   FAKE_RUNNER_IGNORE_TERM "1" → ignore SIGTERM (timeout escalation tests)
 import fs from 'node:fs';
+
+if (process.env.FAKE_RUNNER_IGNORE_TERM === '1') process.on('SIGTERM', () => {});
 
 const chunks = [];
 process.stdin.on('data', (c) => chunks.push(c));

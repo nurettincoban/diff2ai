@@ -60,6 +60,10 @@ First npm release since 0.1.2, so it also ships the 0.2.x fixes listed below. Re
 - Merge/rebase-in-progress detection read fields that don't exist on simple-git's status result, so `review --switch` could switch branches mid-merge.
 - `templates` ignored `templatesDir` from config; the `diff` target picker listed `origin/HEAD`.
 - Comment footers claimed "cross-validated by multiple reviewers" for single-pass reviews.
+- Findings with several `Affected` entries or multi-line explanations were cut to their first line when parsed (affecting `post`, `export` and verification).
+- `show <merge commit>` produced a combined diff that ignore patterns, stats and line numbers could not handle; merges now diff against their first parent.
+- A timed-out runner kept running (no SIGKILL escalation; on Windows only the `cmd.exe` wrapper was killed), so diff2ai waited for it to finish.
+- Renames whose old path contains `" b/"` were attributed to the wrong path.
 
 ### Security
 

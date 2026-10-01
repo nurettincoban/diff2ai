@@ -57,9 +57,11 @@ export function parseSeverity(input: string): Severity {
 }
 
 function sectionAfter(block: string, label: string): string | undefined {
-  // Captures the text following "Label:" up to the next known section or end
+  // Captures the text following "Label:" up to the next known section or the
+  // end of the block. (?![\s\S]) is end-of-input: under the `m` flag a plain `$`
+  // would stop at the first line break and drop multi-line sections.
   const re = new RegExp(
-    `^${label}:\\s*\\n?([\\s\\S]*?)(?=^(?:Affected|Explanation|Proposed fix|Consensus|Title|Verification):|\\n## |$)`,
+    `^${label}:\\s*\\n?([\\s\\S]*?)(?=^(?:Affected|Explanation|Proposed fix|Consensus|Title|Verification):|\\n## |(?![\\s\\S]))`,
     'm',
   );
   const m = re.exec(block);

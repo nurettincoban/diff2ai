@@ -103,7 +103,9 @@ runs:
         fi
         if [ -n "$TEMPLATE" ]; then args+=(--template "$TEMPLATE"); fi
         npx --yes "$D2A" --no-interactive --yes "${args[@]}"
-        file=$(ls -t reviews/run_*/consolidated.md reviews/*.response.md 2>/dev/null | head -n 1)
+        # Only one of the globs matches (consensus vs single run) and ls exits 2
+        # on the other; tolerate that under the runner's `-eo pipefail`.
+        file=$(ls -t reviews/run_*/consolidated.md reviews/*.response.md 2>/dev/null | head -n 1 || true)
         echo "file=$file" >> "$GITHUB_OUTPUT"
 
     - name: Post to the pull request

@@ -26,6 +26,18 @@ function parsePlatform(value: string): Platform {
   throw new InvalidArgumentError('--platform must be github or gitlab.');
 }
 
+// Host of a git remote URL: https://host/..., ssh://git@host/..., git@host:...
+export function remoteHost(url: string): string {
+  const trimmed = url.trim();
+  try {
+    const host = new URL(trimmed).hostname;
+    if (host) return host.toLowerCase();
+  } catch {
+    // not a URL; try scp-like syntax
+  }
+  return (/^(?:[^@/\s]+@)?([^:/\s]+):/.exec(trimmed)?.[1] ?? '').toLowerCase();
+}
+
 // origin's host decides, then explicit --pr/--mr, then configured CLIs.
 // GitLab stays the fallback for backward compatibility.
 async function detectPlatform(
@@ -39,8 +51,10 @@ async function detectPlatform(
     (await gitClient(root)
       .remote(['get-url', 'origin'])
       .catch(() => '')) || '';
-  if (/github/i.test(url)) return 'github';
-  if (/gitlab/i.test(url)) return 'gitlab';
+  // Match the host only: a repo named "github-sync" on GitLab is still GitLab.
+  const host = remoteHost(url);
+  if (host.includes('github')) return 'github';
+  if (host.includes('gitlab')) return 'gitlab';
   if (config.github && !config.gitlab) return 'github';
   return 'gitlab';
 }

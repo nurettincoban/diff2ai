@@ -110,13 +110,29 @@ export function parseDiffGitHeader(rawLine: string): DiffGitHeader | null {
   return null;
 }
 
+// The extended header lines `rename to <path>`, `copy to <path>` and
+// `+++ b/<path>` state the new path unambiguously, even for renames whose
+// `diff --git` line can't be split (old path containing " b/").
+export function parseNewPathLine(rawLine: string): string | null {
+  const line = rawLine.replace(/\r$/, '');
+  const meta = /^(?:rename to|copy to) (.+)$/.exec(line);
+  if (meta) return readQuoted(meta[1], 0)?.value ?? meta[1];
+  const plus = /^\+\+\+ (.+)$/.exec(line);
+  if (!plus || plus[1] === '/dev/null') return null;
+  return stripPrefix(readQuoted(plus[1], 0)?.value ?? plus[1], 'b/');
+}
+
 // Path (new side) of a file section, or null for a non-file preamble.
 export function sectionPath(section: string): string | null {
-  const firstLine = section.slice(
-    0,
-    section.indexOf('\n') >= 0 ? section.indexOf('\n') : undefined,
-  );
-  return parseDiffGitHeader(firstLine)?.newPath ?? null;
+  const lines = section.split('\n');
+  const header = parseDiffGitHeader(lines[0]);
+  if (!header) return null;
+  for (const line of lines.slice(1)) {
+    if (parseHunkHeader(line)) break;
+    const p = parseNewPathLine(line);
+    if (p) return p;
+  }
+  return header.newPath;
 }
 
 export function changedFiles(diff: string): string[] {
@@ -189,6 +205,12 @@ export function walkDiff(
       visit(line, 'header', { file });
       continue;
     }
+    const newPath: string | null = file !== null ? parseNewPathLine(line) : null;
+    if (newPath) {
+      file = newPath;
+      visit(line, 'header', { file });
+      continue;
+    }
     const hunk = parseHunkHeader(line);
     if (hunk && file !== null) {
       oldLeft = hunk.oldCount;
@@ -210,16 +232,13 @@ export type DiffIndex = Map<string, Array<[number, number]>>;
 
 export function buildDiffIndex(diff: string): DiffIndex {
   const index: DiffIndex = new Map();
-  let file: string | null = null;
-  for (const line of diff.split('\n')) {
-    const header = parseDiffGitHeader(line);
-    if (header) {
-      file = header.newPath;
-      if (!index.has(file)) index.set(file, []);
-      continue;
-    }
-    const hunk = parseHunkHeader(line);
-    if (hunk && file !== null) {
+  for (const section of splitFileSections(diff)) {
+    const file = sectionPath(section);
+    if (file === null) continue;
+    if (!index.has(file)) index.set(file, []);
+    for (const line of section.split('\n')) {
+      const hunk = parseHunkHeader(line);
+      if (!hunk) continue;
       const end = Math.max(hunk.newStart, hunk.newStart + hunk.newCount - 1);
       index.get(file)!.push([hunk.newStart, end]);
     }
@@ -255,9 +274,15 @@ export function diffFileStats(diff: string): FileStat[] {
       if (kind === 'add') added++;
       else if (kind === 'del') removed++;
     });
+    const renameFrom = /^rename from (.+?)\r?$/m.exec(section)?.[1];
     stats.push({
-      path: header.newPath,
-      oldPath: status === 'renamed' ? header.oldPath : undefined,
+      path: sectionPath(section) ?? header.newPath,
+      oldPath:
+        status === 'renamed'
+          ? renameFrom
+            ? (readQuoted(renameFrom, 0)?.value ?? renameFrom)
+            : header.oldPath
+          : undefined,
       status,
       added,
       removed,

@@ -104,4 +104,50 @@ describe('regressions', () => {
     const dir = tmpDir('d2a-nogit-');
     expect(runFail(`node "${cli}" diff`, dir)).toMatch(/Not a git repository/);
   });
+
+  // Found by the post-implementation review of 0.3.0
+  it('show <merge commit> diffs against the first parent (no combined diff)', () => {
+    const { repo } = repoWithOrigin('d2a-merge-');
+    run('git checkout -q -b side', repo);
+    write(repo, 'side.ts', 'export const s = 1;\n');
+    write(repo, 'side.log', 'noise\n');
+    run('git add . && git commit -q -m side', repo);
+    run('git checkout -q main', repo);
+    write(repo, 'main.ts', 'export const m = 1;\n');
+    run('git add . && git commit -q -m main2', repo);
+    run('git merge -q --no-edit side', repo);
+    write(repo, '.aidiffignore', '*.log\n');
+    diff2ai('show HEAD', repo);
+    const diff = readReview(repo, (f) => f.startsWith('commit_'));
+    expect(diff).toContain('diff --git a/side.ts b/side.ts');
+    expect(diff).not.toContain('diff --cc');
+    expect(diff).not.toContain('side.log');
+  });
+
+  it('a timed-out runner is actually stopped (SIGKILL escalation / Windows process tree)', () => {
+    const repo = featureRepo('d2a-timeout-');
+    const fakeRunner = path.join(path.dirname(cli), '..', 'tests', 'fixtures', 'fake-runner.mjs');
+    let command = process.execPath;
+    let args: string[] = [fakeRunner];
+    if (process.platform === 'win32') {
+      // npm-style .cmd shim: cmd.exe is the direct child, node its grandchild
+      const shim = path.join(repo, 'slow-runner.cmd');
+      fs.writeFileSync(shim, `@"${process.execPath}" "${fakeRunner}" %*\r\n`);
+      command = shim;
+      args = [];
+    }
+    write(
+      repo,
+      '.aidiff.json',
+      JSON.stringify({ runners: { slow: { command, args, timeoutMs: 1000 } } }),
+    );
+    const started = Date.now();
+    const out = runFail(`node "${cli}" review feature/x --target main --run slow`, repo, {
+      FAKE_RUNNER_SLEEP_MS: '20000',
+      FAKE_RUNNER_IGNORE_TERM: '1',
+    });
+    expect(out).toMatch(/timed out after 1s/);
+    // Before the fix the CLI waited for the runner's full 20s.
+    expect(Date.now() - started).toBeLessThan(12_000);
+  });
 });

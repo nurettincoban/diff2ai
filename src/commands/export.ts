@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import chalk from 'chalk';
 import { parseSeverity, type Severity } from '../formatters/findings.js';
-import { toJson, toSarif } from '../formatters/export.js';
+import { hasLocation, toJson, toSarif } from '../formatters/export.js';
 import { gateFindings, loadFindings, resolveReviewFile } from '../formatters/reviewFile.js';
 import { findProjectRoot } from '../git/repo.js';
 import { resolveOutDir, withErrors } from './shared.js';
@@ -78,12 +78,21 @@ export function registerExport(program: Command): void {
           const { findings } = loadFindings(markdown, opts);
           const meta = { version: packageVersion(), source: path.relative(root, file) };
           const doc = opts.format === 'sarif' ? toSarif(findings, meta) : toJson(findings, meta);
+          const written =
+            opts.format === 'sarif' ? findings.filter(hasLocation).length : findings.length;
+          // stdout stays clean for piping; status goes to stderr
+          if (written < findings.length) {
+            console.error(
+              chalk.yellow(
+                `Left ${findings.length - written} finding(s) without a file location out of the SARIF (code scanning requires one).`,
+              ),
+            );
+          }
           if (opts.out) {
             const outPath = path.resolve(process.cwd(), opts.out);
             fs.mkdirSync(path.dirname(outPath), { recursive: true });
             fs.writeFileSync(outPath, doc + '\n', 'utf-8');
-            // stdout stays clean for piping; status goes to stderr
-            console.error(chalk.dim(`Wrote ${findings.length} finding(s) to ${outPath}`));
+            console.error(chalk.dim(`Wrote ${written} finding(s) to ${outPath}`));
           } else {
             process.stdout.write(doc + '\n');
           }

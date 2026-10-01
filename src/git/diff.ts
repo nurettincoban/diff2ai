@@ -44,7 +44,11 @@ export async function generateUnifiedDiff(
 
   if (options.commitSha) {
     const sha = assertSafeRef(options.commitSha, 'commit');
-    return filter(await git.raw(['show', ...flags, '--no-show-signature', sha]));
+    // -m --first-parent: a merge commit shows a normal diff against its first
+    // parent instead of a combined `diff --cc` the parser cannot read
+    return filter(
+      await git.raw(['show', ...flags, '--no-show-signature', '-m', '--first-parent', sha]),
+    );
   }
 
   if (options.staged) {

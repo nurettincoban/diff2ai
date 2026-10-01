@@ -3,6 +3,7 @@ import path from 'node:path';
 // cross-spawn resolves Windows .cmd/.bat shims (how npm installs CLIs such as
 // claude, codex or gemini), which plain child_process.spawn cannot launch.
 import spawn from 'cross-spawn';
+import { spawn as spawnPlain, type ChildProcess } from 'node:child_process';
 import type { ResolvedRunner, RunnerResult } from './types.js';
 
 // PATH lookup without spawning anything (honors PATHEXT on Windows).
@@ -51,6 +52,27 @@ function notFoundError(runner: ResolvedRunner): string {
   return `Runner "${runner.name}" not found on PATH (command: ${runner.command}).${hint}`;
 }
 
+// Stops a timed-out runner and everything it started. On Windows, npm CLIs run
+// as `cmd.exe /c <tool>.cmd`, so killing the child alone would leave the real
+// CLI running (and billing); taskkill /T takes down the whole tree.
+function killTree(child: ChildProcess): void {
+  child.stdin?.destroy();
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform === 'win32') {
+    spawnPlain('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    }).on('error', () => child.kill());
+    return;
+  }
+  child.kill('SIGTERM');
+  // Escalate if the runner ignores SIGTERM; cleared as soon as it exits.
+  const force = setTimeout(() => child.kill('SIGKILL'), 5_000);
+  child.once('exit', () => clearTimeout(force));
+}
+
 // Runs the runner headlessly: prompt via stdin (or prompt file path as an
 // argument when the runner is configured with input: 'promptFileArg').
 export async function runHeadless(
@@ -83,14 +105,11 @@ export async function runHeadless(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      clearTimeout(killTimer);
       resolve(result);
     };
 
-    let killTimer: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
-      child.kill('SIGTERM');
-      killTimer = setTimeout(() => child.kill('SIGKILL'), 5_000);
+      killTree(child);
       finish({
         ok: false,
         error: `Runner "${runner.name}" timed out after ${Math.round(runner.timeoutMs / 1000)}s.`,
