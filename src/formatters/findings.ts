@@ -14,8 +14,40 @@ export type Finding = {
   verificationFailed?: boolean; // marked by the post-judge verification gate
 };
 
+// Explicit "nothing found" answers: the judge's sentinel and the one the
+// packaged templates ask single reviewers to use.
+export const NO_ISSUES_MARKERS = ['No validated issues.', 'No issues found.'];
+
+export function reportsNoIssues(markdown: string): boolean {
+  const trimmed = markdown.trim();
+  return NO_ISSUES_MARKERS.some((m) => trimmed === m || trimmed.endsWith(`\n${m}`));
+}
+
+export type AffectedRef = { path: string; start?: number; end?: number };
+
+// "src/a.ts:10-12", "`src/a.ts:10`", "src/a.ts" → path + optional line range
+export function parseAffected(entry: string): AffectedRef | null {
+  const cleaned = entry
+    .trim()
+    .replace(/^`+|`+$/g, '')
+    .trim();
+  const m = /^(.+?)(?::(\d+)(?:\s*-\s*(\d+))?)?$/.exec(cleaned);
+  const p = m?.[1]?.trim();
+  if (!m || !p) return null;
+  if (!m[2]) return { path: p };
+  const start = Number.parseInt(m[2], 10);
+  const end = m[3] ? Number.parseInt(m[3], 10) : start;
+  return { path: p, start: Math.min(start, end), end: Math.max(start, end) };
+}
+
 export function severityRank(s: Severity): number {
   return SEVERITY_ORDER.indexOf(s);
+}
+
+// Findings at or above `threshold` (CRITICAL is the highest).
+export function atOrAbove(findings: Finding[], threshold: Severity): Finding[] {
+  const cutoff = severityRank(threshold);
+  return findings.filter((f) => severityRank(f.severity) <= cutoff);
 }
 
 export function parseSeverity(input: string): Severity {

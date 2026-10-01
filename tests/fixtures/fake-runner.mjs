@@ -6,11 +6,21 @@
 //   FAKE_RUNNER_FAIL_MATCH  regex; exit 1 when the prompt matches
 //   FAKE_RUNNER_EMPTY       "1" → exit 0 with no output
 //   FAKE_RUNNER_SLEEP_MS    delay before responding (timeout tests)
+//   FAKE_RUNNER_LOG         file to append {kind, start, end} JSON lines to
+import fs from 'node:fs';
 
 const chunks = [];
 process.stdin.on('data', (c) => chunks.push(c));
 process.stdin.on('end', () => {
   const input = Buffer.concat(chunks).toString('utf-8');
+  const started = Date.now();
+  const logSpan = (kind) => {
+    if (!process.env.FAKE_RUNNER_LOG) return;
+    fs.appendFileSync(
+      process.env.FAKE_RUNNER_LOG,
+      JSON.stringify({ kind, start: started, end: Date.now() }) + '\n',
+    );
+  };
 
   const failMatch = process.env.FAKE_RUNNER_FAIL_MATCH;
   if (failMatch && new RegExp(failMatch, 'i').test(input)) {
@@ -25,6 +35,7 @@ process.stdin.on('end', () => {
     if (input.includes('Output ONLY persona selections')) {
       // AI persona-selection mode: deterministic pick for tests.
       process.stdout.write('security: canned AI selection\ncorrectness: canned AI selection\n');
+      logSpan('select');
       process.exit(0);
     }
     if (input.includes('# Consolidation and Validation Instructions')) {
@@ -67,6 +78,7 @@ process.stdin.on('end', () => {
         );
       }
       process.stdout.write(blocks.join('\n\n') + '\n');
+      logSpan('judge');
       process.exit(0);
     }
 
@@ -94,6 +106,7 @@ process.stdin.on('end', () => {
         '',
       ].join('\n'),
     );
+    logSpan(personaMatch ? 'reviewer' : 'single');
     process.exit(0);
   };
 

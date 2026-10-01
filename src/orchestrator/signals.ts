@@ -1,4 +1,5 @@
 import { BUILTIN_PERSONAS } from './personas.js';
+import { changedFiles, walkDiff } from '../git/diffParse.js';
 
 export type PersonaSuggestion = { slug: string; reason: string };
 
@@ -12,16 +13,14 @@ const PERF_CONTENT = /Promise\.all|setInterval|createIndex|N\+1/i;
 const API_PATH =
   /(^|\/)(api|routes?|controllers?|handlers?|endpoints?|schemas?|contracts?)(\/|\.|$)|openapi|swagger|\.proto$|\.d\.ts$/i;
 
-export function changedFiles(diff: string): string[] {
-  const files: string[] = [];
-  const re = /^diff --git a\/(.*?) b\/(.*)$/gm;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(diff)) !== null) files.push(m[2] ?? m[1]);
-  return files;
-}
+export { changedFiles };
 
 function addedLines(diff: string): string[] {
-  return diff.split(/\r?\n/).filter((l) => l.startsWith('+') && !l.startsWith('+++'));
+  const lines: string[] = [];
+  walkDiff(diff, (line, kind) => {
+    if (kind === 'add') lines.push(line);
+  });
+  return lines;
 }
 
 // Local, zero-token heuristics: suggest reviewer personas from what the diff

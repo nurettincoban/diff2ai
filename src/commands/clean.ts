@@ -4,6 +4,8 @@ import path from 'node:path';
 import chalk from 'chalk';
 import { confirm } from '../ux/prompt.js';
 import { header, success } from '../ux/theme.js';
+import { findProjectRoot } from '../git/repo.js';
+import { globalFlags, resolveOutDir, withErrors } from './shared.js';
 
 // Only files diff2ai itself generates are ever deleted; anything else in the
 // output directory (user notes, saved responses with custom names) is left alone.
@@ -35,19 +37,10 @@ export function registerClean(program: Command): void {
     .option('--out <dir>', 'Output directory to clean (default: reviews/)')
     .option('--keep <n>', 'Keep the newest N run_* directories and loose artifacts', parseKeep, 0)
     .option('--dry-run', 'List what would be deleted, without deleting')
-    .action(async (opts: { out?: string; keep: number; dryRun?: boolean }, cmd: Command) => {
-      try {
-        const globalOpts =
-          (
-            cmd?.parent as unknown as { opts?: () => { interactive?: boolean; yes?: boolean } }
-          )?.opts?.() ?? {};
-        const yes: boolean | undefined = globalOpts.yes;
-        const interactiveMode =
-          globalOpts.interactive === false
-            ? false
-            : Boolean(process.stdout.isTTY && process.stdin.isTTY);
-
-        const outDir = path.resolve(process.cwd(), opts.out ?? 'reviews');
+    .action(
+      withErrors(async (opts: { out?: string; keep: number; dryRun?: boolean }, cmd: Command) => {
+        const { yes, interactive: interactiveMode } = globalFlags(cmd);
+        const outDir = resolveOutDir(opts.out, await findProjectRoot());
         console.log(
           header('diff2ai clean', `dir: ${outDir}${opts.keep ? `  •  keep: ${opts.keep}` : ''}`),
         );
@@ -116,9 +109,6 @@ export function registerClean(program: Command): void {
             ].filter(Boolean),
           ),
         );
-      } catch (error: unknown) {
-        console.error(chalk.red((error as Error)?.message ?? String(error)));
-        process.exitCode = 1;
-      }
-    });
+      }),
+    );
 }

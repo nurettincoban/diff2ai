@@ -1,29 +1,9 @@
-import type { Finding } from '../formatters/findings.js';
+import { parseAffected, type Finding } from '../formatters/findings.js';
+import { buildDiffIndex, type DiffIndex } from '../git/diffParse.js';
 
-// path → ranges of NEW-file lines covered by hunks (context lines included)
-export type DiffIndex = Map<string, Array<[number, number]>>;
+export { buildDiffIndex, type DiffIndex };
 
-export function buildDiffIndex(diff: string): DiffIndex {
-  const index: DiffIndex = new Map();
-  let currentFile: string | null = null;
-  for (const line of diff.split(/\r?\n/)) {
-    const fileMatch = /^diff --git a\/(.*?) b\/(.*)$/.exec(line);
-    if (fileMatch) {
-      currentFile = fileMatch[2] ?? fileMatch[1];
-      if (!index.has(currentFile)) index.set(currentFile, []);
-      continue;
-    }
-    const hunkMatch = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line);
-    if (hunkMatch && currentFile) {
-      const start = Number.parseInt(hunkMatch[1], 10);
-      const count = hunkMatch[2] ? Number.parseInt(hunkMatch[2], 10) : 1;
-      index.get(currentFile)!.push([start, Math.max(start, start + count - 1)]);
-    }
-  }
-  return index;
-}
-
-function matchDiffPath(index: DiffIndex, findingPath: string): string | undefined {
+export function matchDiffPath(index: DiffIndex, findingPath: string): string | undefined {
   if (index.has(findingPath)) return findingPath;
   // Tolerate prefix differences (e.g. judge writes "auth.js" for "src/auth.js")
   for (const diffPath of index.keys()) {
@@ -54,9 +34,9 @@ export function verifyFindings(findings: Finding[], diff: string): VerificationS
     }
     let failure: string | null = null;
     for (const affected of finding.affected) {
-      const m = /^(.+?)(?::(\d+)(?:-(\d+))?)?$/.exec(affected.trim());
-      const rawPath = m?.[1]?.trim();
-      if (!rawPath) {
+      const ref = parseAffected(affected);
+      const rawPath = ref?.path;
+      if (!ref || !rawPath) {
         failure = `unparseable Affected entry "${affected}"`;
         break;
       }
@@ -65,13 +45,13 @@ export function verifyFindings(findings: Finding[], diff: string): VerificationS
         failure = `${rawPath} is not part of the diff`;
         break;
       }
-      if (m?.[2]) {
-        const start = Number.parseInt(m[2], 10);
-        const end = m[3] ? Number.parseInt(m[3], 10) : start;
+      if (ref.start !== undefined) {
+        const start = ref.start;
+        const end = ref.end ?? start;
         const ranges = index.get(diffPath)!;
         const intersects = ranges.some(([hs, he]) => start <= he && end >= hs);
         if (!intersects) {
-          failure = `${rawPath}:${start}${m[3] ? `-${end}` : ''} is outside the changed hunks`;
+          failure = `${rawPath}:${start}${end !== start ? `-${end}` : ''} is outside the changed hunks`;
           break;
         }
       }

@@ -1,5 +1,35 @@
-import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+// cross-spawn resolves Windows .cmd/.bat shims (how npm installs CLIs such as
+// claude, codex or gemini), which plain child_process.spawn cannot launch.
+import spawn from 'cross-spawn';
 import type { ResolvedRunner, RunnerResult } from './types.js';
+
+// PATH lookup without spawning anything (honors PATHEXT on Windows).
+export function findOnPath(command: string): string | null {
+  const exts =
+    process.platform === 'win32'
+      ? ['', ...(process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)]
+      : [''];
+  const isFile = (p: string) => {
+    try {
+      return fs.statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  };
+  if (command.includes('/') || command.includes('\\')) {
+    for (const ext of exts) if (isFile(command + ext)) return command + ext;
+    return null;
+  }
+  for (const dir of (process.env.PATH ?? '').split(path.delimiter).filter(Boolean)) {
+    for (const ext of exts) {
+      const candidate = path.join(dir, command + ext);
+      if (isFile(candidate)) return candidate;
+    }
+  }
+  return null;
+}
 
 export type PlaceholderContext = {
   promptFile?: string;
@@ -15,10 +45,9 @@ export function substitutePlaceholders(args: string[], ctx: PlaceholderContext):
 }
 
 function notFoundError(runner: ResolvedRunner): string {
-  const hint =
-    runner.name === 'claude'
-      ? ' Install it with: npm i -g @anthropic-ai/claude-code'
-      : ' Install it, or define a runner in .aidiff.json under "runners".';
+  const hint = runner.install
+    ? ` Install it: ${runner.install}`
+    : ' Install it, or define a runner in .aidiff.json under "runners".';
   return `Runner "${runner.name}" not found on PATH (command: ${runner.command}).${hint}`;
 }
 
@@ -68,8 +97,8 @@ export async function runHeadless(
       });
     }, runner.timeoutMs);
 
-    child.stdout.on('data', (d: Buffer) => (stdout += d.toString('utf-8')));
-    child.stderr.on('data', (d: Buffer) => (stderr += d.toString('utf-8')));
+    child.stdout?.on('data', (d: Buffer) => (stdout += d.toString('utf-8')));
+    child.stderr?.on('data', (d: Buffer) => (stderr += d.toString('utf-8')));
 
     child.on('error', (err: NodeJS.ErrnoException) => {
       finish({
@@ -94,10 +123,12 @@ export async function runHeadless(
       finish({ ok: true, output: stdout });
     });
 
+    // A runner that exits before reading all input must not crash us (EPIPE)
+    child.stdin?.on('error', () => {});
     if (useStdin) {
-      child.stdin.write(prompt);
+      child.stdin?.write(prompt);
     }
-    child.stdin.end();
+    child.stdin?.end();
   });
 }
 
@@ -117,14 +148,25 @@ export type CommandCapture =
 
 // Generic capture-output spawn for non-runner CLIs (e.g. glab). Kept here so
 // this module stays the only one that touches child_process.
-export async function runCommandCapture(command: string, args: string[]): Promise<CommandCapture> {
+// `input` is written to stdin (used for large bodies that would not fit in argv).
+export async function runCommandCapture(
+  command: string,
+  args: string[],
+  opts: { input?: string } = {},
+): Promise<CommandCapture> {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, args, {
+      stdio: [opts.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+    });
     let stdout = '';
     let stderr = '';
     let settled = false;
-    child.stdout.on('data', (d: Buffer) => (stdout += d.toString('utf-8')));
-    child.stderr.on('data', (d: Buffer) => (stderr += d.toString('utf-8')));
+    child.stdout?.on('data', (d: Buffer) => (stdout += d.toString('utf-8')));
+    child.stderr?.on('data', (d: Buffer) => (stderr += d.toString('utf-8')));
+    if (opts.input !== undefined) {
+      child.stdin?.on('error', () => {});
+      child.stdin?.end(opts.input);
+    }
     child.on('error', (err: NodeJS.ErrnoException) => {
       if (settled) return;
       settled = true;
@@ -146,6 +188,9 @@ export async function runInteractive(
   runner: ResolvedRunner,
   promptFileInstruction: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!runner.interactive) {
+    return { ok: false, error: `Runner "${runner.name}" has no interactive mode.` };
+  }
   const args = substitutePlaceholders([...runner.args, ...runner.interactive.args], {
     promptFileInstruction,
   });

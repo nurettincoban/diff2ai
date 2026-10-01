@@ -1,4 +1,5 @@
 import { runHeadless } from '../runners/execute.js';
+import { diffFileStats, walkDiff } from '../git/diffParse.js';
 import type { ResolvedRunner } from '../runners/types.js';
 import type { Persona } from './personas.js';
 import type { PersonaSuggestion } from './signals.js';
@@ -12,33 +13,18 @@ export const SELECTION_MARKER = 'Output ONLY persona selections';
 // Compact change summary — file stats plus a capped sample of added lines —
 // so persona selection costs a tiny AI call, never a full-diff read.
 export function diffSummary(diff: string): string {
-  const perFile = new Map<string, { added: number; removed: number }>();
-  let currentFile: string | null = null;
   const sample: string[] = [];
   let sampleChars = 0;
-
-  for (const line of diff.split(/\r?\n/)) {
-    const fileMatch = /^diff --git a\/(.*?) b\/(.*)$/.exec(line);
-    if (fileMatch) {
-      currentFile = fileMatch[2] ?? fileMatch[1];
-      if (!perFile.has(currentFile)) perFile.set(currentFile, { added: 0, removed: 0 });
-      continue;
+  walkDiff(diff, (line, kind) => {
+    if (kind !== 'add') return;
+    if (sample.length < MAX_SAMPLE_LINES && sampleChars < MAX_SAMPLE_CHARS) {
+      const trimmed = line.slice(1, MAX_LINE_CHARS + 1);
+      sample.push(trimmed);
+      sampleChars += trimmed.length;
     }
-    if (!currentFile) continue;
-    if (line.startsWith('+') && !line.startsWith('+++')) {
-      perFile.get(currentFile)!.added++;
-      if (sample.length < MAX_SAMPLE_LINES && sampleChars < MAX_SAMPLE_CHARS) {
-        const trimmed = line.slice(1, MAX_LINE_CHARS + 1);
-        sample.push(trimmed);
-        sampleChars += trimmed.length;
-      }
-    } else if (line.startsWith('-') && !line.startsWith('---')) {
-      perFile.get(currentFile)!.removed++;
-    }
-  }
-
-  const files = [...perFile.entries()]
-    .map(([file, c]) => `- ${file} (+${c.added}/-${c.removed})`)
+  });
+  const files = diffFileStats(diff)
+    .map((s) => `- ${s.path} (+${s.added}/-${s.removed})`)
     .join('\n');
   return `Files changed:\n${files}\n\nSample of added lines:\n\`\`\`\n${sample.join('\n')}\n\`\`\``;
 }

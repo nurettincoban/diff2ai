@@ -1,4 +1,4 @@
-import { BUILTIN_RUNNERS } from './builtin.js';
+import { BUILTIN_RUNNERS, ollamaRunner } from './builtin.js';
 import type { ResolvedRunner, RunnerConfig, RunnerInput } from './types.js';
 
 function mergedRunners(configRunners?: Record<string, RunnerConfig>): Record<string, RunnerConfig> {
@@ -14,10 +14,18 @@ export function resolveRunner(
   configRunners?: Record<string, RunnerConfig>,
 ): ResolvedRunner {
   const all = mergedRunners(configRunners);
-  const raw = all[name];
+  let raw = all[name];
+  const ollama = /^ollama:(.+)$/.exec(name);
+  if (!raw && ollama) {
+    const model = ollama[1].trim();
+    if (!/^[\w.:/-]+$/.test(model) || model.startsWith('-')) {
+      throw new Error(`Invalid ollama model "${model}".`);
+    }
+    raw = ollamaRunner(model);
+  }
   if (!raw) {
     throw new Error(
-      `Unknown runner "${name}". Available runners: ${listRunnerNames(configRunners).join(', ')}. Define custom runners in .aidiff.json under "runners".`,
+      `Unknown runner "${name}". Available runners: ${listRunnerNames(configRunners).join(', ')}, or ollama:<model>. Define custom runners in .aidiff.json under "runners".`,
     );
   }
   if (typeof raw.command !== 'string' || raw.command.trim().length === 0) {
@@ -32,11 +40,15 @@ export function resolveRunner(
       args: Array.isArray(raw.headless?.args) ? raw.headless.args : [],
       input,
     },
-    interactive: {
-      args: Array.isArray(raw.interactive?.args)
-        ? raw.interactive.args
-        : ['{promptFileInstruction}'],
-    },
+    interactive:
+      raw.interactive === false
+        ? null
+        : {
+            args: Array.isArray(raw.interactive?.args)
+              ? raw.interactive.args
+              : ['{promptFileInstruction}'],
+          },
     timeoutMs: typeof raw.timeoutMs === 'number' && raw.timeoutMs > 0 ? raw.timeoutMs : 600_000,
+    install: raw.install,
   };
 }

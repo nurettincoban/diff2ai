@@ -8,6 +8,18 @@ function run(cmd: string, cwd: string) {
   return execSync(cmd, { cwd, stdio: 'pipe', encoding: 'utf-8' });
 }
 
+// Runs a command that must fail; returns its combined output.
+function runFail(cmd: string, cwd: string): string {
+  try {
+    execSync(cmd, { cwd, stdio: 'pipe', encoding: 'utf-8' });
+  } catch (e: unknown) {
+    const err = e as { stdout?: string; stderr?: string; status?: number };
+    expect(err.status).not.toBe(0);
+    return String(err.stdout ?? '') + String(err.stderr ?? '');
+  }
+  throw new Error(`Expected command to fail: ${cmd}`);
+}
+
 describe('review integration', () => {
   const projectRoot = path.resolve(process.cwd());
   const cli = path.join(projectRoot, 'dist', 'cli.js');
@@ -112,8 +124,10 @@ describe('review integration', () => {
     run('git checkout main', tmp);
     fs.writeFileSync(path.join(tmp, 'untracked.txt'), 'u\n');
 
-    // Without --yes: should refuse and not create reviews dir, and stay on main
-    run(`node ${cli} review feature/pre --target main --switch`, tmp);
+    // Without --yes: should refuse (non-zero exit), not create reviews dir, and stay on main
+    expect(runFail(`node ${cli} review feature/pre --target main --switch`, tmp)).toMatch(
+      /Refusing to switch/,
+    );
     const head1 = run('git rev-parse --abbrev-ref HEAD', tmp).trim();
     expect(head1).toBe('main');
     const reviewsDir1 = path.join(tmp, 'reviews');
@@ -158,7 +172,7 @@ describe('review integration', () => {
     }
     expect(fs.existsSync(path.join(tmp, '.git', 'MERGE_HEAD'))).toBe(true);
 
-    const out = run(`node ${cli} review feature/merge-a --target main --switch 2>&1`, tmp);
+    const out = runFail(`node ${cli} review feature/merge-a --target main --switch`, tmp);
     expect(out).toMatch(/Refusing to switch/);
     const head = run('git rev-parse --abbrev-ref HEAD', tmp).trim();
     expect(head).toBe('feature/merge-b');

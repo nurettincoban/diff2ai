@@ -124,8 +124,8 @@ describe('review --run integration', () => {
       const out =
         String((e as { stdout?: string }).stdout ?? '') +
         String((e as { stderr?: string }).stderr ?? '');
-      expect(out).toMatch(/exceeds the "generic-medium" profile budget/);
-      expect(out).toMatch(/--profile claude-large/);
+      expect(out).toMatch(/exceeds the generic-medium budget/);
+      expect(out).toMatch(/--budget/);
     }
     expect(failed).toBe(true);
   });

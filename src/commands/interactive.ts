@@ -1,10 +1,9 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { simpleGit } from 'simple-git';
-import { loadConfig } from '../config/loadConfig.js';
-import { assertGitRepo } from '../git/repo.js';
-import { listRunnerNames } from '../runners/resolve.js';
-import { runCommandInherit } from '../runners/execute.js';
+import { gitClient, resolveRepoRoot } from '../git/repo.js';
+import { listRunnerNames, resolveRunner } from '../runners/resolve.js';
+import { findOnPath, runCommandInherit } from '../runners/execute.js';
+import { globalFlags, loadProjectConfig, withErrors } from './shared.js';
 import { personaPool } from '../orchestrator/personas.js';
 import { confirm, multiselect, select } from '../ux/prompt.js';
 import { header } from '../ux/theme.js';
@@ -45,20 +44,17 @@ export function registerInteractive(program: Command): void {
     .command('interactive')
     .alias('i')
     .description('Guided review: pick branch, target, reviewers, and outcome interactively')
-    .action(async (_opts: unknown, cmd: Command) => {
-      try {
-        assertGitRepo();
-        const globalOpts =
-          (cmd?.parent as unknown as { opts?: () => { interactive?: boolean } })?.opts?.() ?? {};
-        const isTTY = Boolean(process.stdout.isTTY && process.stdin.isTTY);
-        if (!isTTY || globalOpts.interactive === false) {
+    .action(
+      withErrors(async (_opts: unknown, cmd: Command) => {
+        const root = await resolveRepoRoot();
+        if (!globalFlags(cmd).interactive) {
           throw new Error(
             'diff2ai interactive needs a terminal. In scripts, call `diff2ai review` with flags instead.',
           );
         }
 
-        const { config } = loadConfig();
-        const git = simpleGit();
+        const config = loadProjectConfig(root);
+        const git = gitClient(root);
         const branchInfo = await git.branchLocal();
         const branches = branchInfo.all;
         if (branches.length === 0) {
@@ -117,8 +113,15 @@ export function registerInteractive(program: Command): void {
             initial: true,
           });
         } else {
-          // 4. Runner
-          const runners = listRunnerNames(config.runners);
+          // 4. Runner — only offer the ones actually installed
+          const runners = listRunnerNames(config.runners).filter((name) =>
+            findOnPath(resolveRunner(name, config.runners).command),
+          );
+          if (runners.length === 0) {
+            throw new Error(
+              'No AI runner found on PATH (claude, codex, gemini, opencode, cursor-agent...). Install one, or pick "Prompt only".',
+            );
+          }
           answers.runner =
             runners.length === 1
               ? runners[0]
@@ -186,11 +189,8 @@ export function registerInteractive(program: Command): void {
         console.log(chalk.dim(`\n> diff2ai ${args.join(' ')}\n`));
         const code = await runCommandInherit(process.execPath, [process.argv[1], ...args]);
         if (code !== 0) process.exitCode = code ?? 1;
-      } catch (error: unknown) {
-        console.error(chalk.red((error as Error)?.message ?? String(error)));
-        process.exitCode = 1;
-      }
-    });
+      }),
+    );
 }
 
 function abort(): void {
