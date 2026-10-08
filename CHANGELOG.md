@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Project website at <https://nurettincoban.github.io/diff2ai/> (static, in `site/`, deployed to GitHub Pages by `.github/workflows/pages.yml`); the npm `homepage` points to it.
+
 ## [0.3.0] - 2026-10
 
 First npm release since 0.1.2, so it also ships the 0.2.x fixes listed below. Requires Node.js 22.13+.

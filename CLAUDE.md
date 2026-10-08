@@ -24,6 +24,7 @@ TypeScript ESM CLI (`commander`) that turns Git diffs into AI-ready code-review 
 - `src/orchestrator/` — consensus flow: `personas.ts`, `signals.ts`/`aiSelect.ts` (persona suggestions), `judge.ts`, `verify.ts` (mechanical check of judge findings), `run.ts` (parallel passes via `runPool`, failure policy: continue if ≥2 succeed, artifacts under `reviews/run_<timestamp>/`)
 - `src/integrations/` — `format.ts` (shared comment markdown), `github.ts` (gh: PR lookup, PR diff, review with inline comments + fallback), `gitlab.ts` (glab MR note)
 - `action.yml` — composite GitHub Action wrapping `review --pr`, `post`, `export`
+- `site/` — static project website (single `index.html`, no build, not in the npm package), deployed by `.github/workflows/pages.yml`; keep its examples in sync with real CLI output and the README
 
 ## Tests
 
