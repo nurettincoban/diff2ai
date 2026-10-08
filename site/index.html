@@ -1,0 +1,1990 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>diff2ai — AI code reviews from your Git diffs</title>
+    <meta
+      name="description"
+      content="Turn Git diffs into high-signal AI code reviews with the AI CLI you already use: Claude, Codex, Gemini, opencode, Cursor or a local Ollama model. Multi-reviewer consensus, inline PR comments, SARIF. Local-first and open source."
+    />
+    <link rel="canonical" href="https://nurettincoban.github.io/diff2ai/" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#0a0c10" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="color-scheme" content="dark light" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="diff2ai" />
+    <meta property="og:title" content="diff2ai — AI code reviews from your Git diffs" />
+    <meta
+      property="og:description"
+      content="Any AI CLI, multi-reviewer consensus, line-accurate findings, inline PR comments and SARIF. Local-first, open source."
+    />
+    <meta property="og:url" content="https://nurettincoban.github.io/diff2ai/" />
+    <meta property="og:image" content="https://nurettincoban.github.io/diff2ai/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "diff2ai",
+        "description": "Turn Git diffs into high-signal AI code reviews with the AI CLI you already use.",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Windows, macOS, Linux",
+        "url": "https://nurettincoban.github.io/diff2ai/",
+        "downloadUrl": "https://www.npmjs.com/package/diff2ai",
+        "license": "https://opensource.org/licenses/MIT",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "sameAs": ["https://github.com/nurettincoban/diff2ai"]
+      }
+    </script>
+
+    <style>
+      :root {
+        --bg: #0a0c10;
+        --bg-soft: #0e1117;
+        --surface: #12161e;
+        --surface-2: #181d27;
+        --border: #242b37;
+        --border-strong: #323b4a;
+        --text: #e6edf3;
+        --muted: #8d96a3;
+        --faint: #6b7480;
+        --green: #3fb950;
+        --green-soft: rgba(63, 185, 80, 0.14);
+        --red: #f85149;
+        --red-soft: rgba(248, 81, 73, 0.14);
+        --blue: #58a6ff;
+        --blue-soft: rgba(88, 166, 255, 0.14);
+        --amber: #d29922;
+        --violet: #bc8cff;
+        --shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.7);
+        --glow: radial-gradient(
+          60% 50% at 50% 0%,
+          rgba(63, 185, 80, 0.16) 0%,
+          rgba(88, 166, 255, 0.08) 45%,
+          transparent 75%
+        );
+
+        /* the terminal and code panels stay dark in both themes */
+        --term-bg: #0d1117;
+        --term-bar: #161b22;
+        --term-border: #2a313c;
+        --term-text: #d6dde6;
+        --term-dim: #7d8590;
+
+        --radius: 14px;
+        --radius-sm: 10px;
+        --sans:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial,
+          sans-serif;
+        --mono:
+          ui-monospace, SFMono-Regular, 'SF Mono', 'Cascadia Code', Menlo, Consolas,
+          'Liberation Mono', monospace;
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #ffffff;
+          --bg-soft: #f6f8fa;
+          --surface: #ffffff;
+          --surface-2: #f6f8fa;
+          --border: #d8dee4;
+          --border-strong: #c3ccd5;
+          --text: #1f2328;
+          --muted: #59636e;
+          --faint: #6e7781;
+          --green: #1a7f37;
+          --green-soft: rgba(26, 127, 55, 0.1);
+          --red: #cf222e;
+          --red-soft: rgba(207, 34, 46, 0.09);
+          --blue: #0969da;
+          --blue-soft: rgba(9, 105, 218, 0.09);
+          --amber: #9a6700;
+          --violet: #8250df;
+          --shadow: 0 24px 60px -24px rgba(31, 35, 40, 0.35);
+          --glow: radial-gradient(
+            60% 50% at 50% 0%,
+            rgba(26, 127, 55, 0.1) 0%,
+            rgba(9, 105, 218, 0.06) 45%,
+            transparent 75%
+          );
+        }
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+        -webkit-text-size-adjust: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 16px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: var(--blue);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--blue);
+        outline-offset: 2px;
+        border-radius: 6px;
+      }
+
+      code,
+      pre,
+      kbd {
+        font-family: var(--mono);
+      }
+
+      :not(pre) > code {
+        font-size: 0.88em;
+        padding: 0.12em 0.4em;
+        border-radius: 6px;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        white-space: nowrap;
+      }
+
+      .skip {
+        position: absolute;
+        left: -999px;
+        top: 8px;
+        background: var(--surface);
+        padding: 8px 12px;
+        border-radius: 8px;
+        z-index: 100;
+      }
+      .skip:focus {
+        left: 8px;
+      }
+
+      .wrap {
+        width: 100%;
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      @media (min-width: 720px) {
+        .wrap {
+          padding: 0 28px;
+        }
+      }
+
+      /* ---------- nav ---------- */
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        background: color-mix(in srgb, var(--bg) 82%, transparent);
+        backdrop-filter: saturate(160%) blur(12px);
+        -webkit-backdrop-filter: saturate(160%) blur(12px);
+        border-bottom: 1px solid var(--border);
+      }
+      .nav .wrap {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        height: 60px;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--text);
+        font-weight: 700;
+        font-size: 17px;
+        letter-spacing: -0.01em;
+      }
+      .brand:hover {
+        text-decoration: none;
+      }
+      .brand img {
+        width: 26px;
+        height: 26px;
+      }
+      .nav-links {
+        display: none;
+        gap: 22px;
+        margin-left: 18px;
+      }
+      .nav-links a {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .nav-links a:hover {
+        color: var(--text);
+        text-decoration: none;
+      }
+      @media (min-width: 880px) {
+        .nav-links {
+          display: flex;
+        }
+      }
+      .nav-cta {
+        margin-left: auto;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      /* ---------- buttons ---------- */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        height: 40px;
+        padding: 0 16px;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 600;
+        border: 1px solid var(--border-strong);
+        background: var(--surface);
+        color: var(--text);
+        cursor: pointer;
+        white-space: nowrap;
+        transition:
+          border-color 0.15s,
+          background 0.15s,
+          transform 0.15s;
+      }
+      .btn:hover {
+        text-decoration: none;
+        border-color: var(--muted);
+      }
+      .btn:active {
+        transform: translateY(1px);
+      }
+      .btn-primary {
+        background: var(--text);
+        color: var(--bg);
+        border-color: var(--text);
+      }
+      .btn-primary:hover {
+        border-color: var(--text);
+        opacity: 0.9;
+      }
+      .btn-lg {
+        height: 48px;
+        padding: 0 22px;
+        font-size: 15px;
+      }
+      .btn-sm {
+        height: 34px;
+        padding: 0 12px;
+        font-size: 13px;
+      }
+      .btn svg {
+        width: 16px;
+        height: 16px;
+        flex: none;
+      }
+      .stars {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding-left: 8px;
+        margin-left: 2px;
+        border-left: 1px solid var(--border-strong);
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .stars[hidden] {
+        display: none;
+      }
+
+      /* ---------- hero ---------- */
+      .hero {
+        position: relative;
+        padding: 72px 0 40px;
+        text-align: center;
+        overflow: hidden;
+      }
+      .hero::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: var(--glow);
+        pointer-events: none;
+      }
+      .hero .wrap {
+        position: relative;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 12px 5px 6px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .pill b {
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--green-soft);
+        color: var(--green);
+        font-weight: 600;
+        font-size: 12px;
+      }
+      h1 {
+        margin: 22px auto 18px;
+        max-width: 880px;
+        font-size: clamp(36px, 6.4vw, 66px);
+        line-height: 1.04;
+        letter-spacing: -0.035em;
+        font-weight: 800;
+      }
+      .grad {
+        background: linear-gradient(92deg, var(--green) 10%, var(--blue) 90%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .lede {
+        margin: 0 auto;
+        max-width: 680px;
+        color: var(--muted);
+        font-size: clamp(16px, 2.1vw, 19px);
+      }
+      .hero-actions {
+        margin: 32px auto 0;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px;
+      }
+
+      .install {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        height: 48px;
+        padding: 0 8px 0 16px;
+        border-radius: 12px;
+        border: 1px solid var(--border-strong);
+        background: var(--surface);
+        font-family: var(--mono);
+        font-size: 15px;
+        max-width: 100%;
+      }
+      .install .prompt {
+        color: var(--green);
+        user-select: none;
+      }
+      .install code {
+        padding: 0;
+        border: 0;
+        background: none;
+        font-size: inherit;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .copy {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        flex: none;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        transition:
+          background 0.15s,
+          color 0.15s;
+      }
+      .copy:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .copy svg {
+        width: 16px;
+        height: 16px;
+      }
+      .copy .ok {
+        display: none;
+        color: var(--green);
+      }
+      .copy.copied .ok {
+        display: block;
+      }
+      .copy.copied .idle {
+        display: none;
+      }
+
+      .runners {
+        margin: 30px auto 0;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        max-width: 760px;
+      }
+      .runners span {
+        padding: 4px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 13px;
+        font-family: var(--mono);
+      }
+      .runners .label {
+        border: 0;
+        font-family: var(--sans);
+        color: var(--faint);
+      }
+
+      /* ---------- terminal ---------- */
+      .term {
+        margin: 52px auto 0;
+        max-width: 900px;
+        text-align: left;
+        border-radius: var(--radius);
+        border: 1px solid var(--term-border);
+        background: var(--term-bg);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .term-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 40px;
+        padding: 0 14px;
+        background: var(--term-bar);
+        border-bottom: 1px solid var(--term-border);
+      }
+      .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #3a414c;
+      }
+      .dot:nth-child(1) {
+        background: #ff5f57;
+      }
+      .dot:nth-child(2) {
+        background: #febc2e;
+      }
+      .dot:nth-child(3) {
+        background: #28c840;
+      }
+      .term-title {
+        flex: 1;
+        text-align: center;
+        margin-right: 52px;
+        color: var(--term-dim);
+        font-size: 12px;
+        font-family: var(--mono);
+      }
+      .term pre {
+        margin: 0;
+        padding: 18px 20px 22px;
+        overflow-x: auto;
+        color: var(--term-text);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      @media (min-width: 720px) {
+        .term pre {
+          font-size: 13.5px;
+          padding: 22px 26px 26px;
+        }
+      }
+      .term .l {
+        display: block;
+        min-height: 1.6em;
+      }
+      .js .term.animate .l {
+        opacity: 0;
+        transform: translateY(4px);
+        transition:
+          opacity 0.28s ease,
+          transform 0.28s ease;
+      }
+      .js .term.animate .l.on {
+        opacity: 1;
+        transform: none;
+      }
+      .t-p {
+        color: #3fb950;
+        user-select: none;
+      }
+      .t-cmd {
+        color: #e6edf3;
+        font-weight: 600;
+      }
+      .t-dim {
+        color: var(--term-dim);
+      }
+      .t-g {
+        color: #3fb950;
+      }
+      .t-r {
+        color: #f85149;
+      }
+      .t-y {
+        color: #d29922;
+      }
+      .t-c {
+        color: #39c5cf;
+      }
+      .t-b {
+        color: #58a6ff;
+      }
+      .t-v {
+        color: #bc8cff;
+      }
+      .t-bold {
+        font-weight: 700;
+        color: #f0f6fc;
+      }
+      .cursor {
+        display: inline-block;
+        width: 8px;
+        height: 1.15em;
+        vertical-align: -0.2em;
+        background: #3fb950;
+        animation: blink 1.1s steps(1) infinite;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0;
+        }
+      }
+
+      /* ---------- sections ---------- */
+      section {
+        padding: 88px 0;
+      }
+      section.alt {
+        background: var(--bg-soft);
+        border-top: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+      }
+      .eyebrow {
+        display: inline-block;
+        margin-bottom: 12px;
+        color: var(--green);
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .eyebrow.flag {
+        letter-spacing: 0;
+        text-transform: none;
+      }
+      h2 {
+        margin: 0 0 14px;
+        font-size: clamp(28px, 4vw, 42px);
+        line-height: 1.12;
+        letter-spacing: -0.025em;
+        font-weight: 800;
+      }
+      .section-head {
+        max-width: 720px;
+        margin-bottom: 44px;
+      }
+      .section-head.center {
+        margin-left: auto;
+        margin-right: auto;
+        text-align: center;
+      }
+      .section-head p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 17px;
+      }
+      h3 {
+        margin: 0 0 8px;
+        font-size: 17px;
+        letter-spacing: -0.01em;
+      }
+
+      /* ---------- problem strip ---------- */
+      .problems {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: 1fr;
+      }
+      @media (min-width: 820px) {
+        .problems {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+      .problem {
+        padding: 22px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--surface);
+      }
+      .problem .before,
+      .problem .after {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        font-size: 15px;
+      }
+      .problem .before {
+        color: var(--muted);
+        padding-bottom: 14px;
+        margin-bottom: 14px;
+        border-bottom: 1px dashed var(--border-strong);
+      }
+      .problem .sign {
+        flex: none;
+        width: 22px;
+        height: 22px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        font-family: var(--mono);
+        font-weight: 700;
+        font-size: 15px;
+        margin-top: 1px;
+      }
+      .before .sign {
+        background: var(--red-soft);
+        color: var(--red);
+      }
+      .after .sign {
+        background: var(--green-soft);
+        color: var(--green);
+      }
+
+      /* ---------- features ---------- */
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: 1fr;
+      }
+      @media (min-width: 640px) {
+        .grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (min-width: 980px) {
+        .grid {
+          grid-template-columns: repeat(4, 1fr);
+        }
+      }
+      .card {
+        padding: 22px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--surface);
+        transition:
+          border-color 0.2s,
+          transform 0.2s;
+      }
+      .card:hover {
+        border-color: var(--border-strong);
+        transform: translateY(-2px);
+      }
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14.5px;
+      }
+      .icon {
+        width: 38px;
+        height: 38px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 10px;
+        margin-bottom: 16px;
+        background: var(--green-soft);
+        color: var(--green);
+      }
+      .icon svg {
+        width: 20px;
+        height: 20px;
+      }
+      .icon.blue {
+        background: var(--blue-soft);
+        color: var(--blue);
+      }
+      .icon.red {
+        background: var(--red-soft);
+        color: var(--red);
+      }
+
+      /* ---------- pipeline ---------- */
+      .pipeline {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 12px;
+        grid-template-columns: 1fr;
+        counter-reset: step;
+      }
+      @media (min-width: 980px) {
+        .pipeline {
+          grid-template-columns: repeat(5, 1fr);
+        }
+      }
+      .step {
+        position: relative;
+        padding: 20px 18px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--surface);
+      }
+      .step::before {
+        counter-increment: step;
+        content: counter(step);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        margin-bottom: 12px;
+        background: var(--surface-2);
+        border: 1px solid var(--border-strong);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .step p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .step .tag {
+        display: inline-block;
+        margin-top: 12px;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-family: var(--mono);
+        font-size: 12px;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+      .step.key {
+        border-color: color-mix(in srgb, var(--green) 55%, var(--border));
+        box-shadow: 0 0 0 4px var(--green-soft);
+      }
+      .step.key::before {
+        background: var(--green);
+        border-color: var(--green);
+        color: var(--bg);
+      }
+      /* arrows between steps */
+      .step:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        bottom: -12px;
+        width: 2px;
+        height: 12px;
+        background: var(--border-strong);
+      }
+      @media (min-width: 980px) {
+        .step:not(:last-child)::after {
+          left: auto;
+          right: -12px;
+          top: 50%;
+          bottom: auto;
+          width: 12px;
+          height: 2px;
+        }
+      }
+      .outcomes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 22px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .outcomes span.o {
+        padding: 6px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-family: var(--mono);
+        font-size: 13px;
+        color: var(--text);
+      }
+      .note {
+        margin-top: 28px;
+        padding: 16px 18px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+        border-left: 3px solid var(--amber);
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 14.5px;
+      }
+      .note strong {
+        color: var(--text);
+      }
+
+      /* ---------- code panels ---------- */
+      .split {
+        display: grid;
+        gap: 20px;
+        grid-template-columns: 1fr;
+      }
+      @media (min-width: 960px) {
+        .split {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      /* let wide code blocks scroll instead of stretching the grid column */
+      .split > *,
+      .qs > * {
+        min-width: 0;
+      }
+      .panel {
+        min-width: 0;
+        border-radius: var(--radius);
+        border: 1px solid var(--term-border);
+        background: var(--term-bg);
+        overflow: hidden;
+        box-shadow: var(--shadow);
+      }
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        height: 42px;
+        padding: 0 8px 0 16px;
+        background: var(--term-bar);
+        border-bottom: 1px solid var(--term-border);
+        color: var(--term-dim);
+        font-family: var(--mono);
+        font-size: 12.5px;
+      }
+      .panel-head .copy {
+        color: var(--term-dim);
+      }
+      .panel-head .copy:hover {
+        background: #222934;
+        color: #e6edf3;
+      }
+      .panel pre {
+        margin: 0;
+        padding: 18px 20px;
+        overflow-x: auto;
+        color: var(--term-text);
+        font-size: 13px;
+        line-height: 1.65;
+      }
+      .panel .add {
+        display: block;
+        background: rgba(63, 185, 80, 0.12);
+      }
+      .panel .del {
+        display: block;
+        background: rgba(248, 81, 73, 0.12);
+      }
+      .panel .hl {
+        display: block;
+      }
+      .caption {
+        margin: 14px 2px 0;
+        color: var(--muted);
+        font-size: 14.5px;
+      }
+
+      /* ---------- tables ---------- */
+      .table-wrap {
+        overflow-x: auto;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--surface);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14.5px;
+      }
+      th,
+      td {
+        padding: 13px 18px;
+        text-align: left;
+        vertical-align: top;
+        border-bottom: 1px solid var(--border);
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 13px;
+        background: var(--surface-2);
+        white-space: nowrap;
+      }
+      td:first-child {
+        white-space: nowrap;
+      }
+      td.us {
+        color: var(--text);
+        background: var(--green-soft);
+      }
+      td.dim {
+        color: var(--muted);
+      }
+
+      /* ---------- CI ---------- */
+      .ci-lede {
+        margin: 0 0 28px;
+      }
+      .ci-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 16px;
+      }
+      .ci-list li {
+        display: flex;
+        gap: 14px;
+      }
+      .ci-list .icon {
+        margin: 0;
+        flex: none;
+      }
+      .ci-list p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+      }
+
+      /* ---------- quickstart ---------- */
+      .qs {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: 1fr;
+      }
+      @media (min-width: 820px) {
+        .qs {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      .qs .panel pre {
+        font-size: 13.5px;
+      }
+
+      /* ---------- CTA + footer ---------- */
+      .cta {
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+      }
+      .cta::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: var(--glow);
+        transform: scaleY(-1);
+        pointer-events: none;
+      }
+      .cta .wrap {
+        position: relative;
+      }
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 32px 0 40px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      footer .wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px 28px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      footer nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 20px;
+      }
+      footer nav a {
+        color: var(--muted);
+      }
+      footer nav a:hover {
+        color: var(--text);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+        }
+        .js .term.animate .l {
+          opacity: 1;
+          transform: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="nav">
+      <div class="wrap">
+        <a class="brand" href="#top" aria-label="diff2ai home">
+          <img src="favicon.svg" alt="" width="26" height="26" />
+          diff2ai
+        </a>
+        <nav class="nav-links" aria-label="Sections">
+          <a href="#features">Features</a>
+          <a href="#consensus">Consensus</a>
+          <a href="#runners">Runners</a>
+          <a href="#ci">CI</a>
+          <a href="https://github.com/nurettincoban/diff2ai#readme">Docs</a>
+        </nav>
+        <div class="nav-cta">
+          <a class="btn btn-sm" href="https://github.com/nurettincoban/diff2ai">
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path
+                d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+              />
+            </svg>
+            GitHub
+            <span class="stars" id="stars" hidden>
+              <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path
+                  d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25z"
+                />
+              </svg>
+              <span id="stars-count"></span>
+            </span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- ================= HERO ================= -->
+      <div class="hero" id="top">
+        <div class="wrap">
+          <a class="pill" href="https://github.com/nurettincoban/diff2ai/releases">
+            <b id="version">v0.3.0</b> Open source · MIT · runs on your machine
+          </a>
+
+          <h1>AI code reviews that cite <span class="grad">the right line</span>.</h1>
+
+          <p class="lede">
+            diff2ai turns your Git diff into a focused, line-numbered review prompt, runs it through
+            the AI CLI you already use, cross-checks the findings, and posts them as inline PR
+            comments. diff2ai itself makes no network calls.
+          </p>
+
+          <div class="hero-actions">
+            <div class="install">
+              <span class="prompt" aria-hidden="true">$</span>
+              <code>npm i -g diff2ai</code>
+              <button
+                class="copy"
+                type="button"
+                data-copy="npm i -g diff2ai"
+                aria-label="Copy install command"
+              >
+                <svg class="idle" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path
+                    d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"
+                  />
+                  <path
+                    d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"
+                  />
+                </svg>
+                <svg class="ok" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path
+                    d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"
+                  />
+                </svg>
+              </button>
+            </div>
+            <a class="btn btn-primary btn-lg" href="#quickstart">Get started</a>
+          </div>
+
+          <div class="runners" aria-label="Supported AI CLIs">
+            <span class="label">Works with</span>
+            <span>claude</span>
+            <span>codex</span>
+            <span>gemini</span>
+            <span>opencode</span>
+            <span>cursor</span>
+            <span>ollama:&lt;model&gt;</span>
+            <span>your own CLI</span>
+          </div>
+
+          <div
+            class="term animate"
+            id="demo"
+            role="img"
+            aria-label="Terminal recording of diff2ai running a three-reviewer consensus review of a pull request"
+          >
+            <div class="term-bar" aria-hidden="true">
+              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+              <span class="term-title">~/acme-api — diff2ai</span>
+            </div>
+            <pre
+              aria-hidden="true"
+            ><span class="l"><span class="t-p">$ </span><span class="t-cmd">diff2ai review --pr 128 --run claude --iterations 3</span></span><span class="l"><span class="t-c">╭───────────────────────────────────╮</span></span><span class="l"><span class="t-c">│</span>                                   <span class="t-c">│</span></span><span class="l"><span class="t-c">│</span>   <span class="t-bold">diff2ai review</span>                  <span class="t-c">│</span></span><span class="l"><span class="t-c">│</span>   <span class="t-dim">ref: PR #128  •  target: main</span>   <span class="t-c">│</span></span><span class="l"><span class="t-c">│</span>                                   <span class="t-c">│</span></span><span class="l"><span class="t-c">╰───────────────────────────────────╯</span></span><span class="l"><span class="t-g">✔ Fetched PR #128</span></span><span class="l"><span class="t-g">✔ Generated diff in memory</span></span><span class="l" data-wait="500"><span class="t-g">✔</span> Reviewer personas <span class="t-b">Bug Hunter, Security Auditor, Test Engineer</span></span><span class="l t-dim">Reviewer selection (from diff signals):</span><span class="l t-dim">  • correctness — baseline bug hunt on every review</span><span class="l t-dim">  • security — touches src/auth/session.ts</span><span class="l t-dim">  • testing-edge-cases — no test changes accompany the code changes</span><span class="l t-dim">Estimated cost: 4 AI calls (3 reviewers + judge), ~41k input tokens</span><span class="l" data-wait="500"><span class="t-g">✔</span> Run 3 reviewer passes + judge with "claude"? <span class="t-b">Yes</span></span><span class="l t-dim">Artifacts land in reviews/run_2026-10-08_14-12-03-512 as each pass completes.</span><span class="l" data-wait="900"><span class="t-g">✔ Reviewer 2/3 — Security Auditor done</span></span><span class="l" data-wait="700"><span class="t-g">✔ Reviewer 1/3 — Bug Hunter done</span></span><span class="l" data-wait="700"><span class="t-g">✔ Reviewer 3/3 — Test Engineer done</span></span><span class="l" data-wait="1000"><span class="t-g">✔ Judge pass complete</span></span><span class="l t-dim">Local verification: 4/5 finding(s) confirmed against the diff.</span><span class="l"><span class="t-g">╭────────────────────────────────────────────────────────────────────╮</span></span><span class="l"><span class="t-g">│</span>                                                                    <span class="t-g">│</span></span><span class="l"><span class="t-g">│</span>   <span class="t-g">Consensus review ready</span>                                           <span class="t-g">│</span></span><span class="l"><span class="t-g">│</span>   <span class="t-dim">reviewers: 3/3 succeeded</span>                                         <span class="t-g">│</span></span><span class="l"><span class="t-g">│</span>   <span class="t-dim">final:     reviews/run_2026-10-08_14-12-03-512/consolidated.md</span>   <span class="t-g">│</span></span><span class="l"><span class="t-g">│</span>   <span class="t-y">unverified: 1 finding(s) demoted (failed the local diff check)</span>   <span class="t-g">│</span></span><span class="l"><span class="t-g">│</span>                                                                    <span class="t-g">│</span></span><span class="l"><span class="t-g">╰────────────────────────────────────────────────────────────────────╯</span></span><span class="l"><span class="t-p">$ </span><span class="t-cmd">diff2ai post latest --pr 128</span> <span class="t-dim"># 4 verified findings → inline comments</span></span><span class="l" data-wait="400"><span class="t-p">$ </span><span class="cursor"></span></span></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= PROBLEMS ================= -->
+      <section aria-labelledby="why-title">
+        <div class="wrap">
+          <div class="section-head center">
+            <span class="eyebrow">Why diff2ai</span>
+            <h2 id="why-title">A raw diff in a chat box isn't a code review.</h2>
+            <p>
+              diff2ai builds the prompt from your actual change — line-numbered diff, commit
+              messages, file summary — with a strict output schema, so what comes back has
+              severities, exact <code>file:line</code> references and concrete fixes.
+            </p>
+          </div>
+          <div class="problems">
+            <div class="problem">
+              <div class="before">
+                <span class="sign">−</span><span>Reviews cite line numbers that don't exist.</span>
+              </div>
+              <div class="after">
+                <span class="sign">+</span>
+                <span
+                  >Every diff line is prefixed with its real line number in the new file, so
+                  findings point at the right place.</span
+                >
+              </div>
+            </div>
+            <div class="problem">
+              <div class="before">
+                <span class="sign">−</span
+                ><span>One model, one pass, confident hallucinations.</span>
+              </div>
+              <div class="after">
+                <span class="sign">+</span>
+                <span
+                  >Several reviewer personas, a judge that validates against the diff, and a
+                  zero-token mechanical check.</span
+                >
+              </div>
+            </div>
+            <div class="problem">
+              <div class="before">
+                <span class="sign">−</span
+                ><span>Hosted bots want your code and a per-seat subscription.</span>
+              </div>
+              <div class="after">
+                <span class="sign">+</span>
+                <span
+                  >Runs locally through the AI CLI you already pay for — or no AI at all: just copy
+                  the prompt.</span
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= FEATURES ================= -->
+      <section class="alt" id="features" aria-labelledby="features-title">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="eyebrow">Features</span>
+            <h2 id="features-title">Everything between <code>git diff</code> and a merged PR.</h2>
+            <p>
+              Use one piece or the whole flow — prompt only, an AI run, a consensus review, or a CI
+              gate.
+            </p>
+          </div>
+          <div class="grid">
+            <article class="card">
+              <span class="icon"
+                ><svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <polyline points="4 17 10 11 4 5" />
+                  <line x1="12" y1="19" x2="20" y2="19" /></svg
+              ></span>
+              <h3>Any AI CLI</h3>
+              <p>
+                <code>--run claude</code>, codex, gemini, opencode, cursor or
+                <code>ollama:&lt;model&gt;</code>. Add your own runner in config.
+              </p>
+            </article>
+            <article class="card">
+              <span class="icon blue"
+                ><svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg
+              ></span>
+              <h3>Multi-reviewer consensus</h3>
+              <p>
+                Personas review in parallel; a judge merges, dedupes and scores
+                <code>Consensus: k/N</code>.
+              </p>
+            </article>
+            <article class="card">
+              <span class="icon"
+                ><svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <circle cx="12" cy="12" r="6" />
+                  <circle cx="12" cy="12" r="2" /></svg
+              ></span>
+              <h3>Line-accurate findings</h3>
+              <p>
+                Line-numbered diffs plus commit messages and a file summary give the model intent
+                and exact locations.
+              </p>
+            </article>
+            <article class="card">
+              <span class="icon blue"
+                ><svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg
+              ></span>
+              <h3>Posts where you review</h3>
+              <p>
+                Inline review comments on GitHub PRs via <code>gh</code>, or a formatted MR note on
+                GitLab via <code>glab</code>.
+              </p>
+            </article>
+            <article class="card">
+              <span class="icon red"
+                ><svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <polyline points="9 12 11 14 15 10" /></svg
+              ></span>
+              <h3>CI-ready</h3>
+              <p>
+                A GitHub Action, SARIF export for code scanning and
+                <code>--fail-on HIGH</code> severity gates.
+              </p>
+            </article>
+            <article class="card">
+              <span class="icon"
+                ><svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="11" width="18" height="11" rx="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg
+              ></span>
+              <h3>Local-first</h3>
+              <p>
+                Pure git. Nothing leaves your machine unless <em>you</em> run an AI or post a
+                comment, with your own credentials.
+              </p>
+            </article>
+            <article class="card">
+              <span class="icon blue"
+                ><svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="3" width="7" height="7" />
+                  <rect x="14" y="3" width="7" height="7" />
+                  <rect x="14" y="14" width="7" height="7" />
+                  <rect x="3" y="14" width="7" height="7" /></svg
+              ></span>
+              <h3>Big diffs welcome</h3>
+              <p>
+                Token-budgeted batches that split at file and hunk boundaries, with template
+                overhead counted.
+              </p>
+            </article>
+            <article class="card">
+              <span class="icon red"
+                ><svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+                  />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" /></svg
+              ></span>
+              <h3>Injection-aware</h3>
+              <p>
+                Diffs and commit messages are untrusted input: instructions hidden in a PR are
+                reported, not followed.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= CONSENSUS ================= -->
+      <section id="consensus" aria-labelledby="consensus-title">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="eyebrow flag">--iterations 3</span>
+            <h2 id="consensus-title">
+              Several reviewers. One judge. Then a check that can't hallucinate.
+            </h2>
+            <p>
+              One AI review can invent problems or miss real ones. Consensus mode runs independent
+              persona passes, has a judge validate every finding against the diff, then re-checks
+              the judge locally.
+            </p>
+          </div>
+
+          <ol class="pipeline">
+            <li class="step">
+              <h3>Build the prompt</h3>
+              <p>
+                Line-numbered diff, commit messages and a file summary, wrapped in a strict review
+                schema.
+              </p>
+              <span class="tag">--template</span>
+            </li>
+            <li class="step">
+              <h3>Pick reviewers</h3>
+              <p>
+                Suggested from diff signals, or picked by one small AI call. You approve, and see
+                the cost first.
+              </p>
+              <span class="tag">--personas auto</span>
+            </li>
+            <li class="step">
+              <h3>Review in parallel</h3>
+              <p>
+                Bug Hunter, Security Auditor, Performance, API, Test Engineer — each a full,
+                independent pass.
+              </p>
+              <span class="tag">--concurrency 3</span>
+            </li>
+            <li class="step">
+              <h3>Judge</h3>
+              <p>
+                Gets the diff as ground truth plus all reviews; validates, deduplicates and scores
+                agreement.
+              </p>
+              <span class="tag">Consensus: 3/3</span>
+            </li>
+            <li class="step key">
+              <h3>Mechanical check</h3>
+              <p>
+                Every finding's file and lines are verified against the hunks locally. Misses are
+                demoted.
+              </p>
+              <span class="tag">0 tokens</span>
+            </li>
+          </ol>
+
+          <div class="outcomes">
+            <span>Then:</span>
+            <span class="o">--then fix</span>
+            <span class="o">--then comment</span>
+            <span class="o">diff2ai post latest</span>
+            <span class="o">diff2ai export --format sarif</span>
+          </div>
+
+          <p class="note">
+            <strong>Cost, honestly:</strong> every reviewer is a full model invocation over your
+            whole diff, plus the judge. Use 2–3 targeted personas for risky PRs and plain
+            <code>--run</code>
+            for everyday changes.
+          </p>
+        </div>
+      </section>
+
+      <!-- ================= WHAT THE AI SEES ================= -->
+      <section class="alt" aria-labelledby="sees-title">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="eyebrow">Prompt in, findings out</span>
+            <h2 id="sees-title">What the AI sees, and what you get back.</h2>
+            <p>
+              Line numbers make findings verifiable even in a plain web chat. The packaged templates
+              enforce numbered issue blocks: no preamble, no diff echo.
+            </p>
+          </div>
+          <div class="split">
+            <div>
+              <div class="panel">
+                <div class="panel-head"><span>review_*.md · annotated diff</span></div>
+                <pre><span class="hl t-dim">diff --git a/src/auth/session.ts b/src/auth/session.ts</span><span class="hl t-c">@@ -38,6 +38,9 @@ export async function getSession(req) {</span><span class="hl">  38    const token = req.headers.authorization;</span><span class="del t-r">      -  const user = await db.users.findByToken(token);</span><span class="add t-g">  39 +  const user = await db.query(</span><span class="add t-g">  40 +    `SELECT * FROM users WHERE token = '${token}'`</span><span class="add t-g">  41 +  );</span><span class="hl">  42    if (!user) return null;</span></pre>
+              </div>
+              <p class="caption">
+                New-file line numbers on every kept and added line; removed lines have none.
+              </p>
+            </div>
+            <div>
+              <div class="panel">
+                <div class="panel-head"><span>run_*/consolidated.md</span></div>
+                <pre><span class="t-bold">## 1) Severity: <span class="t-r">CRITICAL</span> | Type: Security</span>
+Title: Parameterize the session token query
+
+<span class="t-v">Affected:</span>
+- <span class="t-b">src/auth/session.ts:39-41</span>
+
+<span class="t-v">Explanation:</span>
+The Authorization header is interpolated into raw
+SQL, so any caller can inject queries. The helper
+it replaced was parameterized.
+
+<span class="t-v">Proposed fix:</span>
+<span class="t-dim">~~~ts</span>
+const user = await db.query(
+  'SELECT * FROM users WHERE token = $1', [token]);
+<span class="t-dim">~~~</span>
+
+<span class="t-g">Consensus: 3/3 reviewers</span></pre>
+              </div>
+              <p class="caption">
+                Severity, type, exact location, a fix and how many reviewers agreed.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= RUNNERS ================= -->
+      <section id="runners" aria-labelledby="runners-title">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="eyebrow flag">--run &lt;runner&gt;</span>
+            <h2 id="runners-title">Bring the AI you already pay for.</h2>
+            <p>
+              In a terminal, <code>--run</code> opens the tool's chat seeded with the review. In
+              scripts and CI it runs headless, read-only where the tool supports it, and saves the
+              review as <code>*.response.md</code>. Large prompts never go through argv.
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Runner</th>
+                  <th scope="col">CLI</th>
+                  <th scope="col">Headless mode</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>claude</code></td>
+                  <td><a href="https://code.claude.com/docs/en/setup">Claude Code</a></td>
+                  <td class="dim">
+                    <code>claude -p --tools ""</code> — no tools, no saved session
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>codex</code></td>
+                  <td><a href="https://github.com/openai/codex">OpenAI Codex CLI</a></td>
+                  <td class="dim"><code>codex exec --sandbox read-only --ephemeral -</code></td>
+                </tr>
+                <tr>
+                  <td><code>gemini</code></td>
+                  <td><a href="https://github.com/google-gemini/gemini-cli">Gemini CLI</a></td>
+                  <td class="dim">prompt on stdin, <code>--output-format text</code></td>
+                </tr>
+                <tr>
+                  <td><code>opencode</code></td>
+                  <td><a href="https://opencode.ai/docs/">opencode</a></td>
+                  <td class="dim"><code>opencode run --agent plan</code> — read-only agent</td>
+                </tr>
+                <tr>
+                  <td><code>cursor</code></td>
+                  <td><a href="https://cursor.com/docs/cli/overview">Cursor CLI</a></td>
+                  <td class="dim"><code>-p --mode ask</code> — read-only, reads the prompt file</td>
+                </tr>
+                <tr>
+                  <td><code>ollama:&lt;model&gt;</code></td>
+                  <td><a href="https://ollama.com">Ollama</a></td>
+                  <td class="dim"><code>ollama run &lt;model&gt;</code> — fully local</td>
+                </tr>
+                <tr>
+                  <td><code>your-tool</code></td>
+                  <td class="dim">Anything with a CLI</td>
+                  <td class="dim">
+                    Define it under <code>runners</code> in <code>.aidiff.json</code>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= CI ================= -->
+      <section class="alt" id="ci" aria-labelledby="ci-title">
+        <div class="wrap">
+          <div class="split" style="align-items: start">
+            <div>
+              <span class="eyebrow">GitHub Action</span>
+              <h2 id="ci-title">Review every pull request in CI.</h2>
+              <p class="lede ci-lede">
+                Run any runner on each PR, post inline comments, write SARIF and fail the build on a
+                verified severity.
+              </p>
+              <ul class="ci-list">
+                <li>
+                  <span class="icon"
+                    ><svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                      /></svg
+                  ></span>
+                  <div>
+                    <h3>Inline comments</h3>
+                    <p>
+                      Findings on changed lines become review comments; the rest go in the review
+                      body.
+                    </p>
+                  </div>
+                </li>
+                <li>
+                  <span class="icon blue"
+                    ><svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" /></svg
+                  ></span>
+                  <div>
+                    <h3>SARIF 2.1.0</h3>
+                    <p>Upload to GitHub code scanning, or export findings as JSON.</p>
+                  </div>
+                </li>
+                <li>
+                  <span class="icon red"
+                    ><svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="15" y1="9" x2="9" y2="15" />
+                      <line x1="9" y1="9" x2="15" y2="15" /></svg
+                  ></span>
+                  <div>
+                    <h3>Severity gates</h3>
+                    <p>
+                      <code>fail-on: CRITICAL</code> in the action,
+                      <code>--fail-on HIGH</code> locally or in a pre-push hook.
+                    </p>
+                  </div>
+                </li>
+                <li>
+                  <span class="icon"
+                    ><svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="11" width="18" height="11" rx="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg
+                  ></span>
+                  <div>
+                    <h3>Reads the diff only</h3>
+                    <p>The action never executes code from the PR.</p>
+                  </div>
+                </li>
+              </ul>
+            </div>
+            <div class="panel">
+              <div class="panel-head">
+                <span>.github/workflows/ai-review.yml</span>
+                <button
+                  class="copy"
+                  type="button"
+                  data-copy-target="action-yml"
+                  aria-label="Copy workflow"
+                >
+                  <svg class="idle" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path
+                      d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"
+                    />
+                    <path
+                      d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"
+                    />
+                  </svg>
+                  <svg class="ok" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path
+                      d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"
+                    />
+                  </svg>
+                </button>
+              </div>
+              <pre id="action-yml"><span class="t-b">name</span>: AI review
+<span class="t-b">on</span>:
+  <span class="t-b">pull_request</span>:
+
+<span class="t-b">permissions</span>:
+  <span class="t-b">contents</span>: read
+  <span class="t-b">pull-requests</span>: write
+
+<span class="t-b">jobs</span>:
+  <span class="t-b">review</span>:
+    <span class="t-b">runs-on</span>: ubuntu-latest
+    <span class="t-b">steps</span>:
+      - <span class="t-b">uses</span>: actions/checkout@v4
+        <span class="t-b">with</span>:
+          <span class="t-b">fetch-depth</span>: 0
+      - <span class="t-b">uses</span>: <span class="t-g">nurettincoban/diff2ai@v1</span>
+        <span class="t-b">env</span>:
+          <span class="t-b">ANTHROPIC_API_KEY</span>: ${{ secrets.ANTHROPIC_API_KEY }}
+        <span class="t-b">with</span>:
+          <span class="t-b">runner</span>: claude <span class="t-dim"># codex, gemini, opencode, ...</span>
+          <span class="t-b">iterations</span>: 3 <span class="t-dim"># 1 = single pass</span>
+          <span class="t-b">min-severity</span>: MEDIUM
+          <span class="t-b">fail-on</span>: CRITICAL <span class="t-dim"># optional gate</span></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= COMPARISON ================= -->
+      <section aria-labelledby="compare-title">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="eyebrow">Compared</span>
+            <h2 id="compare-title">Your code, your model, your bill.</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col"></th>
+                  <th scope="col">diff2ai</th>
+                  <th scope="col">Hosted review bots</th>
+                  <th scope="col">Pasting a diff into a chat</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Where your code goes</td>
+                  <td class="us">
+                    Only to the AI CLI you choose — or nowhere, in prompt-only mode
+                  </td>
+                  <td class="dim">The vendor's service</td>
+                  <td class="dim">The chat provider</td>
+                </tr>
+                <tr>
+                  <td>Model</td>
+                  <td class="us">
+                    Claude, Codex, Gemini, OpenCode, Cursor, local Ollama, your own
+                  </td>
+                  <td class="dim">The vendor's choice</td>
+                  <td class="dim">Whatever you paste into</td>
+                </tr>
+                <tr>
+                  <td>Cost</td>
+                  <td class="us">Your existing AI subscription or API key</td>
+                  <td class="dim">Usually a per-seat subscription</td>
+                  <td class="dim">Your chat subscription</td>
+                </tr>
+                <tr>
+                  <td>Hallucination defense</td>
+                  <td class="us">Persona consensus + judge + mechanical diff check</td>
+                  <td class="dim">Varies</td>
+                  <td class="dim">None</td>
+                </tr>
+                <tr>
+                  <td>Line references</td>
+                  <td class="us">Line-numbered diff, verified against the hunks</td>
+                  <td class="dim">Yes</td>
+                  <td class="dim">Often wrong</td>
+                </tr>
+                <tr>
+                  <td>Setup</td>
+                  <td class="us"><code>npm i -g diff2ai</code></td>
+                  <td class="dim">App install and org permissions</td>
+                  <td class="dim">None</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= QUICKSTART ================= -->
+      <section class="alt" id="quickstart" aria-labelledby="qs-title">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="eyebrow">Quickstart</span>
+            <h2 id="qs-title">Your first review in a minute.</h2>
+            <p>
+              Requires Node.js 22.13+ and git. Every command works from any subdirectory of the
+              repo.
+            </p>
+          </div>
+          <div class="qs">
+            <div class="panel">
+              <div class="panel-head"><span>install & check</span></div>
+              <pre><span class="t-p">$ </span>npm i -g diff2ai
+<span class="t-p">$ </span>diff2ai doctor      <span class="t-dim"># repo state + installed AI CLIs</span>
+<span class="t-p">$ </span>diff2ai interactive <span class="t-dim"># guided wizard</span></pre>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><span>review</span></div>
+              <pre><span class="t-p">$ </span>diff2ai review --run claude
+<span class="t-p">$ </span>diff2ai review --run claude --iterations 3
+<span class="t-p">$ </span>diff2ai review --pr 128 --run codex</pre>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><span>no AI CLI? copy the prompt</span></div>
+              <pre><span class="t-p">$ </span>diff2ai review --copy
+<span class="t-dim"># paste into any chat; findings come back</span>
+<span class="t-dim"># in the same structured format</span></pre>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><span>share the results</span></div>
+              <pre><span class="t-p">$ </span>diff2ai post latest --dry-run
+<span class="t-p">$ </span>diff2ai post latest --pr 128
+<span class="t-p">$ </span>diff2ai export latest --format sarif --out r.sarif</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= CTA ================= -->
+      <section class="cta" aria-labelledby="cta-title">
+        <div class="wrap">
+          <h2 id="cta-title">Review your next PR before your teammates do.</h2>
+          <p class="lede">Free and open source under the MIT license. Contributions welcome.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary btn-lg" href="https://github.com/nurettincoban/diff2ai#readme"
+              >Read the docs</a
+            >
+            <a class="btn btn-lg" href="https://github.com/nurettincoban/diff2ai">Star on GitHub</a>
+            <a class="btn btn-lg" href="https://www.npmjs.com/package/diff2ai">View on npm</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span>MIT © Nurettin Coban</span>
+        <nav aria-label="Footer">
+          <a href="https://github.com/nurettincoban/diff2ai">GitHub</a>
+          <a href="https://www.npmjs.com/package/diff2ai">npm</a>
+          <a href="https://github.com/nurettincoban/diff2ai/blob/main/CHANGELOG.md">Changelog</a>
+          <a href="https://github.com/nurettincoban/diff2ai/blob/main/CONTRIBUTING.md"
+            >Contributing</a
+          >
+          <a href="https://github.com/nurettincoban/diff2ai/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script>
+      (function () {
+        document.documentElement.classList.add('js');
+
+        // Copy buttons: data-copy holds the text, data-copy-target the id of a <pre>.
+        function copyText(text) {
+          if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(text);
+          }
+          return new Promise(function (resolve, reject) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try {
+              document.execCommand('copy') ? resolve() : reject();
+            } catch (e) {
+              reject(e);
+            } finally {
+              document.body.removeChild(ta);
+            }
+          });
+        }
+        document.querySelectorAll('.copy').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var target = btn.getAttribute('data-copy-target');
+            var text = target
+              ? document.getElementById(target).textContent
+              : btn.getAttribute('data-copy');
+            copyText(text).then(function () {
+              btn.classList.add('copied');
+              setTimeout(function () {
+                btn.classList.remove('copied');
+              }, 1600);
+            });
+          });
+        });
+
+        // Terminal: reveal lines one by one when it scrolls into view.
+        var term = document.getElementById('demo');
+        var lines = term.querySelectorAll('.l');
+        var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        function play() {
+          var delay = 0;
+          lines.forEach(function (line) {
+            // data-wait marks lines that "take a while" (prompts, AI passes)
+            delay += Number(line.getAttribute('data-wait')) || 90;
+            setTimeout(function () {
+              line.classList.add('on');
+            }, delay);
+          });
+        }
+        if (reduced || !('IntersectionObserver' in window)) {
+          lines.forEach(function (line) {
+            line.classList.add('on');
+          });
+        } else {
+          var io = new IntersectionObserver(
+            function (entries) {
+              if (entries[0].isIntersecting) {
+                io.disconnect();
+                play();
+              }
+            },
+            { rootMargin: '0px 0px -10% 0px' },
+          );
+          io.observe(term);
+        }
+
+        // Live version and stars; the static values stay if these fail.
+        fetch('https://registry.npmjs.org/diff2ai/latest')
+          .then(function (r) {
+            return r.ok ? r.json() : Promise.reject();
+          })
+          .then(function (pkg) {
+            if (pkg && pkg.version)
+              document.getElementById('version').textContent = 'v' + pkg.version;
+          })
+          .catch(function () {});
+        fetch('https://api.github.com/repos/nurettincoban/diff2ai')
+          .then(function (r) {
+            return r.ok ? r.json() : Promise.reject();
+          })
+          .then(function (repo) {
+            if (typeof repo.stargazers_count === 'number') {
+              document.getElementById('stars-count').textContent = repo.stargazers_count;
+              document.getElementById('stars').hidden = false;
+            }
+          })
+          .catch(function () {});
+      })();
+    </script>
+  </body>
+</html>

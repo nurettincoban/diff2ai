@@ -1,3 +1,7 @@
+<p align="center">
+  <a href="https://nurettincoban.github.io/diff2ai/"><img src="https://raw.githubusercontent.com/nurettincoban/diff2ai/main/site/og.png" alt="diff2ai: AI code reviews that cite the right line" width="820"></a>
+</p>
+
 # diff2ai
 
 [![CI](https://github.com/nurettincoban/diff2ai/actions/workflows/ci.yml/badge.svg)](https://github.com/nurettincoban/diff2ai/actions/workflows/ci.yml)
@@ -5,6 +9,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/diff2ai.svg?color=blue)](https://www.npmjs.com/package/diff2ai)
 ![node version](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Website](https://img.shields.io/badge/website-diff2ai-3fb950)](https://nurettincoban.github.io/diff2ai/)
 
 Turn your Git diffs into high-signal AI code reviews — with the AI you already use, locally, from your terminal or CI.
 
@@ -16,7 +21,7 @@ Turn your Git diffs into high-signal AI code reviews — with the AI you already
 - ⚡️ **Local-first**: pure git; nothing leaves your machine unless _you_ run an AI or post a comment
 - 🧩 **Big diffs welcome**: token-budgeted batches that split at file and hunk boundaries
 
-Quick links: [Install](#-installation) • [Quickstart](#-quickstart) • [Runners](#-run-the-ai---run) • [Consensus](#%EF%B8%8F-multi-reviewer-consensus---iterations) • [GitHub & GitLab](#-post-to-github-or-gitlab) • [GitHub Action](#-github-action) • [Commands](#-commands) • [Templates](#-templates) • [Configuration](#%EF%B8%8F-configuration)
+Quick links: **[Website](https://nurettincoban.github.io/diff2ai/)** • [Install](#-installation) • [Quickstart](#-quickstart) • [Runners](#-run-the-ai---run) • [Consensus](#%EF%B8%8F-multi-reviewer-consensus---iterations) • [GitHub & GitLab](#-post-to-github-or-gitlab) • [GitHub Action](#-github-action) • [Commands](#-commands) • [Templates](#-templates) • [Configuration](#%EF%B8%8F-configuration)
 
 ---
 

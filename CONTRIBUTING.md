@@ -43,6 +43,7 @@ node /path/to/diff2ai/dist/cli.js review my-branch --target main
 - `src/integrations/` — GitHub (`gh`) and GitLab (`glab`) posting
 - `templates/` — packaged review templates (copied into `dist/templates` at build)
 - `action.yml` — the GitHub Action
+- `site/` — the project website: plain HTML/CSS with no build step, deployed to GitHub Pages by `.github/workflows/pages.yml` on pushes to `main` that touch it. Preview it with any static server, e.g. `npx serve site`
 - `tests/` — vitest suites; most are integration tests that run the built CLI against throwaway git repos in `os.tmpdir()` (see `tests/helpers.ts`). Git config comes from `tests/fixtures/gitconfig`; AI runners, `gh` and `glab` are stubbed with fixtures — never invoke a real AI or hosting CLI in tests
 
 ## Guidelines
