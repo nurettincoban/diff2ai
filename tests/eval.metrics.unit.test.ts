@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
+import { priorSpendUsd } from '../eval/src/config.js';
 import { capUsd, costUsd, estimateRun, overCap, priceFor } from '../eval/src/cost.js';
 import {
   prf,
@@ -179,6 +180,25 @@ describe('cost', () => {
     // low: 6 golden * 5 candidates = 30 calls -> in 9000+8000, out 3000+2000
     expect(e.judgeUsd.low).toBeCloseTo((17_000 * 5 + 5000 * 25) / 1e6);
     expect(e.totalUsd.high).toBeCloseTo(e.reviewerUsd.high + e.judgeUsd.high);
+  });
+
+  it('adds up what earlier runs cost, for the programme budget', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2a-eval-'));
+    expect(priorSpendUsd(path.join(dir, 'missing'))).toBe(0);
+    const runs: [string, number][] = [
+      ['a', 1.25],
+      ['b', 10.5],
+    ];
+    for (const [run, usd] of runs) {
+      fs.mkdirSync(path.join(dir, run));
+      fs.writeFileSync(
+        path.join(dir, run, 'summary.json'),
+        JSON.stringify({ cost: { totalUsd: usd } }),
+      );
+    }
+    fs.mkdirSync(path.join(dir, 'crashed-run-without-summary'));
+    expect(priorSpendUsd(dir)).toBe(11.75);
+    expect(CONFIG.budgetUsd).toBe(200);
   });
 
   it('stops only above 125% of the approved amount', () => {

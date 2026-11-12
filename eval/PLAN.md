@@ -211,7 +211,12 @@ a running tally aborts the run above 1.25x the approved figure and records it.
 ## 7. Decisions (2026-11-12)
 
 The proposals in section 6 were accepted as written (questions 2 to 10).
-The budget (question 1) is still open. Changes made while building M1:
+The total budget (question 1) is **$200** for the whole programme, set on
+2026-11-12. It is `budgetUsd` in `config/baseline.json`. The harness adds up the
+cost of every run under `eval/results/` and refuses a new run whose approved
+amount, with the 25% overrun margin, would take the total above it.
+
+Changes made while building M1:
 
 - **Smoke subset.** The proposed PRs were swapped for three from the
   development split, so no held-out PR is looked at on its own before M2:

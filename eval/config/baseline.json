@@ -1,5 +1,6 @@
 {
   "name": "baseline",
+  "budgetUsd": 200,
   "benchmark": {
     "repo": "https://github.com/withmartian/code-review-benchmark.git",
     "commit": "e616e849755441da38f18bf3adba2c9583b03803"

@@ -114,6 +114,7 @@ export type Evaluations = Record<string, Record<string, JudgeEval>>;
 
 export type EvalConfig = {
   name: string;
+  budgetUsd: number; // total for the whole programme, across all runs
   benchmark: { repo: string; commit: string };
   tool: string;
   reviewer: {

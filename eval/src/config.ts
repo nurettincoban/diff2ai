@@ -44,6 +44,21 @@ export function loadSplit(): Split {
   return JSON.parse(fs.readFileSync(paths.split, 'utf-8')) as Split;
 }
 
+// Money already spent: the total cost recorded by every committed run.
+export function priorSpendUsd(resultsDir: string = paths.results): number {
+  if (!fs.existsSync(resultsDir)) return 0;
+  let total = 0;
+  for (const run of fs.readdirSync(resultsDir)) {
+    const file = path.join(resultsDir, run, 'summary.json');
+    if (!fs.existsSync(file)) continue;
+    const summary = JSON.parse(fs.readFileSync(file, 'utf-8')) as {
+      cost?: { totalUsd?: number };
+    };
+    total += summary.cost?.totalUsd ?? 0;
+  }
+  return total;
+}
+
 // "sentry-93824", "cal.com-8087", "discourse-graphite-4"
 export function prId(repo: string, number: number): string {
   return `${repo.toLowerCase()}-${number}`;

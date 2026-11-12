@@ -10,6 +10,7 @@ import {
   loadConfig,
   loadManifest,
   paths,
+  priorSpendUsd,
   renderAidiffConfig,
   selectPrs,
 } from './config.js';
@@ -107,6 +108,14 @@ async function main(): Promise<void> {
       return;
     }
     if (!apiKey) throw new Error(`${config.judge.apiKeyEnv} is not set in the environment.`);
+    const prior = priorSpendUsd();
+    const worstCase = capUsd(args.approveUsd);
+    console.log(`Budget: ${prior.toFixed(2)} of ${config.budgetUsd} spent before this run.`);
+    if (prior + worstCase > config.budgetUsd) {
+      throw new Error(
+        `Refusing to run: ${prior.toFixed(2)} spent plus up to ${worstCase.toFixed(2)} for this run exceeds the ${config.budgetUsd} budget.`,
+      );
+    }
   }
   const approved = args.mock ? Number.POSITIVE_INFINITY : (args.approveUsd as number);
   const runDir = path.join(args.mock ? path.join(paths.cache, 'mock') : paths.results, args.runId);
