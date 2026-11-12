@@ -73,3 +73,82 @@ severity, findings per PR, cost per PR, and the Strict and All profiles.
 About $16 had been spent before M3. Expected for M3: roughly $15 to $20 for the
 four development runs and up to roughly $30 for the held-out run if `consensus3`
 is chosen, well inside the $200 budget.
+
+## Part 2 — results
+
+Added on 2026-11-13, after the runs. All numbers are **self-run, not
+independently scored**, on the benchmark's Core profile unless stated. Every
+figure comes from the `compare-vs-m2-baseline-*.json` file in the named run's
+folder under `eval/results/`.
+
+### Outcome
+
+**No demonstrated improvement.** The chosen variant, `sonnet`, scored lower than
+the baseline on the 40 held-out PRs: Core F1 34.1% against 39.1%. The
+difference is -4.9 points with a 95% paired bootstrap interval of -9.5 to -0.8,
+so on this run the variant was worse, not just unproven.
+
+### Development runs (10 PRs)
+
+"F1 change" is against the development part of `m2-baseline`, with the 95%
+paired bootstrap interval.
+
+| Run                 | Precision | Recall | F1    | TP  | FP  | FN  | Findings/PR | Cost/PR | F1 change            |
+| ------------------- | --------- | ------ | ----- | --- | --- | --- | ----------- | ------- | -------------------- |
+| `m2-baseline` (dev) | 26.4%     | 79.3%  | 39.7% | 23  | 64  | 6   | 5.60        | $0.297  |                      |
+| `m3-dev-baseline`   | 26.4%     | 79.3%  | 39.7% | 23  | 64  | 6   | 6.10        | $0.290  | +0.0 (-8.0 to +6.6)  |
+| `m3-dev-sonnet`     | 33.9%     | 69.0%  | 45.5% | 20  | 39  | 9   | 4.50        | $0.145  | +5.8 (-9.5 to +16.4) |
+| `m3-dev-min-medium` | 32.0%     | 55.2%  | 40.5% | 16  | 34  | 13  | 6.20        | $0.246  | +0.9 (-7.6 to +15.0) |
+| `m3-dev-consensus3` | 18.9%     | 79.3%  | 30.5% | 23  | 99  | 6   | 8.60        | $0.826  | -9.2 (-13.6 to -4.2) |
+
+- The two baseline samples have the same Core totals. That is a coincidence of
+  the totals: the per-PR counts differ, and so do the Strict and All totals.
+- `min-medium` posted 32 of its 62 findings; the other 30 were below MEDIUM.
+
+**Selection.** `sonnet` had the highest development Core F1, five points above
+the next variant, so it went to the held-out run as the rule required.
+
+### Held-out run (40 PRs)
+
+| Run                      | Precision | Recall | F1    | TP  | FP  | FN  | Findings/PR | Cost/PR | Review time/PR |
+| ------------------------ | --------- | ------ | ----- | --- | --- | --- | ----------- | ------- | -------------- |
+| `m2-baseline` (held-out) | 26.9%     | 71.3%  | 39.1% | 92  | 250 | 37  | 5.78        | $0.302  | 36 s           |
+| `m3-heldout-sonnet`      | 23.1%     | 65.1%  | 34.1% | 84  | 279 | 45  | 4.35        | $0.212  | 12 s           |
+
+Differences, variant minus baseline, with 95% paired bootstrap intervals:
+
+| Profile | F1                  | Precision           | Recall               |
+| ------- | ------------------- | ------------------- | -------------------- |
+| Core    | -4.9 (-9.5 to -0.8) | -3.8 (-7.1 to -0.6) | -6.2 (-15.3 to +2.1) |
+| Strict  | -4.0 (-8.3 to +0.0) | -3.1 (-6.1 to -0.2) | -4.4 (-14.0 to +4.4) |
+| All     | -4.2 (-8.7 to -0.0) | -3.4 (-6.7 to -0.1) | -4.3 (-13.1 to +3.9) |
+
+Recall by golden severity, Core: Critical 8 of 8 (baseline 7 of 8), High 31 of
+45 (36), Medium 31 of 47 (33), Low 14 of 29 (16).
+
+### What the experiment showed
+
+- **The development result did not hold.** `sonnet` was +5.8 F1 on 10 PRs and
+  -4.9 on 40. Its development interval (-9.5 to +16.4) already said the lead
+  could be noise; the held-out run confirmed it. Ten PRs are too few to select on.
+- **The cheaper reviewer saved less than expected.** Reviewer cost for the 40
+  PRs fell from $5.64 to $1.85, but total cost per PR only from $0.302 to
+  $0.212, because the benchmark's judge ($6.64) costs more than the reviewer.
+- **Fewer findings did not mean fewer false positives.** `sonnet` wrote 4.35
+  findings per PR against 5.78, yet the judge's extraction step turned them
+  into more candidates (379 against 358: 2.18 per finding against 1.55), and
+  false positives rose from 250 to 279. Precision here depends on how the
+  judge splits a comment, not only on how many comments the tool writes.
+- **Consensus looked worse on the development PRs.** `consensus3` found the same
+  golden comments as the baseline but produced 99 false positives against 64,
+  at 2.8 times the cost per PR. Its interval excludes zero, but this is ten PRs
+  and one run, with no held-out confirmation. It is a lead to follow up, not a
+  finding.
+- **The severity filter traded recall for precision.** `min-medium` gained 5.6
+  points of precision and lost 24.1 of recall (interval -40.0 to -10.5), leaving
+  F1 unchanged.
+
+### Departures from the plan
+
+None in the protocol. M3 cost $23.56 ($15.07 for the four development runs,
+$8.49 for the held-out run) against the planned $15 to $20 plus up to $30.

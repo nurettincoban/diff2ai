@@ -4,47 +4,10 @@
 // paired bootstrap interval. Reads only files under eval/results/; calls nothing.
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadManifest, loadSplit, paths } from './config.js';
-import { modelDirName } from './judge.js';
-import { summarize, type ProfileName, type Summary } from './metrics.js';
+import { loadManifest, loadSplit } from './config.js';
+import type { ProfileName, Summary } from './metrics.js';
+import { loadRun, subsetSummary } from './runs.js';
 import { pairedBootstrap, prCounts } from './stats.js';
-import type { EvalConfig, Evaluations, PrRecord } from './types.js';
-
-type Run = { id: string; config: EvalConfig; evals: Evaluations; records: Map<string, PrRecord> };
-
-function loadRun(id: string): Run {
-  const dir = path.join(paths.results, id);
-  const meta = JSON.parse(fs.readFileSync(path.join(dir, 'run.json'), 'utf-8')) as {
-    config: EvalConfig;
-  };
-  const evals = JSON.parse(
-    fs.readFileSync(
-      path.join(dir, 'judge', 'results', modelDirName(meta.config.judge.model), 'evaluations.json'),
-      'utf-8',
-    ),
-  ) as Evaluations;
-  const records = new Map<string, PrRecord>();
-  for (const file of fs.readdirSync(path.join(dir, 'prs'))) {
-    const record = JSON.parse(fs.readFileSync(path.join(dir, 'prs', file), 'utf-8')) as PrRecord;
-    records.set(record.id, record);
-  }
-  return { id, config: meta.config, evals, records };
-}
-
-// A run restricted to the given PRs: judge verdicts, records and judge cost.
-function subset(run: Run, ids: string[], urlOf: Map<string, string>): Summary {
-  const evals: Evaluations = {};
-  const records: PrRecord[] = [];
-  for (const id of ids) {
-    const record = run.records.get(id);
-    if (!record) throw new Error(`Run ${run.id} has no record for ${id}.`);
-    records.push(record);
-    const url = urlOf.get(id) as string;
-    if (run.evals[url]) evals[url] = run.evals[url];
-  }
-  const judgeUsd = records.reduce((n, r) => n + (r.judgeUsage?.costUsd ?? 0), 0);
-  return summarize({ evals, tool: run.config.tool, records, judgeUsd });
-}
 
 function main(): void {
   const argv = process.argv.slice(2);
@@ -68,7 +31,10 @@ function main(): void {
   const seed = base.config.split.seed;
   const resamples = 10_000;
 
-  const sides = { baseline: subset(base, ids, urlOf), variant: subset(variant, ids, urlOf) };
+  const sides = {
+    baseline: subsetSummary(base, ids, urlOf),
+    variant: subsetSummary(variant, ids, urlOf),
+  };
   const bootstrap = Object.fromEntries(
     (['strict', 'core', 'all'] as ProfileName[]).map((profile) => [
       profile,
