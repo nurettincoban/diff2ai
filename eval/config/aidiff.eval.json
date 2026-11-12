@@ -1,0 +1,20 @@
+{
+  "profile": "claude-large",
+  "runners": {
+    "eval-api": {
+      "command": "node",
+      "args": [
+        "{evalRunner}",
+        "--model",
+        "{model}",
+        "--effort",
+        "{effort}",
+        "--max-tokens",
+        "{maxTokens}"
+      ],
+      "headless": { "args": [], "input": "stdin" },
+      "interactive": false,
+      "timeoutMs": 1200000
+    }
+  }
+}

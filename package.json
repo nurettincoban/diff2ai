@@ -28,7 +28,9 @@
     "test": "npm run build && vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "eval": "tsx eval/src/run.ts",
+    "eval:manifest": "tsx eval/src/build-manifest.ts"
   },
   "repository": {
     "type": "git",
@@ -56,6 +58,7 @@
     "pull-request"
   ],
   "devDependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "@eslint/js": "^9.39.5",
     "@types/cross-spawn": "^6.0.6",
     "@types/node": "^24.3.1",

@@ -207,3 +207,19 @@ a running tally aborts the run above 1.25x the approved figure and records it.
 10. **Clone size.** Treeless fetches of 7 repos download full commit graphs.
     Fallback if too slow: a synthetic two-commit history from the same trees,
     which loses the real commit messages in the prompt.
+
+## 7. Decisions (2026-11-12)
+
+The proposals in section 6 were accepted as written (questions 2 to 10).
+The budget (question 1) is still open. Changes made while building M1:
+
+- **Smoke subset.** The proposed PRs were swapped for three from the
+  development split, so no held-out PR is looked at on its own before M2:
+  `cal.com-14943`, `sentry-77754`, `discourse-graphite-4`.
+- **No fallback model.** The eval runner sends each review to the pinned model
+  only. A refusal or a cut-off answer is recorded as a failed run, never
+  rescued by another model, so every result names the model that produced it.
+- **Reviewer effort** is written out as `medium` (the Opus 5.5 default) in
+  `config/baseline.json` instead of being left implicit.
+- **Checkout check.** Treeless fetches turned out cheap (Grafana: 8 s, 28 MB),
+  so the synthetic-history fallback of question 10 was not needed.
