@@ -110,10 +110,10 @@ async function main(): Promise<void> {
     if (!apiKey) throw new Error(`${config.judge.apiKeyEnv} is not set in the environment.`);
     const prior = priorSpendUsd();
     const worstCase = capUsd(args.approveUsd);
-    console.log(`Budget: ${prior.toFixed(2)} of ${config.budgetUsd} spent before this run.`);
+    console.log(`Budget: $${prior.toFixed(2)} of $${config.budgetUsd} spent before this run.`);
     if (prior + worstCase > config.budgetUsd) {
       throw new Error(
-        `Refusing to run: ${prior.toFixed(2)} spent plus up to ${worstCase.toFixed(2)} for this run exceeds the ${config.budgetUsd} budget.`,
+        `Refusing to run: $${prior.toFixed(2)} spent plus up to $${worstCase.toFixed(2)} for this run exceeds the $${config.budgetUsd} budget.`,
       );
     }
   }

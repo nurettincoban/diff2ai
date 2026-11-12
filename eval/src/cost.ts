@@ -33,7 +33,7 @@ export type Estimate = {
 
 // Pre-run estimate. Prompt sizes are measured (rendered locally, for free);
 // output sizes and candidate counts are the assumptions kept in the config.
-// Input tokens: chars/4 (diff2ai's own heuristic) to chars/3.
+// Input tokens come from prompt characters and a measured chars-per-token range.
 export function estimateRun(
   config: EvalConfig,
   prompts: { chars: number; goldenCount: number }[],
@@ -46,8 +46,8 @@ export function estimateRun(
   const golden = prompts.reduce((n, p) => n + p.goldenCount, 0);
   const n = prompts.length;
   const input = {
-    low: (chars / 4) * reviewerCallsPerPr,
-    high: (chars / 3) * reviewerCallsPerPr,
+    low: (chars / a.promptCharsPerToken.low) * reviewerCallsPerPr,
+    high: (chars / a.promptCharsPerToken.high) * reviewerCallsPerPr,
   };
   const output = {
     low: a.reviewerOutputTokens.low * n * reviewerCallsPerPr,

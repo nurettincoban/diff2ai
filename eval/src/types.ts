@@ -127,7 +127,11 @@ export type EvalConfig = {
   judge: { model: string; baseUrl: string; apiKeyEnv: string };
   split: { seed: number; devPerSource: number };
   pricingUsdPerMTok: Record<string, Price>;
+  // Assumptions behind the pre-run estimate. `low` / `high` name the cheap and
+  // the expensive end of the range.
   estimate: {
+    basis: string; // where the numbers come from
+    promptCharsPerToken: { low: number; high: number };
     reviewerOutputTokens: { low: number; high: number };
     candidatesPerPr: { low: number; high: number };
     judgeCallTokens: { input: number; output: number };

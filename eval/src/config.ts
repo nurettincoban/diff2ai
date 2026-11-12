@@ -98,7 +98,11 @@ export function renderAidiffConfig(config: EvalConfig, runnerPath: string): stri
 export function configHash(config: EvalConfig): string {
   return sha256(
     JSON.stringify({
-      config,
+      // Budget, prices and estimate assumptions do not change what is measured
+      benchmark: config.benchmark,
+      tool: config.tool,
+      reviewer: config.reviewer,
+      judge: config.judge,
       aidiff: fs.readFileSync(paths.aidiffTemplate, 'utf-8'),
       template: fs.readFileSync(paths.defaultTemplate, 'utf-8'),
       runner: fs.readFileSync(paths.evalRunner, 'utf-8'),

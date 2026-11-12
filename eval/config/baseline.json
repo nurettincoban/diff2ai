@@ -27,9 +27,11 @@
     "claude-opus-4-5-20251101": { "input": 5, "output": 25 }
   },
   "estimate": {
-    "reviewerOutputTokens": { "low": 3000, "high": 8000 },
-    "candidatesPerPr": { "low": 5, "high": 10 },
-    "judgeCallTokens": { "input": 350, "output": 100 },
-    "extractDedupTokens": { "input": 4000, "output": 1000 }
+    "basis": "eval/results/m1-smoke (3 PRs): 2.1-2.5 prompt chars per input token, 2.7k-6.0k output tokens per review, 6-13 candidates per PR, 242 in / 103 out per judge call",
+    "promptCharsPerToken": { "low": 2.7, "high": 2.0 },
+    "reviewerOutputTokens": { "low": 2500, "high": 8000 },
+    "candidatesPerPr": { "low": 6, "high": 14 },
+    "judgeCallTokens": { "input": 250, "output": 105 },
+    "extractDedupTokens": { "input": 2500, "output": 400 }
   }
 }

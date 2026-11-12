@@ -163,6 +163,8 @@ describe('cost', () => {
       judge: { ...CONFIG.judge, model: 'j' },
       pricingUsdPerMTok: { r: { input: 4, output: 20 }, j: { input: 5, output: 25 } },
       estimate: {
+        basis: 'test',
+        promptCharsPerToken: { low: 4, high: 3 },
         reviewerOutputTokens: { low: 1000, high: 2000 },
         candidatesPerPr: { low: 5, high: 10 },
         judgeCallTokens: { input: 300, output: 100 },
