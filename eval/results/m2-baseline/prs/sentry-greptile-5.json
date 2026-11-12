@@ -1,0 +1,231 @@
+{
+  "id": "sentry-greptile-5",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/5",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Error IDs can be paired with the wrong nodestore payloads",
+      "affected": [
+        "src/sentry/replays/endpoints/project_replay_summarize_breadcrumbs.py:107-120"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Error timestamps (seconds) are compared with rrweb event timestamps (milliseconds)",
+      "affected": [
+        "src/sentry/replays/endpoints/project_replay_summarize_breadcrumbs.py:149-158"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "User-supplied `field` params can drop `error_ids` from the replay lookup",
+      "affected": [
+        "src/sentry/replays/endpoints/project_replay_summarize_breadcrumbs.py:79-84"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Hidden span attributes are only filtered when a search query is present",
+      "affected": [
+        "static/app/views/performance/newTraceDetails/traceDrawer/details/span/eapSections/attributes.tsx:62-69"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Feature-flagged table widget always renders an empty table",
+      "affected": [
+        "static/app/views/dashboards/widgetCard/chart.tsx:164-175"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Attribute-keys query cache key omits the organization",
+      "affected": [
+        "static/app/views/explore/hooks/useTraceItemAttributeKeys.tsx:30-42"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Mutual-exclusion check for age/timestamp misses falsy values",
+      "affected": [
+        "src/sentry/issues/endpoints/browser_reporting_collector.py:50-60"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Implementation",
+      "title": "Analytics recorded before the feature-flag check",
+      "affected": [
+        "src/sentry/preprod/api/endpoints/organization_preprod_artifact_assemble.py:81-86"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Performance",
+      "title": "Per-issue recommended-event lookup when building PR comments",
+      "affected": [
+        "src/sentry/integrations/source_code_management/commit_context.py:584-597"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "No-op migrations reference a migration not included in this change",
+      "affected": [
+        "src/sentry/migrations/0917_convert_org_saved_searches_to_views.py:14-16",
+        "src/sentry/migrations/0920_convert_org_saved_searches_to_views_revised.py:13-15"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Style",
+      "title": "Flex refactor dropped alignment, gap and height styles",
+      "affected": [
+        "static/app/views/performance/newTraceDetails/traceTabsAndVitals.tsx:93",
+        "static/app/views/performance/newTraceDetails/traceWaterfall.tsx:712",
+        "static/app/components/events/eventAttachments.tsx:143"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 11,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoDTM28mLfuJVPWPSwW",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 127404,
+      "outputTokens": 6474,
+      "ms": 60500
+    }
+  ],
+  "costUsd": 0.639096,
+  "durationMs": 61528,
+  "promptSha256": "aebe19b7948cd55ba71a931fb819bc654f801498aae3ef8283d3faba5d88d417",
+  "promptChars": 296085,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Error IDs can be paired with the wrong nodestore payloads\n\nAffected:\n- src/sentry/replays/endpoints/project_replay_summarize_breadcrumbs.py:107-120\n\nExplanation:\n`nodestore.backend.get_multi(node_ids)` returns a dict keyed by node ID. The code then zips `error_ids` with `events.values()` and assumes both are in the same order and the same length. If a backend omits missing keys, or returns them in a different order, every following error gets the wrong ID and possibly the wrong title or message.\n\nThere is a second gap: node IDs are built with the endpoint's `project.id`. A replay's errors can come from other projects, and those errors will silently be missing.\n\nProposed fix:\n~~~python\nnode_ids = {Event.generate_node_id(project_id, event_id=eid): eid for eid in error_ids}\nevents = nodestore.backend.get_multi(list(node_ids))\nreturn [\n    ErrorEvent(category=\"error\", id=node_ids[nid], title=data.get(\"title\", \"\"),\n               timestamp=data.get(\"timestamp\", 0.0), message=data.get(\"message\", \"\"))\n    for nid, data in events.items() if data is not None\n]\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Error timestamps (seconds) are compared with rrweb event timestamps (milliseconds)\n\nAffected:\n- src/sentry/replays/endpoints/project_replay_summarize_breadcrumbs.py:149-158\n\nExplanation:\nError `timestamp` values from nodestore are epoch seconds (floats). Top-level rrweb recording event `timestamp` values are normally epoch milliseconds. With `error_ts < event.get(\"timestamp\", 0)`, every error will sort before the first breadcrumb. This defeats the stated goal of placing errors in chronological order.\n\nThe unit test passes only because it uses small, hand-picked values in the same unit. Normalize both sides to one unit before comparing.\n\nProposed fix:\n~~~python\nevent_ts = event.get(\"timestamp\", 0)\nif event_ts > 1e11:  # ms -> s\n    event_ts /= 1000\nwhile error_idx < len(error_events) and error_events[error_idx][\"timestamp\"] < event_ts:\n    ...\n~~~\n\n## 3) Severity: LOW | Type: Bug\nTitle: User-supplied `field` params can drop `error_ids` from the replay lookup\n\nAffected:\n- src/sentry/replays/endpoints/project_replay_summarize_breadcrumbs.py:79-84\n\nExplanation:\n`process_raw_response` filters its output to the fields the caller requested. Any client that passes `field=` without `error_ids` will silently get no error context. Since this lookup is internal, pass a fixed field list instead of the caller's query parameters.\n\nProposed fix:\n~~~python\nresponse = process_raw_response(snuba_response, fields=[\"error_ids\"])\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: Hidden span attributes are only filtered when a search query is present\n\nAffected:\n- static/app/views/performance/newTraceDetails/traceDrawer/details/span/eapSections/attributes.tsx:62-69\n\nExplanation:\nThe early `return sorted;` runs when `searchQuery` is empty. So `HIDDEN_ATTRIBUTES` (`is_segment`, `project_id`, `received`) are still shown in the default, unsearched view. That is the common case, so the feature mostly does nothing. The filter needs to apply before the early return.\n\nProposed fix:\n~~~tsx\nconst visible = sorted.filter(a => !HIDDEN_ATTRIBUTES.includes(a.name));\nif (!searchQuery) return visible;\nreturn visible.filter(a => a.name.toLowerCase().trim().includes(searchQuery.toLowerCase().trim()));\n~~~\n\n## 5) Severity: MEDIUM | Type: Bug\nTitle: Feature-flagged table widget always renders an empty table\n\nAffected:\n- static/app/views/dashboards/widgetCard/chart.tsx:164-175\n\nExplanation:\nWhen `use-table-widget-visualization` is enabled, `TableWidgetVisualization` receives `columns={[]}` and empty `tableData`. The actual `result.data` and `result.meta` are ignored, and the loading state is not handled. Any organization with the flag on will see blank dashboard tables.\n\nEither wire up the real data or keep the old table until part 2 lands.\n\nProposed fix:\n~~~tsx\n<TableWidgetVisualization\n  tableData={{data: result.data, meta: {fields: result.meta?.fields ?? {}, units: result.meta?.units ?? {}}}}\n/>\n~~~\n\n## 6) Severity: MEDIUM | Type: Bug\nTitle: Attribute-keys query cache key omits the organization\n\nAffected:\n- static/app/views/explore/hooks/useTraceItemAttributeKeys.tsx:30-42\n\nExplanation:\nThe new `useQuery` key is `['use-trace-item-attribute-keys', queryOptions]`, and `queryOptions` contains neither the organization slug nor the URL. When the project selection is empty (all projects) and the datetime matches, two organizations produce the same key. After switching orgs, the cache can serve the previous organization's attributes.\n\nThe old `useApiQuery` key included the org-scoped path. Separately, `retry: false`, `staleTime: 0` and `refetchOnWindowFocus: false` were dropped, which changes refetch behavior.\n\nProposed fix:\n~~~tsx\nconst queryKey = useMemo(\n  () => ['use-trace-item-attribute-keys', organization.slug, queryOptions],\n  [organization.slug, queryOptions]\n);\n~~~\n\n## 7) Severity: LOW | Type: Bug\nTitle: Mutual-exclusion check for age/timestamp misses falsy values\n\nAffected:\n- src/sentry/issues/endpoints/browser_reporting_collector.py:50-60\n\nExplanation:\n`self.initial_data.get(\"age\")` is falsy when `age` is 0, which is a valid Editor's Draft value. A report with both `timestamp` and `age: 0` is therefore accepted, and the same applies to `timestamp: 0`. A report with neither field also passes validation.\n\nUse key presence checks instead, ideally in a single `validate()` method.\n\nProposed fix:\n~~~python\ndef validate(self, attrs):\n    has_age, has_ts = \"age\" in self.initial_data, \"timestamp\" in self.initial_data\n    if has_age == has_ts:\n        raise serializers.ValidationError(\"Exactly one of age or timestamp must be present\")\n    return attrs\n~~~\n\n## 8) Severity: LOW | Type: Implementation\nTitle: Analytics recorded before the feature-flag check\n\nAffected:\n- src/sentry/preprod/api/endpoints/organization_preprod_artifact_assemble.py:81-86\n\nExplanation:\n`preprod_artifact.api.assemble` is recorded before the `features.has` check. Requests that are rejected (feature disabled) are counted as assembles, which inflates the metrics the dashboard is meant to show. Move the call after the feature and permission checks.\n\nProposed fix:\n~~~python\nif not features.has(...):\n    return Response(..., status=403)\nanalytics.record(\"preprod_artifact.api.assemble\", ...)\n~~~\n\n## 9) Severity: LOW | Type: Performance\nTitle: Per-issue recommended-event lookup when building PR comments\n\nAffected:\n- src/sentry/integrations/source_code_management/commit_context.py:584-597\n\nExplanation:\n`get_environment_info` calls `issue.get_recommended_event()` for every issue. That is a Snuba query plus a nodestore fetch per issue, run sequentially inside the comment task.\n\nSeparately, issue titles and environment names are interpolated into Markdown link text and backticks without escaping. A title containing `]` or `` ` `` can break or alter the rendered comment.\n\nProposed fix:\n~~~python\n# Escape markdown in title/env\nsafe_title = re.sub(r\"([\\[\\]`*_])\", r\"\\\\\\1\", truncated_title)\n~~~\n\n## 10) Severity: LOW | Type: Maintainability\nTitle: No-op migrations reference a migration not included in this change\n\nAffected:\n- src/sentry/migrations/0917_convert_org_saved_searches_to_views.py:14-16\n- src/sentry/migrations/0920_convert_org_saved_searches_to_views_revised.py:13-15\n\nExplanation:\nBoth data migrations are now no-ops and point to `0921_convert_org_saved_searches_to_views_rerevised.py`, which does not appear in this diff. If 0921 is not present on this branch, environments that have not yet applied 0917/0920 will never convert org saved searches to views. It may come from one of the commits not shown, so this needs confirming rather than assuming it is missing.\n\nProposed fix:\n~~~text\nEnsure 0921 lands in the same deploy (or before) this change.\n~~~\n\n## 11) Severity: LOW | Type: Style\nTitle: Flex refactor dropped alignment, gap and height styles\n\nAffected:\n- static/app/views/performance/newTraceDetails/traceTabsAndVitals.tsx:93\n- static/app/views/performance/newTraceDetails/traceWaterfall.tsx:712\n- static/app/components/events/eventAttachments.tsx:143\n\nExplanation:\nThese replacements are not behavior-preserving:\n- **`traceTabsAndVitals.tsx`:** the old `Container` had `align-items: center` and `gap: space(1)`; the new `<Flex justify=\"space-between\">` has neither.\n- **`traceWaterfall.tsx`:** the old `FlexBox` had `height: 100%`, which is dropped.\n- **`eventAttachments.tsx`:** the old `FlexCenter` applied `overflowEllipsis`; the new `Flex` does not, so long attachment names may overflow their grid cell.\n\nProposed fix:\n~~~tsx\n<Flex ref={setRef} justify=\"space-between\" align=\"center\" gap={space(1)}>\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "Using zip(error_ids, events.values()) assumes the get_multi result preserves the input order; dict value order is not guaranteed to match error_ids, so event data can be paired with the wrong ID (missing nodes also shift alignment).",
+        "severity": "Low",
+        "category": "bug",
+        "matched_candidate": "nodestore.backend.get_multi returns a dict keyed by node ID, but the code zips error_ids with events.values() assuming same order and length - if backend omits missing keys or returns different order, errors get wrong IDs/titles/messages",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: using zip(error_ids, events.values()) assumes the get_multi result preserves input order, but dict value order is not guaranteed to match error_ids. Both comments point out that this can cause event data to be paired with wrong IDs, and both mention the issue of missing keys/nodes affecting alignment."
+      },
+      {
+        "golden_comment": "Hardcoded empty data passed to TableWidgetVisualization causes it to always render an empty table instead of displaying actual results when the feature flag is enabled.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Feature-flagged TableWidgetVisualization receives columns=[] and empty tableData, ignoring actual result.data and result.meta, causing blank dashboard tables for organizations with the flag enabled",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the TableWidgetVisualization component receives hardcoded empty data (columns=[] and empty tableData) instead of actual result data, which causes empty/blank tables to render when the feature flag is enabled. Both comments point to the same bug where actual results are ignored in favor of hardcoded empty values."
+      },
+      {
+        "golden_comment": "Validation logic incorrectly uses .get('timestamp'), which treats a timestamp of 0 as absent. It should directly check 'timestamp' in self.initial_data to ensure proper field presence detection, preventing both 'age=0' and 'timestamp' from passing mutual-exclusion validation.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "Mutual-exclusion check for age/timestamp uses falsy check instead of key presence - age=0 or timestamp=0 are valid values that would incorrectly pass validation, and reports with neither field also pass",
+        "confidence": 0.9,
+        "reasoning": "The candidate issue identifies the same underlying problem as the golden comment. Both point out that the mutual-exclusion validation check uses falsy checks instead of proper key presence detection, which means values like age=0 or timestamp=0 would incorrectly pass validation. The candidate also mentions that reports with neither field would pass, which is related to the same validation logic flaw. While the golden comment specifically mentions using .get('timestamp') vs 'timestamp' in self.initial_data, the candidate correctly identifies the core issue of falsy check vs key presence."
+      },
+      {
+        "golden_comment": "Analytics events are recorded before the feature flag check, resulting in analytics being logged for all requests, including those that return 404 due to the feature being disabled. This can lead to misleading analytics data.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Analytics for preprod_artifact.api.assemble is recorded before the feature-flag check, counting rejected requests as assembles and inflating metrics",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - that analytics events are being recorded before the feature flag check, which means requests that will be rejected (return 404) are still being counted in the metrics. Both comments point out this leads to inflated/misleading analytics data."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Node IDs are built with the endpoint's project.id but a replay's errors can come from other projects, causing those errors to silently be missing"
+      },
+      {
+        "candidate": "Error timestamps from nodestore are epoch seconds but rrweb event timestamps are epoch milliseconds, causing every error to sort before the first breadcrumb and defeating chronological ordering"
+      },
+      {
+        "candidate": "User-supplied field params can drop error_ids from the replay lookup since process_raw_response filters output to requested fields - clients passing field= without error_ids will silently get no error context"
+      },
+      {
+        "candidate": "Hidden span attributes (HIDDEN_ATTRIBUTES) are only filtered when searchQuery is present - the early return when searchQuery is empty means hidden attributes are shown in the default unsearched view"
+      },
+      {
+        "candidate": "Attribute-keys query cache key omits the organization - when project selection is empty and datetime matches, two organizations produce the same key, causing cache to serve previous organization's attributes after switching orgs"
+      },
+      {
+        "candidate": "get_environment_info calls issue.get_recommended_event() for every issue sequentially, causing a Snuba query plus nodestore fetch per issue in the comment task"
+      },
+      {
+        "candidate": "Issue titles and environment names are interpolated into Markdown without escaping - titles containing ] or ` can break or alter the rendered comment"
+      },
+      {
+        "candidate": "No-op migrations reference 0921_convert_org_saved_searches_to_views_rerevised.py which does not appear in the diff - if not present, environments that haven't applied 0917/0920 will never convert org saved searches to views"
+      },
+      {
+        "candidate": "Flex refactor in traceTabsAndVitals.tsx dropped align-items: center and gap: space(1) styles"
+      },
+      {
+        "candidate": "Flex refactor in traceWaterfall.tsx dropped height: 100% style"
+      },
+      {
+        "candidate": "Flex refactor in eventAttachments.tsx dropped overflowEllipsis, so long attachment names may overflow their grid cell"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The BrowserReportingCollectorEndpoint returns HttpResponse objects but the endpoint inherits from Endpoint which expects rest_framework.response.Response objects.",
+        "severity": "Medium",
+        "category": "api"
+      },
+      {
+        "golden_comment": "In BaseDetectorTypeValidator.update(), the validator incorrectly updates instance.type using validated_data.get('detector_type') instead of validated_data.get('type').",
+        "severity": "Medium",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 15,
+    "total_golden": 6,
+    "tp": 4,
+    "fp": 11,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.26666666666666666,
+    "recall": 0.6666666666666666,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/sentry-greptile",
+    "pr_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/5"
+  },
+  "judgeUsage": {
+    "calls": 97,
+    "inputTokens": 25099,
+    "outputTokens": 9689,
+    "costUsd": 0.36772
+  }
+}

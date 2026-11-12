@@ -1,0 +1,183 @@
+{
+  "id": "keycloak-36880",
+  "goldenUrl": "https://github.com/keycloak/keycloak/pull/36880",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Clean up client-specific FGAP v2 resources when a client is deleted",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/AdminPermissions.java:77-95",
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:192-195"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Guard against a missing resource-type resource before policy lookup",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:214-224"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Performance",
+      "title": "Avoid a full policy evaluation per client resource in getClientsWithPermission",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:124-145"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Remove dead code and unused imports in ClientPermissionsV2",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:22-23",
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:46",
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:262-272",
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:207-286"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Doc",
+      "title": "Fix Javadoc on void require* methods",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionEvaluator.java:95-103"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Restore realm state mutated by the new client permission tests",
+      "affected": [
+        "tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java:166-178",
+        "tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java:330-341"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Do not send a null body when asserting forbidden client creation",
+      "affected": [
+        "tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java:319-322"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 7,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoDAAu4XZGZYhEKXJ4d",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 36679,
+      "outputTokens": 5853,
+      "ms": 50329
+    }
+  ],
+  "costUsd": 0.263776,
+  "durationMs": 51316,
+  "promptSha256": "85fa170b6e3a2cdfe631a69feb39e40ef6d1996315dc56189ba83030acc2fa7d",
+  "promptChars": 89037,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Clean up client-specific FGAP v2 resources when a client is deleted\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/AdminPermissions.java:77-95\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:192-195\n\nExplanation:\n`ClientPermissionsV2.setPermissionsEnabled` throws `UnsupportedOperationException`. To avoid that exception, the listener body is now wrapped in `Profile.isFeatureEnabled(ADMIN_FINE_GRAINED_AUTHZ)`.\n\nThis means nothing happens when a client is removed under FGAP v2. The per-client `Resource` created by `AdminPermissionsSchema.getOrCreateResource` stays in the admin-permissions resource server. Any scope permissions that point to it also stay. These orphaned resources and permissions pile up, show up in the permission listings, and can affect evaluation and listing.\n\nThere is also a second risk. If a deployment has both the v1 and v2 features enabled, `management(...)` may return `MgmtPermissionsV2` (this depends on code outside the diff). In that case `clients().setPermissionsEnabled(...)` would throw while the client is being removed, and the client deletion would fail.\n\nFix: handle `ClientRemovedEvent` explicitly for v2. Remove or detach the client's resource from the admin-permissions resource server. Do not call the v1-only API in that path.\n\nProposed fix:\n~~~java\nif (event instanceof ClientModel.ClientRemovedEvent cast) {\n    if (Profile.isFeatureEnabled(Profile.Feature.ADMIN_FINE_GRAINED_AUTHZ_V2)) {\n        // AdminPermissionsSchema.SCHEMA.removeResource(cast.getKeycloakSession(), cast.getClient()) ...\n    } else if (Profile.isFeatureEnabled(Profile.Feature.ADMIN_FINE_GRAINED_AUTHZ)) {\n        management(cast.getKeycloakSession(), cast.getClient().getRealm()).clients().setPermissionsEnabled(cast.getClient(), false);\n    }\n}\n~~~\n\n## 2) Severity: LOW | Type: Bug\nTitle: Guard against a missing resource-type resource before policy lookup\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:214-224\n\nExplanation:\nWhen there is no per-client resource, the code calls `getResourceTypeResource(...)` and passes the result straight into `findByResource(server, resource)`. Later it also uses `resource.getScopes()`.\n\nIf the \"Clients\" type resource is absent, this could throw a `NullPointerException`. That could happen, for example, in a realm whose resource server was created before the `CLIENTS` type was added to the schema. Whether it can actually be null depends on `getResourceTypeResource`, which is outside the diff.\n\nThe `hasPermission(String)` overload already null-checks its resource. This overload should do the same.\n\nProposed fix:\n~~~java\nresource = AdminPermissionsSchema.SCHEMA.getResourceTypeResource(session, server, AdminPermissionsSchema.CLIENTS_RESOURCE_TYPE);\nif (resource == null || authz.getStoreFactory().getPolicyStore().findByResource(server, resource).isEmpty()) {\n    return false;\n}\n~~~\n\n## 3) Severity: LOW | Type: Performance\nTitle: Avoid a full policy evaluation per client resource in getClientsWithPermission\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:124-145\n\nExplanation:\nThis method runs a separate `root.evaluatePermission(...)` for every resource of type `Clients`. In realms with many client-specific permissions, this costs N full policy evaluations per client-list request.\n\nIt also collects `resource.getName()` for every typed resource. If the \"Clients\" type resource itself has type `Clients`, the literal string \"Clients\" ends up in the returned ID set.\n\nFix:\n- Evaluate in batch, passing multiple `ResourcePermission`s to a single evaluation.\n- Skip the type resource, i.e. any resource whose name equals the type.\n\nProposed fix:\n~~~java\nresourceStore.findByType(server, AdminPermissionsSchema.CLIENTS_RESOURCE_TYPE, resource -> {\n    if (AdminPermissionsSchema.CLIENTS_RESOURCE_TYPE.equals(resource.getName())) return;\n    if (hasGrantedPermission(resource, scope)) granted.add(resource.getName());\n});\n~~~\n\n## 4) Severity: LOW | Type: Maintainability\nTitle: Remove dead code and unused imports in ClientPermissionsV2\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:22-23\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:46\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:262-272\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:207-286\n\nExplanation:\n- `getEvaluationContext` is a private method that is never called. It appears to be copied token-exchange logic, and token exchange is explicitly unsupported in V2.\n- The `TOKEN_EXCHANGE`, `ClientModelIdentity` and `DefaultEvaluationContext` imports are therefore unused.\n- `hasPermission(ClientModel, ...)`, `hasPermission(String)` and `hasGrantedPermission` repeat the same scope-matching loop. Each also wraps a single scope in `Arrays.asList` for no reason.\n\nProposed fix:\n~~~java\n// delete getEvaluationContext and the unused imports; factor the loop:\nprivate boolean evaluate(ResourceServer server, Resource resource, String scope) {\n    return root.evaluatePermission(new ResourcePermission(resource, resource.getScopes(), server), server)\n            .stream().flatMap(p -> p.getScopes().stream()).anyMatch(scope::equals);\n}\n~~~\n\n## 5) Severity: LOW | Type: Doc\nTitle: Fix Javadoc on void require* methods\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionEvaluator.java:95-103\n\nExplanation:\n`requireView()` and `requireViewClientScopes()` return `void` and throw `ForbiddenException`. Their Javadoc nevertheless says \"Returns {@code true} if ...\", which contradicts the signatures. The other `require*` methods are documented correctly.\n\nProposed fix:\n~~~java\n/**\n * Throws ForbiddenException if {@link #canView()} returns {@code false}.\n */\nvoid requireView();\n\n/**\n * Throws ForbiddenException if {@link #canViewClientScopes()} returns {@code false}.\n */\nvoid requireViewClientScopes();\n~~~\n\n## 6) Severity: LOW | Type: Test\nTitle: Restore realm state mutated by the new client permission tests\n\nAffected:\n- tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java:166-178\n- tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java:330-341\n\nExplanation:\nThe tests change the shared managed realm and never undo the changes:\n- `testManageOnlyOneClient` renames `myclient`, removes one of its default client scopes, and adds it as an optional scope.\n- `testMapRolesAndCompositesOnlyOneClient` creates client roles and assigns them to `myadmin`.\n\nThe `@AfterEach` only deletes permissions. Because of this, other tests can break depending on run order. For example, `defaultClientScopes.get(1)` assumes at least two default scopes, and re-creating `myclient-role` would fail with 409.\n\nRegister cleanup with `realm.cleanup()` or revert the changes in `@AfterEach`.\n\nProposed fix:\n~~~java\nrealm.cleanup().add(r -> r.clients().get(myclient.getId()).roles().deleteRole(\"myclient-role\"));\nrealm.cleanup().add(r -> r.clients().get(myclient.getId()).roles().deleteRole(\"myclient-subRole\"));\n// and restore name / default client scope for myclient after testManageOnlyOneClient\n~~~\n\n## 7) Severity: LOW | Type: Test\nTitle: Do not send a null body when asserting forbidden client creation\n\nAffected:\n- tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java:319-322\n\nExplanation:\n`clients().create(null)` only returns 403 if the authorization check happens before the request body is processed. If the endpoint or its validation order changes, this will return 400 or 500, and the test will fail or pass for the wrong reason.\n\nUse a valid representation so the test actually exercises the authorization decision.\n\nProposed fix:\n~~~java\nClientRepresentation rep = new ClientRepresentation();\nrep.setClientId(\"notAllowed\");\ntry (Response response = realmAdminClient.realm(realm.getName()).clients().create(rep)) {\n    Assertions.assertEquals(Status.FORBIDDEN.getStatusCode(), response.getStatus());\n}\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "In getClientsWithPermission(String scope), iterating resourceStore.findByType(server, AdminPermissionsSchema.CLIENTS_RESOURCE_TYPE) and returning resource.getName() will only ever consider the type-level 'Clients' resource (per-client resources have no type) and return its name, while AvailableRoleMappingResource#getRoleIdsWithPermissions expects actual client IDs to pass to realm.getClientById, which can lead to incorrect behavior or a null client and subsequent failures.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "getClientsWithPermission collects resource.getName() for every typed resource, including the type resource itself, causing the literal string 'Clients' to end up in the returned ID set",
+        "confidence": 0.9,
+        "reasoning": "The candidate issue identifies the same core problem as the golden comment: that getClientsWithPermission is returning resource.getName() for typed resources including the 'Clients' type resource itself, which results in the literal string 'Clients' being included in the returned set instead of actual client IDs. Both comments point to the same bug where the method returns incorrect values (resource names like 'Clients' instead of actual client IDs) due to iterating over type-level resources."
+      },
+      {
+        "golden_comment": "In ClientPermissionsV2.hasPermission, the method getResourceTypeResource could return null, leading to a NullPointerException in findByResource. Defensive null checks are needed to prevent this issue.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "When there is no per-client resource, getResourceTypeResource result is passed to findByResource without null check, potentially causing NullPointerException if the Clients type resource is absent",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: getResourceTypeResource can return null, and this null value is passed to findByResource without a null check, which could cause a NullPointerException. Both comments point to the same bug in the same method (ClientPermissionsV2.hasPermission) and recommend the same solution (defensive null checks)."
+      },
+      {
+        "golden_comment": "Remove unused getEvaluationContext private method in ClientPermissionsV2 - it is defined but never called",
+        "severity": "Low",
+        "category": "style",
+        "matched_candidate": "getEvaluationContext is a private method that is never called and appears to be dead code copied from token-exchange logic",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - that getEvaluationContext is a private method that is never called/unused. The candidate adds additional context about it being 'dead code copied from token-exchange logic' but the core issue is identical: an unused private method that should be removed."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "ClientPermissionsV2.setPermissionsEnabled throws UnsupportedOperationException, and when a client is removed under FGAP v2, the per-client Resource and scope permissions are not cleaned up, leaving orphaned resources that pile up and affect evaluation and listing"
+      },
+      {
+        "candidate": "If both v1 and v2 features are enabled, management(...) may return MgmtPermissionsV2 and clients().setPermissionsEnabled(...) would throw during client removal, causing client deletion to fail"
+      },
+      {
+        "candidate": "getClientsWithPermission runs a separate root.evaluatePermission for every resource of type Clients, causing N full policy evaluations per client-list request in realms with many client-specific permissions"
+      },
+      {
+        "candidate": "TOKEN_EXCHANGE, ClientModelIdentity and DefaultEvaluationContext imports are unused"
+      },
+      {
+        "candidate": "hasPermission(ClientModel, ...), hasPermission(String) and hasGrantedPermission repeat the same scope-matching loop and unnecessarily wrap a single scope in Arrays.asList"
+      },
+      {
+        "candidate": "Javadoc on requireView() and requireViewClientScopes() says 'Returns true if...' but the methods return void and throw ForbiddenException"
+      },
+      {
+        "candidate": "testManageOnlyOneClient renames myclient, removes one of its default client scopes, and adds it as an optional scope without cleanup, potentially breaking other tests"
+      },
+      {
+        "candidate": "testMapRolesAndCompositesOnlyOneClient creates client roles and assigns them to myadmin without cleanup, potentially causing 409 errors on re-run"
+      },
+      {
+        "candidate": "clients().create(null) test only returns 403 if authorization check happens before request body processing; should use a valid representation to properly exercise authorization decision"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Inconsistent feature flag bug causing orphaned permissions. The AdminPermissions event listener, responsible for cleaning up permissions upon role, client, or group removal, is incorrectly guarded by the ADMIN_FINE_GRAINED_AUTHZ (V1) feature flag. This is inconsistent with other methods in the class that use ADMIN_FINE_GRAINED_AUTHZ_V2. Consequently, if ADMIN_FINE_GRAINED_AUTHZ_V2 is enabled but V1 is not, the permission cleanup logic will not execute, leading to orphaned permission data. Cleanup should occur regardless of which fine-grained authorization version is enabled.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "In hasPermission(ClientModel client, String scope), the resource lookup uses findByName(server, client.getId(), server.getId()), but AdminPermissionsSchema.getOrCreateResource creates per-client resources with the owner set to resourceServer.getClientId(), so this lookup will never find those resources and will always fall back to the 'all-clients' resource, effectively ignoring client-specific permissions.",
+        "severity": "High",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 12,
+    "total_golden": 5,
+    "tp": 3,
+    "fp": 9,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.25,
+    "recall": 0.6,
+    "tool": "diff2ai",
+    "repo_name": "keycloak/keycloak",
+    "pr_url": "https://github.com/keycloak/keycloak/pull/36880"
+  },
+  "judgeUsage": {
+    "calls": 65,
+    "inputTokens": 20042,
+    "outputTokens": 7371,
+    "costUsd": 0.284485
+  }
+}

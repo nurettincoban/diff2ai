@@ -1,0 +1,87 @@
+{
+  "id": "grafana-107534",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/107534",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Avoid double template interpolation and duplicated ad-hoc filters",
+      "affected": [
+        "public/app/plugins/datasource/loki/querySplitting.ts:296-299",
+        "public/app/plugins/datasource/loki/shardQuerySplitting.ts:49-52"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Stop test mocks from mutating the request targets in place",
+      "affected": [
+        "public/app/plugins/datasource/loki/shardQuerySplitting.test.ts:56-59",
+        "public/app/plugins/datasource/loki/shardQuerySplitting.test.ts:173-176"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 2,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoEfgTddykxDd6vDmvX",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 4230,
+      "outputTokens": 3129,
+      "ms": 29323
+    }
+  ],
+  "costUsd": 0.0795,
+  "durationMs": 30331,
+  "promptSha256": "6b303d0ea0163799ee4fc3984349039cf46e737a9c51f5eabbd63ffef876f474",
+  "promptChars": 9731,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Avoid double template interpolation and duplicated ad-hoc filters\n\nAffected:\n- public/app/plugins/datasource/loki/querySplitting.ts:296-299\n- public/app/plugins/datasource/loki/shardQuerySplitting.ts:49-52\n\nExplanation:\nBoth splitting paths now call `datasource.applyTemplateVariables(query, request.scopedVars, request.filters)` on every target. The resulting split sub-requests are then sent through `datasource.runQuery()`.\n\nIn the Loki datasource, `runQuery()` delegates to `DataSourceWithBackend.query()`. I can't see that code in this diff, so this should be verified. If it works as in current Grafana, `DataSourceWithBackend.query()` calls `applyTemplateVariables()` on every target again before sending the request. That means each query is interpolated twice, with two side effects:\n\n1. **Ad-hoc filters applied twice.** Loki's `applyTemplateVariables` adds ad-hoc filters through `addAdHocFilters`, so the label matchers are injected a second time. Before this change, the shard path used `interpolateVariablesInQueries`, which does not add ad-hoc filters. So this is a regression for both paths.\n\n2. **Variable values re-interpolated.** A variable's value can contain `$` sequences, such as regexes, line filters, or literal `$foo` text. On the second pass those are treated as variables and replaced or escaped again. This silently changes the executed query.\n\nHow to fix:\n- Make sure the backend path does not re-apply interpolation and filters to already-interpolated targets.\n- One option is to keep a flag or marker so `applyTemplateVariables` is only applied once.\n- Another is to interpolate only for classification (splitting support, logs vs. metric, shard selector) and still pass the raw targets to `runQuery`.\n- Add a test that sets `request.filters` and checks that the expression sent to `runQuery` contains each filter exactly once.\n\nProposed fix:\n~~~ts\n// Option A: use interpolated copies only for decisions, keep originals for execution\nconst interpolated = request.targets\n  .filter((q) => !q.hide && q.expr)\n  .map((q) => ({\n    original: q,\n    interpolated: datasource.applyTemplateVariables(q, request.scopedVars, request.filters),\n  }));\n// partition / shard-selector logic uses `interpolated.expr`,\n// sub-requests send `original` so super.query() interpolates once.\n\n// Option B: if interpolated targets must be sent, ensure runQuery/DataSourceWithBackend\n// skips applyTemplateVariables for already-interpolated targets (e.g. via a marker).\n~~~\n\n## 2) Severity: LOW | Type: Test\nTitle: Stop test mocks from mutating the request targets in place\n\nAffected:\n- public/app/plugins/datasource/loki/shardQuerySplitting.test.ts:56-59\n- public/app/plugins/datasource/loki/shardQuerySplitting.test.ts:173-176\n\nExplanation:\nThe mocked `applyTemplateVariables` mutates `query.expr` on the original `request.targets` objects and returns the same object. The real implementation returns a new object.\n\nBecause of this, the tests cannot detect code that wrongly reuses the original (un-interpolated) targets. Those targets have already been rewritten by the mock, so such a bug would still pass. It also hides any double-interpolation behavior.\n\nThe mock should return a copy instead.\n\nProposed fix:\n~~~ts\ndatasource.applyTemplateVariables = jest.fn().mockImplementation((query: LokiQuery) => ({\n  ...query,\n  expr: query.expr.replace('$SELECTOR', '{a=\"b\"}'),\n}));\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [],
+    "false_positives": [
+      {
+        "candidate": "Ad-hoc filters are applied twice because applyTemplateVariables is called before runQuery, and then DataSourceWithBackend.query() calls it again, causing label matchers to be injected a second time"
+      },
+      {
+        "candidate": "Variable values containing $ sequences (regexes, line filters, literal $foo text) are re-interpolated on the second pass, silently changing the executed query"
+      },
+      {
+        "candidate": "Test mock for applyTemplateVariables mutates query.expr on the original request.targets objects instead of returning a new object, which prevents detection of bugs that wrongly reuse un-interpolated targets and hides double-interpolation behavior"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The applyTemplateVariables method is called with request.filters as the third parameter, but this parameter is not used in the corresponding test setup.",
+        "severity": "Low",
+        "category": "test_gap"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 3,
+    "total_golden": 1,
+    "tp": 0,
+    "fp": 3,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0,
+    "recall": 0,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/107534"
+  },
+  "judgeUsage": {
+    "calls": 5,
+    "inputTokens": 2301,
+    "outputTokens": 486,
+    "costUsd": 0.023655000000000002
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "id": "keycloak-36882",
+  "goldenUrl": "https://github.com/keycloak/keycloak/pull/36882",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Avoid silently renumbering the existing \"recreate\" exit code",
+      "affected": [
+        "quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/compatibility/CompatibilityResult.java:30-35"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Ensure Profile is initialized before the feature check runs",
+      "affected": [
+        "quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/cli/command/UpdateCompatibilityCheck.java:46-52",
+        "quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/cli/command/UpdateCompatibilityMetadata.java:46-52"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Doc",
+      "title": "Do not append a fixed `--features` option to user-supplied parameters",
+      "affected": [
+        "docs/guides/templates/kc.adoc:53"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Do not overwrite existing enabled features in the test CR",
+      "affected": [
+        "operator/src/test/java/org/keycloak/operator/testsuite/integration/UpgradeTest.java:112-115"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoAgLmoD23Tc8UJPtkg",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 6518,
+      "outputTokens": 3342,
+      "ms": 32629
+    }
+  ],
+  "costUsd": 0.092912,
+  "durationMs": 33615,
+  "promptSha256": "95efe858b12a45677e49db1ee18bc32e137dffb0bb3baf1f3ee3088b7afd2085",
+  "promptChars": 14094,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Avoid silently renumbering the existing \"recreate\" exit code\n\nAffected:\n- quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/compatibility/CompatibilityResult.java:30-35\n\nExplanation:\n`RECREATE_UPGRADE_EXIT_CODE` changes from `4` to `3`. The value `4` is reused for the new `FEATURE_DISABLED` code.\n\nAnything that checks the literal exit code will now get the wrong answer:\n- scripts, CI pipelines or automation written against the previous release;\n- an operator image built against the old constant;\n- dist tests that assert on `4`.\n\nThe worst case is a consumer that treats `4` as \"recreate required\". It will now take a \"feature disabled\" result as a valid compatibility decision, and it will not recognise `3` as recreate.\n\nUsages outside this diff (operator job handling, dist tests) are not visible here. Check that every consumer refers to the constant rather than a literal. Also call out the change in the release or migration notes. If backward compatibility matters, keep `4` for recreate and give `FEATURE_DISABLED` a new value.\n\nProposed fix:\n~~~java\nint ROLLING_UPGRADE_EXIT_CODE = 0;\nint RECREATE_UPGRADE_EXIT_CODE = 3; // document change, update all consumers/tests\nint FEATURE_DISABLED = 4;\n// and grep for literal \"4\" / exit-code assertions in operator + dist tests\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Ensure Profile is initialized before the feature check runs\n\nAffected:\n- quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/cli/command/UpdateCompatibilityCheck.java:46-52\n- quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/cli/command/UpdateCompatibilityMetadata.java:46-52\n\nExplanation:\n`Profile.isFeatureEnabled(...)` is called before `validateConfig()`. If the Profile has not yet been configured from the CLI or persisted build options, two things can go wrong:\n- `Profile.getInstance()` may be null, which causes an NPE.\n- The check may run against a stale or default feature set. In that case it would ignore a `--features=rolling-updates` passed on this invocation.\n\nThe commit history (\"fix test failure\") hints that ordering was fragile here. Verify that the Picocli bootstrap configures the Profile before `run()`. Otherwise, move the check after `validateConfig()`, or explicitly resolve features first.\n\nProposed fix:\n~~~java\n@Override\npublic void run() {\n    printPreviewWarning();\n    validateConfig();\n    if (!Profile.isFeatureEnabled(Profile.Feature.ROLLING_UPDATES)) {\n        printFeatureDisabled();\n        picocli.exit(CompatibilityResult.FEATURE_DISABLED);\n        return;\n    }\n    ...\n}\n~~~\n\n## 3) Severity: LOW | Type: Doc\nTitle: Do not append a fixed `--features` option to user-supplied parameters\n\nAffected:\n- docs/guides/templates/kc.adoc:53\n\nExplanation:\nThe macro always appends `--features=rolling-updates` after `${parameters}`. Users copy these snippets with their own configuration. If that configuration already includes `--features=...`, the command ends up with two `--features` options. With last-wins semantics, the user's other features would be dropped.\n\nDropped features change the feature set used for compatibility metadata. That can give a misleading compatibility result, or a mismatch between the metadata and the check.\n\nThe docs should instead tell users to add `rolling-updates` to their existing feature list.\n\nProposed fix:\n~~~\nbin/kc.[sh|bat] update-compatibility ${parameters}\n// plus a note: \"Add `rolling-updates` to your existing --features list (e.g. --features=<yours>,rolling-updates).\"\n~~~\n\n## 4) Severity: LOW | Type: Test\nTitle: Do not overwrite existing enabled features in the test CR\n\nAffected:\n- operator/src/test/java/org/keycloak/operator/testsuite/integration/UpgradeTest.java:112-115\n\nExplanation:\n`setEnabledFeatures(List.of(ROLLING_UPDATES))` replaces any features already present on the default test Keycloak CR. Any setup that relies on other enabled features is silently lost.\n\nThe fix is to merge `rolling-updates` into the existing list instead of replacing it.\n\nProposed fix:\n~~~java\nvar features = kc.getSpec().getFeatureSpec();\nvar enabled = new ArrayList<String>(Optional.ofNullable(features.getEnabledFeatures()).orElse(List.of()));\nenabled.add(Profile.Feature.ROLLING_UPDATES.getKey());\nfeatures.setEnabledFeatures(enabled);\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [],
+    "false_positives": [
+      {
+        "candidate": "RECREATE_UPGRADE_EXIT_CODE changes from 4 to 3, and value 4 is reused for FEATURE_DISABLED, which will break scripts, CI pipelines, automation, operator images, and tests that check for literal exit code 4 expecting 'recreate required'"
+      },
+      {
+        "candidate": "Profile.isFeatureEnabled() is called before validateConfig(), which may cause NPE if Profile.getInstance() is null, or may check against stale/default feature set ignoring CLI options like --features=rolling-updates"
+      },
+      {
+        "candidate": "Documentation macro always appends --features=rolling-updates after user parameters, which with last-wins semantics would drop user's other features if they already specified --features"
+      },
+      {
+        "candidate": "setEnabledFeatures(List.of(ROLLING_UPDATES)) in test replaces any existing enabled features on the default test Keycloak CR instead of merging with them"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Incorrect method call for exit codes. The picocli.exit() method calls System.exit() directly, which is problematic:",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "Need to add changelog/release notes documenting the exit code change and migration guidance",
+        "severity": "Low",
+        "category": "doc_defect"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 4,
+    "total_golden": 2,
+    "tp": 0,
+    "fp": 4,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0,
+    "recall": 0,
+    "tool": "diff2ai",
+    "repo_name": "keycloak/keycloak",
+    "pr_url": "https://github.com/keycloak/keycloak/pull/36882"
+  },
+  "judgeUsage": {
+    "calls": 10,
+    "inputTokens": 3652,
+    "outputTokens": 1035,
+    "costUsd": 0.044134999999999994
+  }
+}

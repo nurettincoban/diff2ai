@@ -1,0 +1,203 @@
+{
+  "id": "grafana-79265",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/79265",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Avoid mutating captured `args` inside a retryable DB session closure",
+      "affected": [
+        "pkg/services/anonymous/anonimpl/anonstore/database.go:80-85"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "`rowsAffected == 0` can wrongly reject an existing device on MySQL",
+      "affected": [
+        "pkg/services/anonymous/anonimpl/anonstore/database.go:90-97"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Device limit check is not atomic, so concurrent requests can exceed the limit",
+      "affected": [
+        "pkg/services/anonymous/anonimpl/anonstore/database.go:108-118"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Performance",
+      "title": "Device tagging now runs synchronously on the auth hot path, plus a COUNT query",
+      "affected": [
+        "pkg/services/anonymous/anonimpl/client.go:44-50",
+        "pkg/services/anonymous/anonimpl/anonstore/database.go:109-114"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Limit may be bypassed if the local cache is populated before the DB write fails",
+      "affected": [
+        "pkg/services/anonymous/anonimpl/impl.go:144-148",
+        "pkg/services/anonymous/anonimpl/client.go:44-47"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Raw sentinel error returned from the authn client may map to a 500 instead of an auth failure",
+      "affected": [
+        "pkg/services/anonymous/anonimpl/client.go:45-47"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "`ProvideAnonDBStore` signature change may break wire/DI and other callers",
+      "affected": [
+        "pkg/services/anonymous/anonimpl/anonstore/database.go:52-54",
+        "pkg/services/anonymous/anonimpl/impl.go:36-43"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Device expiration constant is duplicated across packages",
+      "affected": [
+        "pkg/services/anonymous/anonimpl/api/api.go:18",
+        "pkg/services/anonymous/anonimpl/anonstore/database.go:16"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Limit test does not verify that existing devices can still be updated at the limit",
+      "affected": [
+        "pkg/services/anonymous/anonimpl/anonstore/database_test.go:51-70"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 9,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyo5ZZM4VhiLpGhUUBXz",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 9407,
+      "outputTokens": 4922,
+      "ms": 44767
+    }
+  ],
+  "costUsd": 0.136068,
+  "durationMs": 46072,
+  "promptSha256": "3946c291283d7a03ea2dc4ad58f78c90707994c5e8b1444cedc7cdb2f1918e3a",
+  "promptChars": 18898,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Avoid mutating captured `args` inside a retryable DB session closure\n\nAffected:\n- pkg/services/anonymous/anonimpl/anonstore/database.go:80-85\n\nExplanation:\nInside the `WithDbSession` callback, `args = append([]interface{}{query}, args...)` reassigns the captured outer `args` variable. Grafana's `WithDbSession` can re-run the callback, for example when SQLite reports a lock and the session retries. On a second run, the query string is prepended again, so `Exec` receives `[query, query, clientIP, ...]`. That statement is malformed, the update fails, and the error surfaces as an authentication failure.\n\nBuild the argument slice locally inside the closure instead.\n\nProposed fix:\n~~~go\nerr := s.sqlStore.WithDbSession(ctx, func(dbSession *sqlstore.DBSession) error {\n\texecArgs := append([]interface{}{query}, args...)\n\tresult, err := dbSession.Exec(execArgs...)\n\t...\n})\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: `rowsAffected == 0` can wrongly reject an existing device on MySQL\n\nAffected:\n- pkg/services/anonymous/anonimpl/anonstore/database.go:90-97\n\nExplanation:\nBy default, MySQL reports \"changed\" rows rather than \"matched\" rows. Consider an existing device that is updated with the same `client_ip` and `user_agent`, and whose `updated_at` truncates to the same second (DATETIME precision). The UPDATE matches the row but reports 0 rows affected.\n\nThe code treats that result as `ErrDeviceLimitReached`, so `Authenticate` rejects a legitimate, already-registered device. This is most likely across multiple Grafana instances or after a local-cache miss.\n\nFixes:\n- Distinguish \"row exists\" from \"row changed\", for example with a follow-up `SELECT COUNT(*) WHERE device_id = ?`.\n- Or enable `clientFoundRows` on the MySQL connection.\n\nProposed fix:\n~~~go\nif rowsAffected == 0 {\n\texists, err := dbSession.Table(\"anon_device\").\n\t\tWhere(\"device_id = ? AND updated_at BETWEEN ? AND ?\", device.DeviceID, from, to).Exist()\n\tif err != nil {\n\t\treturn err\n\t}\n\tif !exists {\n\t\treturn ErrDeviceLimitReached\n\t}\n}\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Device limit check is not atomic, so concurrent requests can exceed the limit\n\nAffected:\n- pkg/services/anonymous/anonimpl/anonstore/database.go:108-118\n\nExplanation:\nThe code runs `CountDevices` and then, as a separate unsynchronized step, performs the upsert. Concurrent requests from new devices (on one instance or across HA instances) can all see `count < limit` and all insert. The configured limit is therefore only a soft limit.\n\nIf the limit is meant to be enforced (for example, for licensing), do the check and insert under a transaction with appropriate locking or a server lock. Alternatively, use a conditional insert, such as `INSERT ... SELECT ... WHERE (SELECT COUNT(*) ...) < ?`.\n\nProposed fix:\n~~~text\nPerform the count and the insert in one transaction (or a single conditional INSERT) so that two concurrent new devices cannot both pass the limit check.\n~~~\n\n## 4) Severity: MEDIUM | Type: Performance\nTitle: Device tagging now runs synchronously on the auth hot path, plus a COUNT query\n\nAffected:\n- pkg/services/anonymous/anonimpl/client.go:44-50\n- pkg/services/anonymous/anonimpl/anonstore/database.go:109-114\n\nExplanation:\n`TagDevice` used to run in a background goroutine with its own timeout and panic recovery. It now runs inline on every anonymous authentication.\n\n- Each local-cache miss adds DB latency to the request.\n- When a limit is configured, each miss also adds a `COUNT(*)` over the device table.\n- DB slowness now directly slows or fails anonymous page loads.\n- The panic recovery that guarded the old goroutine is gone.\n- The request `ctx` is used, so a client disconnect cancels the write.\n\nFixes:\n- Keep the limit check synchronous only when `deviceLimit > 0`, and leave the rest asynchronous as before.\n- Cache the device count briefly instead of counting on every miss.\n\nProposed fix:\n~~~go\nif a.cfg.AnonymousDeviceLimit > 0 {\n\tif err := a.anonDeviceService.TagDevice(ctx, httpReqCopy, anonymous.AnonDeviceUI); err != nil {\n\t\tif errors.Is(err, anonstore.ErrDeviceLimitReached) {\n\t\t\treturn nil, err\n\t\t}\n\t\ta.log.Warn(\"Failed to tag anonymous session\", \"error\", err)\n\t}\n} else {\n\tgo func() { /* previous async behavior with recover + timeout */ }()\n}\n~~~\n\n## 5) Severity: MEDIUM | Type: Bug\nTitle: Limit may be bypassed if the local cache is populated before the DB write fails\n\nAffected:\n- pkg/services/anonymous/anonimpl/impl.go:144-148\n- pkg/services/anonymous/anonimpl/client.go:44-47\n\nExplanation:\n`TagDevice` short-circuits on the local cache, but the diff does not show whether `tagDeviceUI` sets the cache before or after `CreateOrUpdateDevice`. If it sets the cache first, a rejected device would be denied on its first request. For the next ~29 minutes it would then be accepted, because the cached entry makes `TagDevice` return nil. That bypasses the limit.\n\nThis depends on code outside the diff. Verify that the cache entry is written only after a successful store write, or is removed on `ErrDeviceLimitReached`.\n\nProposed fix:\n~~~go\nif err := a.anonStore.CreateOrUpdateDevice(ctx, device); err != nil {\n\ta.localCache.Delete(key) // or set cache only after success\n\treturn err\n}\n~~~\n\n## 6) Severity: LOW | Type: Bug\nTitle: Raw sentinel error returned from the authn client may map to a 500 instead of an auth failure\n\nAffected:\n- pkg/services/anonymous/anonimpl/client.go:45-47\n\nExplanation:\n`ErrDeviceLimitReached` is a plain `fmt.Errorf` error. The authn service usually expects `errutil` errors to choose the HTTP status and a public message. A plain error is likely rendered as a generic 500 or \"internal error\", and users get no meaningful message.\n\nDefine it with `errutil` (for example, `errutil.Unauthorized(\"anonymous.device-limit-reached\")`) so the response is a proper 401/403.\n\nProposed fix:\n~~~go\nvar ErrDeviceLimitReached = errutil.Unauthorized(\"anonymous.device-limit-reached\").Errorf(\"device limit reached\")\n~~~\n\n## 7) Severity: LOW | Type: Maintainability\nTitle: `ProvideAnonDBStore` signature change may break wire/DI and other callers\n\nAffected:\n- pkg/services/anonymous/anonimpl/anonstore/database.go:52-54\n- pkg/services/anonymous/anonimpl/impl.go:36-43\n\nExplanation:\n`ProvideAnonDBStore` now requires an `int64`, which wire cannot supply. If `pkg/server/wire.go` (or an enterprise or other wire set) still lists `anonstore.ProvideAnonDBStore` or binds `anonstore.AnonStore`, codegen or build will fail. Any other consumer that injects `AnonStore` would also get a different instance than the service uses.\n\nThe wire files are not in this diff, so verify them. Consider taking `*setting.Cfg` as the parameter instead of a bare `int64`.\n\nProposed fix:\n~~~go\nfunc ProvideAnonDBStore(sqlStore db.DB, cfg *setting.Cfg) *AnonDBStore {\n\treturn &AnonDBStore{sqlStore: sqlStore, log: log.New(\"anonstore\"), deviceLimit: cfg.AnonymousDeviceLimit}\n}\n~~~\n\n## 8) Severity: LOW | Type: Maintainability\nTitle: Device expiration constant is duplicated across packages\n\nAffected:\n- pkg/services/anonymous/anonimpl/api/api.go:18\n- pkg/services/anonymous/anonimpl/anonstore/database.go:16\n\nExplanation:\n`anonymousDeviceExpiration` is defined separately in `api` and `anonstore`. If one copy changes and the other does not, the listed devices and the counted (limited) devices will diverge.\n\nExport the constant once from `anonstore` and reuse it.\n\nProposed fix:\n~~~go\n// anonstore\nconst AnonymousDeviceExpiration = 30 * 24 * time.Hour\n// api\nfromTime := time.Now().Add(-anonstore.AnonymousDeviceExpiration)\n~~~\n\n## 9) Severity: LOW | Type: Test\nTitle: Limit test does not verify that existing devices can still be updated at the limit\n\nAffected:\n- pkg/services/anonymous/anonimpl/anonstore/database_test.go:51-70\n\nExplanation:\nThe test only checks that a second, new device is rejected. It does not cover the main behavior of the update path: an already-registered device must keep working once the limit is reached.\n\nIt also mutates and reuses the same struct and leaves `CreatedAt` as the zero value.\n\nAdd a case that re-submits the first device after the limit is reached and expects no error. Run it with an identical IP/UA within the same second as well, which would expose issue 2.\n\nProposed fix:\n~~~go\nanonDevice.DeviceID = \"32mdo31deeqwes\"\nanonDevice.UpdatedAt = time.Now()\nrequire.NoError(t, anonDBStore.CreateOrUpdateDevice(context.Background(), anonDevice))\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "Race condition: Multiple concurrent requests could pass the device count check simultaneously and create devices beyond the limit. Consider using a database transaction or lock.",
+        "severity": "High",
+        "category": "concurrency",
+        "matched_candidate": "Device limit check is not atomic - CountDevices and upsert run as separate unsynchronized steps, allowing concurrent requests to exceed the configured limit",
+        "confidence": 0.98,
+        "reasoning": "Both comments identify the same race condition issue: the device count check and device creation are not atomic operations, allowing concurrent requests to bypass the limit check and create more devices than allowed. The golden comment mentions 'race condition' and 'concurrent requests could pass the device count check simultaneously', while the candidate mentions 'not atomic' and 'separate unsynchronized steps, allowing concurrent requests to exceed the configured limit'. These are describing the exact same underlying problem."
+      },
+      {
+        "golden_comment": "The updateDevice function returns ErrDeviceLimitReached when rowsAffected == 0, but zero affected rows means the device doesn't exist or falls outside the time window, not that a limit was reached.",
+        "severity": "Low",
+        "category": "doc_defect",
+        "matched_candidate": "MySQL reports changed rows rather than matched rows by default, so updating an existing device with same values reports 0 rows affected, wrongly triggering ErrDeviceLimitReached",
+        "confidence": 0.85,
+        "reasoning": "Both comments identify the same underlying issue: the updateDevice function incorrectly returns ErrDeviceLimitReached when rowsAffected == 0, but zero affected rows doesn't actually indicate a device limit was reached. The golden comment says it means the device doesn't exist or falls outside the time window. The candidate comment says it could mean updating with same values (no actual change). Both are pointing out that 0 rows affected has multiple possible causes that don't relate to device limits, making the error return incorrect."
+      },
+      {
+        "golden_comment": "The `tagDeviceUI` function populates the local cache with the device ID before the `CreateOrUpdateDevice` call. If `ErrDeviceLimitReached` is returned, the cache entry remains set, allowing subsequent requests to bypass the device limit until the cache expires after 29 minutes.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "If local cache is populated before DB write fails, a rejected device would be denied on first request but accepted for ~29 minutes due to cached entry bypassing the limit",
+        "confidence": 0.95,
+        "reasoning": "The candidate identifies the same core issue: the local cache is populated before the database write, and if the DB operation fails (specifically with device limit reached), the cached entry remains and allows subsequent requests to bypass the device limit for approximately 29 minutes. Both comments point to the same race condition/caching bug where a rejected device gets cached and can bypass limits."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Inside WithDbSession callback, args = append([]interface{}{query}, args...) reassigns the captured outer args variable, causing the query string to be prepended again on retry, resulting in malformed Exec statements"
+      },
+      {
+        "candidate": "TagDevice now runs synchronously on the auth hot path instead of in a background goroutine, adding DB latency to every anonymous authentication request"
+      },
+      {
+        "candidate": "COUNT query runs on every local-cache miss when limit is configured, adding overhead to the auth path"
+      },
+      {
+        "candidate": "Panic recovery that guarded the old goroutine is gone from TagDevice"
+      },
+      {
+        "candidate": "Request ctx is used in TagDevice, so client disconnect cancels the write"
+      },
+      {
+        "candidate": "ErrDeviceLimitReached is a plain fmt.Errorf error instead of errutil error, likely rendering as generic 500 instead of proper 401/403 with meaningful message"
+      },
+      {
+        "candidate": "ProvideAnonDBStore signature change to require int64 may break wire/DI since wire cannot supply bare int64"
+      },
+      {
+        "candidate": "anonymousDeviceExpiration constant is duplicated in api and anonstore packages, risking divergence if one changes"
+      },
+      {
+        "candidate": "Limit test does not verify that existing devices can still be updated after limit is reached"
+      },
+      {
+        "candidate": "Test mutates and reuses the same struct and leaves CreatedAt as zero value"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Anonymous authentication now fails entirely if anonDeviceService.TagDevice returns ErrDeviceLimitReached. Previously, device tagging was asynchronous and non-blocking. This change prevents anonymous users from authenticating when the device limit is reached.",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "Time window calculation inconsistency: Using device.UpdatedAt.UTC().Add(-anonymousDeviceExpiration) as the lower bound but device.UpdatedAt as the current time may not match the intended logic. Consider using time.Now().UTC() consistently.",
+        "severity": "Low",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 13,
+    "total_golden": 5,
+    "tp": 3,
+    "fp": 10,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.23076923076923078,
+    "recall": 0.6,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/79265"
+  },
+  "judgeUsage": {
+    "calls": 67,
+    "inputTokens": 18583,
+    "outputTokens": 7535,
+    "costUsd": 0.28128999999999993
+  }
+}

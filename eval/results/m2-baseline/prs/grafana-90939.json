@@ -1,0 +1,88 @@
+{
+  "id": "grafana-90939",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/90939",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Performance",
+      "title": "Re-check the cache after taking the write lock",
+      "affected": [
+        "pkg/api/webassets/webassets.go:41-49"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Performance",
+      "title": "Avoid holding a global write lock across potentially slow I/O in dev mode",
+      "affected": [
+        "pkg/api/webassets/webassets.go:48-49"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 2,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoQSVyw3ezpoywn47S2",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 1441,
+      "outputTokens": 1456,
+      "ms": 13948
+    }
+  ],
+  "costUsd": 0.034884,
+  "durationMs": 15040,
+  "promptSha256": "3de65a27b7e0b70b9ed6341a71558cb0711c78fee7911e35fd67c1e3807eaca6",
+  "promptChars": 3264,
+  "response": "## 1) Severity: MEDIUM | Type: Performance\nTitle: Re-check the cache after taking the write lock\n\nAffected:\n- pkg/api/webassets/webassets.go:41-49\n\nExplanation:\nThe function reads the cache under `RLock`, releases it, and then takes the exclusive `Lock`. It never re-checks `entryPointAssetsCache` after acquiring that lock.\n\nOn a cold cache (for example, a burst of requests right after startup), every concurrent caller sees `ret == nil` and queues on `Lock()`. Each one then runs the full load in turn, even though the first caller already filled the cache. That load is the file read or JSON parse, and possibly a CDN/HTTP fetch, depending on code not shown in this diff.\n\nBecause the write lock is held for the whole computation, these callers are serialized. A slow load (such as a CDN timeout) therefore delays every waiting request by N × load time instead of 1 × load time.\n\nThe fix is double-checked locking: after `Lock()`, check the cache again and return it if another goroutine has already populated it. Alternatively, use `sync.Once` or `singleflight` for the non-dev path.\n\nProposed fix:\n~~~go\nentryPointAssetsCacheMu.RLock()\nret := entryPointAssetsCache\nentryPointAssetsCacheMu.RUnlock()\n\nif cfg.Env != setting.Dev && ret != nil {\n\treturn ret, nil\n}\n\nentryPointAssetsCacheMu.Lock()\ndefer entryPointAssetsCacheMu.Unlock()\n\n// Another goroutine may have populated the cache while we waited.\nif cfg.Env != setting.Dev && entryPointAssetsCache != nil {\n\treturn entryPointAssetsCache, nil\n}\n~~~\n\n## 2) Severity: LOW | Type: Performance\nTitle: Avoid holding a global write lock across potentially slow I/O in dev mode\n\nAffected:\n- pkg/api/webassets/webassets.go:48-49\n\nExplanation:\nIn `setting.Dev` the cache is always bypassed, so every call takes the global exclusive lock and holds it for the entire asset load. This serializes all concurrent page loads on file and possibly network I/O.\n\nThe mutex only needs to protect the read and write of the shared pointer. In production the same lock also blocks all cold-cache callers behind a single slow fetch, and the lock acquisition ignores `ctx` cancellation.\n\nA better approach is to compute `result` without holding the lock (or use `singleflight` keyed on a constant), then take `Lock()` only to assign `entryPointAssetsCache = result`. This is a lower-severity note, since the remainder of the function is not visible in this diff.\n\nProposed fix:\n~~~go\n// compute result without holding the mutex (or via singleflight)\nresult, err := loadAssets(ctx, cfg, license)\nif err != nil {\n\treturn nil, err\n}\nentryPointAssetsCacheMu.Lock()\nentryPointAssetsCache = result\nentryPointAssetsCacheMu.Unlock()\nreturn result, nil\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The GetWebAssets function implements an incomplete double-checked locking pattern for caching web assets. The function first checks if the cache is populated using a read lock (RLock), and if the cache is empty, it acquires a write lock to populate it. However, it fails to re-check whether the cache was populated by another goroutine while waiting to acquire the write lock.",
+        "severity": "Medium",
+        "category": "concurrency",
+        "matched_candidate": "Cache is not re-checked after acquiring write lock, causing redundant loads when multiple concurrent callers see empty cache and queue on Lock(), each running the full load even though the first caller already filled the cache",
+        "confidence": 0.99,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment: the double-checked locking pattern is incomplete because after acquiring the write lock, the code fails to re-check if the cache was already populated by another goroutine. Both comments point out that this causes redundant/unnecessary loads when multiple concurrent callers see an empty cache and queue on the write lock."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "In dev mode, global write lock is held across potentially slow I/O for the entire asset load, serializing all concurrent page loads on file and possibly network I/O when the mutex only needs to protect the read and write of the shared pointer"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "In addition to the missing double-check, the function has a critical flaw in its error handling: it unconditionally assigns the fetch result to the cache (line 69: entryPointAssetsCache = result) regardless of whether the fetch succeeded or failed. When an error occurs during asset fetching, result is nil, and this nil value overwrites any previously valid cache entry.",
+        "severity": "High",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 2,
+    "total_golden": 2,
+    "tp": 1,
+    "fp": 1,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.5,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/90939"
+  },
+  "judgeUsage": {
+    "calls": 6,
+    "inputTokens": 2568,
+    "outputTokens": 592,
+    "costUsd": 0.027639999999999998
+  }
+}

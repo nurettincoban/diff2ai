@@ -1,0 +1,141 @@
+{
+  "id": "discourse-graphite-2",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/2",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Avoid breaking unsubscribe emails that don't pass `unsubscribe_url`",
+      "affected": [
+        "config/locales/server.en.yml:1852-1855",
+        "lib/email/message_builder.rb:67"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Handle a missing TopicUser row in `unsubscribe`",
+      "affected": [
+        "app/controllers/topics_controller.rb:105-113"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Security",
+      "title": "Stop changing state on a GET request (CSRF / link prefetch) and stop toggling on every visit",
+      "affected": [
+        "app/controllers/topics_controller.rb:98-116",
+        "config/routes.rb:440-441"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Use `TopicUser.change` so the level change is published and the reason is updated",
+      "affected": [
+        "app/controllers/topics_controller.rb:107-113"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Security",
+      "title": "Avoid rendering a translated string through an unescaped triple-stash",
+      "affected": [
+        "app/assets/javascripts/discourse/templates/topic/unsubscribe.hbs:3",
+        "app/assets/javascripts/discourse/controllers/topic-unsubscribe.js.es6:5-7"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyo8WAJPMzJLhXwXnQko",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 11226,
+      "outputTokens": 3733,
+      "ms": 34937
+    }
+  ],
+  "costUsd": 0.119564,
+  "durationMs": 35936,
+  "promptSha256": "88f7f53bb16243f3113f7819b7752e7b12675116478a8365633d1a01f8b053d5",
+  "promptChars": 26192,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Avoid breaking unsubscribe emails that don't pass `unsubscribe_url`\n\nAffected:\n- config/locales/server.en.yml:1852-1855\n- lib/email/message_builder.rb:67\n\nExplanation:\nThe global `unsubscribe_link` translation now requires `%{unsubscribe_url}`. Only `UserNotifications#send_notification_email` supplies that value. Other mailers that set `add_unsubscribe_link: true` (for example digests) never pass it.\n\nRails I18n raises `I18n::MissingInterpolationArgument` when a placeholder is missing. Those emails will either fail to build or render broken text. The spec only passes because it was changed to add `unsubscribe_url`.\n\nThe per-topic sentence also makes no sense in non-topic emails such as digests.\n\nFix: use a separate key for the topic-specific line and add it only when `unsubscribe_url` is present.\n\nProposed fix:\n~~~ruby\n# server.en.yml\nunsubscribe_link: \"To unsubscribe from these emails, visit your [user preferences](%{user_preferences_url}).\"\nunsubscribe_link_and_mail: \"... To stop receiving notifications about this particular topic, [click here](%{unsubscribe_url}).\"\n\n# message_builder.rb\nkey = template_args[:unsubscribe_url].present? ? 'unsubscribe_link_and_mail' : 'unsubscribe_link'\nunsubscribe_link = PrettyText.cook(I18n.t(key, template_args)).html_safe\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: Handle a missing TopicUser row in `unsubscribe`\n\nAffected:\n- app/controllers/topics_controller.rb:105-113\n\nExplanation:\n`TopicUser.find_by` returns `nil` when the user has no row for the topic. This happens when someone follows the link from a forwarded email, or when a different logged-in account opens it.\n\nIn that case `tu.notification_level` raises `NoMethodError`, and the user gets a 500 error.\n\nProposed fix:\n~~~ruby\ntu = TopicUser.find_by(user_id: current_user.id, topic_id: params[:topic_id])\nif tu.nil?\n  TopicUser.change(current_user, params[:topic_id], notification_level: TopicUser.notification_levels[:muted])\nelse\n  ...\nend\n~~~\n\n## 3) Severity: MEDIUM | Type: Security\nTitle: Stop changing state on a GET request (CSRF / link prefetch) and stop toggling on every visit\n\nAffected:\n- app/controllers/topics_controller.rb:98-116\n- config/routes.rb:440-441\n\nExplanation:\nA plain GET changes the user's notification level. This causes three problems:\n\n- **CSRF:** any third-party page can embed `<img src=\"https://forum/t/x/123/unsubscribe\">` and silently lower or mute a logged-in user's notification level for arbitrary topics.\n- **Prefetching:** email security scanners and link prefetchers will trigger the change before the user clicks.\n- **Not idempotent:** the logic lowers the level on every request. Watching → regular on the first visit, then regular → muted on a refresh or second visit. A page reload therefore changes state again.\n\nFix: either require a signed per-user token in the link, or make the GET render a confirmation and perform the change via POST/PUT with CSRF protection. Also make the operation idempotent.\n\nProposed fix:\n~~~ruby\n# GET renders the page; actual change via:\npost \"t/:slug/:topic_id/unsubscribe\" => \"topics#unsubscribe\"\n# or validate params[:key] against a per-user/topic HMAC before mutating\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: Use `TopicUser.change` so the level change is published and the reason is updated\n\nAffected:\n- app/controllers/topics_controller.rb:107-113\n\nExplanation:\nAssigning `notification_level` directly and calling `save!` bypasses `TopicUser.change`. That method publishes the `notification_level_change` MessageBus event and handles related bookkeeping such as `notifications_reason_id`.\n\nAs a result, open clients won't see the update, and the stored notification reason becomes stale.\n\nSeparately, moving from tracking or watching to \"regular\" still sends notifications for replies and mentions. That contradicts the UI text \"You will stop receiving notifications for …\".\n\nProposed fix:\n~~~ruby\nnew_level = tu.notification_level > TopicUser.notification_levels[:regular] ?\n  TopicUser.notification_levels[:regular] : TopicUser.notification_levels[:muted]\nTopicUser.change(current_user.id, params[:topic_id], notification_level: new_level)\n~~~\n\n## 5) Severity: LOW | Type: Security\nTitle: Avoid rendering a translated string through an unescaped triple-stash\n\nAffected:\n- app/assets/javascripts/discourse/templates/topic/unsubscribe.hbs:3\n- app/assets/javascripts/discourse/controllers/topic-unsubscribe.js.es6:5-7\n\nExplanation:\n`{{{stopNotificiationsText}}}` outputs raw HTML built by interpolating `fancyTitle` into a translation string. This is safe only as long as both of these hold:\n\n- `fancyTitle` always arrives already HTML-escaped from the server.\n- No translator ever puts untrusted markup into the string.\n\nAny regression in title escaping would become XSS on this page.\n\nFix: escape the title explicitly before interpolating (for example with `Handlebars.Utils.escapeExpression`). Also fix the typo `Notificiations`.\n\nProposed fix:\n~~~js\nstopNotificationsText: function() {\n  return I18n.t(\"topic.unsubscribe.stop_notifications\", {\n    title: Handlebars.Utils.escapeExpression(this.get(\"model.title\"))\n  });\n}.property(\"model.title\")\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "logic: Potential nil pointer exception - if no TopicUser record exists, tu will be nil and calling methods on it will crash",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "TopicUser.find_by returns nil when user has no row for the topic, causing NoMethodError on tu.notification_level and a 500 error",
+        "confidence": 0.98,
+        "reasoning": "Both comments identify the same issue: TopicUser.find_by can return nil when no record exists, and calling methods on the nil result (tu.notification_level) will cause an error. The golden comment describes it as a 'nil pointer exception' that will 'crash', while the candidate describes it as 'NoMethodError' causing a '500 error'. These are the same underlying problem - accessing methods on a nil object returned from find_by."
+      },
+      {
+        "golden_comment": "Typo in property name: 'stopNotificiationsText' should be 'stopNotificationsText' (missing 'n' in 'Notifications')",
+        "severity": "Low",
+        "category": "style",
+        "matched_candidate": "Typo in template: 'Notificiations' should be 'Notifications'",
+        "confidence": 0.95,
+        "reasoning": "Both comments identify the same typo issue - the misspelling of 'Notifications' as 'Notificiations' (missing 'n'). The golden comment specifically mentions the property name 'stopNotificiationsText' while the candidate mentions it's in the template, but they're both pointing to the same underlying spelling error in the word 'Notifications'."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Global unsubscribe_link translation requires %{unsubscribe_url} placeholder but other mailers (like digests) that set add_unsubscribe_link: true never pass this value, causing I18n::MissingInterpolationArgument errors or broken text"
+      },
+      {
+        "candidate": "Per-topic unsubscribe sentence makes no sense in non-topic emails such as digests"
+      },
+      {
+        "candidate": "GET request changes user's notification level, creating CSRF vulnerability where third-party pages can silently change notification levels via embedded images"
+      },
+      {
+        "candidate": "Email security scanners and link prefetchers trigger the notification level change before user clicks due to GET request mutation"
+      },
+      {
+        "candidate": "Unsubscribe logic is not idempotent - lowers level on every request (Watching → regular on first visit, regular → muted on refresh)"
+      },
+      {
+        "candidate": "Direct assignment to notification_level with save! bypasses TopicUser.change, preventing MessageBus notification_level_change event publication and leaving notifications_reason_id stale"
+      },
+      {
+        "candidate": "Moving from tracking/watching to 'regular' still sends notifications for replies and mentions, contradicting UI text 'You will stop receiving notifications'"
+      },
+      {
+        "candidate": "Triple-stash {{{stopNotificiationsText}}} renders raw HTML with interpolated fancyTitle, creating potential XSS if title escaping regresses"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 10,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 8,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.2,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/discourse-graphite",
+    "pr_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/2"
+  },
+  "judgeUsage": {
+    "calls": 27,
+    "inputTokens": 6824,
+    "outputTokens": 2381,
+    "costUsd": 0.09364499999999999
+  }
+}

@@ -1,0 +1,232 @@
+{
+  "id": "discourse-graphite-10",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/10",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Migration crashes when `embed_category` is not set",
+      "affected": [
+        "db/migrate/20150818190757_create_embeddable_hosts.rb:9-16"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Migrated hosts are unescaped and not normalized, so existing embeds break",
+      "affected": [
+        "db/migrate/20150818190757_create_embeddable_hosts.rb:22-26"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Host lookup is case-sensitive on the input side and never matches hosts stored with a port",
+      "affected": [
+        "app/models/embeddable_host.rb:10-18"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "`before_validation` raises on nil host",
+      "affected": [
+        "app/models/embeddable_host.rb:5-8"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Admin host endpoints 500 on unknown id or missing params",
+      "affected": [
+        "app/controllers/admin/embeddable_hosts_controller.rb:9-18",
+        "app/controllers/admin/embeddable_hosts_controller.rb:22-25"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Maintainability",
+      "title": "Fabricator file contents are swapped",
+      "affected": [
+        "spec/fabricators/category_fabricator.rb:1-4",
+        "spec/fabricators/embeddable_host_fabricator.rb:1-27"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "`_ids` hydration leaves undefined entries and assumes an array",
+      "affected": [
+        "app/assets/javascripts/discourse/models/store.js.es6:196-201"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "`replace('_', '-')` only replaces the first underscore",
+      "affected": [
+        "app/assets/javascripts/discourse/adapters/rest.js:22"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Spec is misleading and the store test assumes behavior the mock doesn't provide",
+      "affected": [
+        "spec/models/topic_spec.rb:1403-1405",
+        "test/javascripts/models/store-test.js.es6:111-117"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Implementation",
+      "title": "Client sets an undefined category after saving with no category selected",
+      "affected": [
+        "app/assets/javascripts/admin/components/embeddable-host.js.es6:33-39"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 10,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoUJz9oDBtdgXnxzya3",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 19748,
+      "outputTokens": 4782,
+      "ms": 40711
+    }
+  ],
+  "costUsd": 0.174632,
+  "durationMs": 41757,
+  "promptSha256": "732da1f630f6409af2d32c3824594713c94c3ec0cfea443ae9a18718e5a0a8fa",
+  "promptChars": 43223,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Migration crashes when `embed_category` is not set\n\nAffected:\n- db/migrate/20150818190757_create_embeddable_hosts.rb:9-16\n\nExplanation:\n`execute(...)[0]['id']` assumes the query returns a row. On a fresh install, or on any site that never set `embed_category`, the JOIN returns zero rows. `PG::Result#[]` then raises, or returns nil and `nil['id']` raises. The migration aborts and the deploy is blocked.\n\nThe `uncategorized_category_id` lookup on line 15 has the same flaw. That setting is not always present as a row in `site_settings`, because defaults are not stored.\n\nProposed fix:\n~~~ruby\nrows = execute(\"SELECT c.id FROM categories AS c\n                INNER JOIN site_settings AS s ON s.value = c.name\n                WHERE s.name = 'embed_category'\")\ncategory_id = rows.cmd_tuples > 0 ? rows[0]['id'].to_i : 0\n\nif category_id == 0\n  rows = execute(\"SELECT value FROM site_settings WHERE name = 'uncategorized_category_id'\")\n  category_id = rows.cmd_tuples > 0 ? rows[0]['value'].to_i : 0\nend\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: Migrated hosts are unescaped and not normalized, so existing embeds break\n\nAffected:\n- db/migrate/20150818190757_create_embeddable_hosts.rb:22-26\n\nExplanation:\nThere are two problems with how existing hosts are copied over:\n\n- **Unescaped SQL.** Each host string is interpolated directly into the SQL. A value containing `'` breaks the migration, and the pattern is SQL injection–prone.\n- **No normalization.** The old setting explicitly allowed values such as `http://eviltrout.com`, `https://example.com/1234`, and entries with trailing whitespace or `\\r`. These are inserted verbatim. The raw SQL bypasses the model's `before_validation` stripping.\n\n`record_for_host` compares against `uri.host` (for example `example.com`), so any legacy entry that has a scheme, path, or trailing whitespace never matches. Existing embeds silently stop working after upgrade.\n\nProposed fix:\n~~~ruby\nrecords.map(&:strip).reject(&:blank?).each do |h|\n  h = h.sub(/^https?:\\/\\//, '').sub(/\\/.*$/, '')\n  execute \"INSERT INTO embeddable_hosts (host, category_id, created_at, updated_at)\n           VALUES (#{ActiveRecord::Base.connection.quote(h)}, #{category_id}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)\"\nend\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Host lookup is case-sensitive on the input side and never matches hosts stored with a port\n\nAffected:\n- app/models/embeddable_host.rb:10-18\n\nExplanation:\n- **Case.** `where(\"lower(host) = ?\", host)` lowercases the DB column but not the incoming value. `URI(\"http://EvilTrout.com\").host` keeps its case, so referers with uppercase letters are rejected.\n- **Port.** The validation regex allows `example.com:8080`, but `uri.host` drops the port. A host stored with a port can therefore never match.\n\nProposed fix:\n~~~ruby\nhost = uri.host\nreturn false unless host.present?\nhost = \"#{host}:#{uri.port}\" if uri.port.present? && ![80, 443].include?(uri.port)\nwhere(\"lower(host) = ? OR lower(host) = ?\", host.downcase, uri.host.downcase).first\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: `before_validation` raises on nil host\n\nAffected:\n- app/models/embeddable_host.rb:5-8\n\nExplanation:\n`self.host.sub!` raises `NoMethodError` when `host` is nil. This happens with `EmbeddableHost.new`, or when the param is missing in `save_host`. The result is a 500 instead of a validation error.\n\nProposed fix:\n~~~ruby\nbefore_validation do\n  if host.present?\n    self.host = host.strip.sub(/^https?:\\/\\//, '').sub(/\\/.*$/, '')\n  end\nend\n~~~\n\n## 5) Severity: MEDIUM | Type: Bug\nTitle: Admin host endpoints 500 on unknown id or missing params\n\nAffected:\n- app/controllers/admin/embeddable_hosts_controller.rb:9-18\n- app/controllers/admin/embeddable_hosts_controller.rb:22-25\n\nExplanation:\n- **Unknown id.** `where(id:).first` returns nil for an unknown id. `nil.destroy`, or `nil.host=` inside `save_host`, then raises `NoMethodError`.\n- **Missing params.** `params[:embeddable_host][:host]` raises when the root key is missing.\n- **Unvalidated category.** `category_id` is not validated to reference an existing category. There is no FK and no model validation, so a bogus id is accepted and later used when creating topics.\n\nProposed fix:\n~~~ruby\ndef update\n  save_host(EmbeddableHost.find(params[:id]))\nend\n\ndef destroy\n  EmbeddableHost.find(params[:id]).destroy\n  render json: success_json\nend\n\ndef save_host(host)\n  attrs = params.require(:embeddable_host)\n  host.host = attrs[:host]\n  # ...\nend\n# model: validates :category, presence: true\n~~~\n\n## 6) Severity: MEDIUM | Type: Maintainability\nTitle: Fabricator file contents are swapped\n\nAffected:\n- spec/fabricators/category_fabricator.rb:1-4\n- spec/fabricators/embeddable_host_fabricator.rb:1-27\n\nExplanation:\n`category_fabricator.rb` now defines only `:embeddable_host`. The new `embeddable_host_fabricator.rb` contains all the category fabricators. It works only because all fabricator files are loaded, but it is clearly a mistake and will confuse future maintainers.\n\nProposed fix:\nRestore the category fabricators in `category_fabricator.rb`. Put only the `Fabricator(:embeddable_host)` definition in `embeddable_host_fabricator.rb`.\n\n## 7) Severity: LOW | Type: Bug\nTitle: `_ids` hydration leaves undefined entries and assumes an array\n\nAffected:\n- app/assets/javascripts/discourse/models/store.js.es6:196-201\n\nExplanation:\n- **Assumes an array.** `obj[k].map` throws if a `*_ids` key holds null or a non-array.\n- **Undefined entries.** `_lookupSubType` can return undefined for an unknown id. That leaves holes in the array, and `hydrated || []` never triggers because `map` always returns an array.\n\nProposed fix:\n~~~js\nif (m[2]) {\n  const ids = Array.isArray(obj[k]) ? obj[k] : [];\n  const hydrated = ids.map(id => self._lookupSubType(subType, type, id, root))\n                      .filter(Boolean);\n  obj[self.pluralize(subType)] = hydrated;\n  delete obj[k];\n}\n~~~\n\n## 8) Severity: LOW | Type: Bug\nTitle: `replace('_', '-')` only replaces the first underscore\n\nAffected:\n- app/assets/javascripts/discourse/adapters/rest.js:22\n\nExplanation:\n`String#replace` with a string pattern replaces only the first occurrence. A type such as `site_customization_foo` would not be normalized. Use a global regex instead.\n\nProposed fix:\n~~~js\nif (ADMIN_MODELS.indexOf(type.replace(/_/g, '-')) !== -1) { return \"/admin/\"; }\n~~~\n\n## 9) Severity: LOW | Type: Test\nTitle: Spec is misleading and the store test assumes behavior the mock doesn't provide\n\nAffected:\n- spec/models/topic_spec.rb:1403-1405\n- test/javascripts/models/store-test.js.es6:111-117\n\nExplanation:\n- **Topic spec.** \"is false if embeddable_host is blank\" now passes only because `embed_truncate` defaults to false and `has_topic_embed?` is false. `expandable_first_post?` no longer checks hosts at all, so the test name asserts a behavior that no longer exists.\n- **Store test.** `store.find('fruit', 2)` expects 2 colors, but fruit 2 has `color_ids: [3]`. The test passes only because the pretender always returns `fruits[0]`, so it is coupled to a mock quirk.\n\nProposed fix:\n- Rename or remove the topic test so its name matches what it checks.\n- In the store test, use `find('fruit', 1)`, or make the pretender return the fruit matching the requested id.\n\n## 10) Severity: LOW | Type: Implementation\nTitle: Client sets an undefined category after saving with no category selected\n\nAffected:\n- app/assets/javascripts/admin/components/embeddable-host.js.es6:33-39\n\nExplanation:\nWhen no category is chosen, the server falls back to `uncategorized_category_id`. The client, however, sets `category` from the null `categoryId`, which yields undefined, so the row shows no badge until reload.\n\nProposed fix:\n~~~js\nhost.save(props).then(() => {\n  host.set('category', Discourse.Category.findById(host.get('category_id')));\n  this.set('editToggled', false);\n})\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The EmbeddableHost model's before_validation callback calls self.host.sub! to strip http://, https://, and path segments, but if self.host is nil, this raises NoMethodError.",
+        "severity": "Critical",
+        "category": "bug",
+        "matched_candidate": "`before_validation` raises NoMethodError on nil host when `self.host.sub!` is called with nil, resulting in a 500 instead of a validation error",
+        "confidence": 0.99,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the before_validation callback in EmbeddableHost calls self.host.sub! which will raise a NoMethodError when self.host is nil. Both comments point to the same bug - nil host causing NoMethodError instead of a proper validation error."
+      },
+      {
+        "golden_comment": "The update and destroy methods in Admin::EmbeddableHostsController do not validate the existence of the EmbeddableHost record retrieved by ID. If EmbeddableHost.where(id: params[:id]).first returns nil (i.e., the host does not exist), attempting to call methods on the nil object (e.g., save_host or destroy) will result in a NoMethodError.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Admin host endpoints return 500 on unknown id because `where(id:).first` returns nil and then `nil.destroy` or `nil.host=` raises NoMethodError",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the update and destroy methods in Admin::EmbeddableHostsController don't validate the existence of the EmbeddableHost record, and when `where(id:).first` returns nil, calling methods like `destroy` or setting properties on nil will raise NoMethodError. The candidate mentions 'nil.destroy' and 'nil.host=' which corresponds to the golden's mention of 'save_host or destroy' methods being called on nil."
+      },
+      {
+        "golden_comment": "record_for_host compares lower(host) = ? but does not normalize the parameter’s case, so mixed‑case referer hosts may fail to match even though comparison intends to be case‑insensitive.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Host lookup is case-sensitive on the input side - `where(\"lower(host) = ?\", host)` lowercases the DB column but not the incoming value, so referers with uppercase letters are rejected",
+        "confidence": 0.99,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the record_for_host method uses lower(host) on the database column but doesn't lowercase/normalize the incoming host parameter, causing case-sensitive matching issues for referers with mixed/uppercase letters."
+      },
+      {
+        "golden_comment": "Because this migration inserts embeddable_hosts rows with raw SQL, any existing embeddable_hosts values that include http:// or /https:// or path segments won’t go through the EmbeddableHost model’s normalization, so the new host lookup (which compares only the bare host) may fail for migrated data. Consider ensuring that migrated hosts are normalized to the same format as newly created EmbeddableHost records so existing embedding configurations keep working.",
+        "severity": "High",
+        "category": "data",
+        "matched_candidate": "Migrated hosts are not normalized - old settings allowed values with schemes, paths, or trailing whitespace which are inserted verbatim, bypassing the model's before_validation stripping, causing existing embeds to silently stop working",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: migrated embeddable_hosts data is inserted via raw SQL without going through the model's normalization (before_validation stripping), which means old values with schemes (http://https://), paths, or whitespace won't be normalized to match the new host lookup format, causing existing embeds to fail. Both comments point to the same underlying issue of data migration not normalizing hosts to match the new EmbeddableHost model's expected format."
+      },
+      {
+        "golden_comment": "The contents of `category_fabricator.rb` and `embeddable_host_fabricator.rb` have been swapped, resulting in the loss of original category fabricators and potentially causing errors in fabricator usage.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "Fabricator file contents are swapped - category_fabricator.rb defines only :embeddable_host while embeddable_host_fabricator.rb contains all category fabricators",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment - that the contents of category_fabricator.rb and embeddable_host_fabricator.rb have been swapped. The candidate states that category_fabricator.rb defines :embeddable_host while embeddable_host_fabricator.rb contains category fabricators, which is precisely the swapped content issue described in the golden comment."
+      },
+      {
+        "golden_comment": "The SQL query in the `app/controllers/admin/embeddable_hosts_controller.rb` file uses string interpolation (`'#{h}'`) to insert values, which is vulnerable to SQL injection. It should use parameter binding or proper quoting to prevent this security vulnerability.",
+        "severity": "Critical",
+        "category": "security",
+        "matched_candidate": "Migrated hosts have unescaped SQL - each host string is interpolated directly into SQL, so values containing single quotes break the migration and the pattern is SQL injection-prone",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same SQL injection vulnerability - it mentions that host strings are 'interpolated directly into SQL' and that 'the pattern is SQL injection-prone'. This matches the golden comment's concern about string interpolation being vulnerable to SQL injection. Both are pointing to the same security issue with unescaped/unparameterized SQL values."
+      },
+      {
+        "golden_comment": "The migration accesses execute(...)[0]['id'] without checking if the query returned any rows, which causes a crash when no embed_category setting exists. This can lead to a broken feature when attempting to edit category/host relationships.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "Migration crashes when `embed_category` is not set because `execute(...)[0]['id']` assumes the query returns a row, but on fresh installs or sites that never set embed_category, the JOIN returns zero rows causing PG::Result#[] to raise or return nil",
+        "confidence": 0.99,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the migration code accesses execute(...)[0]['id'] without checking if the query returned any rows, which will crash when no embed_category setting exists. Both comments point to the same bug - the assumption that the query will return at least one row when it may return zero rows."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "The `uncategorized_category_id` lookup in the migration has the same flaw - that setting is not always present as a row in site_settings because defaults are not stored"
+      },
+      {
+        "candidate": "Host lookup never matches hosts stored with a port because the validation regex allows ports but `uri.host` drops the port"
+      },
+      {
+        "candidate": "Admin host endpoints return 500 when params[:embeddable_host][:host] is called but the root key is missing"
+      },
+      {
+        "candidate": "category_id is not validated to reference an existing category - there is no FK and no model validation, so bogus ids are accepted and later used when creating topics"
+      },
+      {
+        "candidate": "`_ids` hydration assumes obj[k] is an array - `obj[k].map` throws if a `*_ids` key holds null or a non-array"
+      },
+      {
+        "candidate": "`_ids` hydration leaves undefined entries in the array when `_lookupSubType` returns undefined for unknown ids"
+      },
+      {
+        "candidate": "`replace('_', '-')` only replaces the first underscore because String#replace with a string pattern replaces only the first occurrence"
+      },
+      {
+        "candidate": "Topic spec is misleading - 'is false if embeddable_host is blank' passes only because of defaults, but expandable_first_post? no longer checks hosts at all"
+      },
+      {
+        "candidate": "Store test assumes behavior the mock doesn't provide - `store.find('fruit', 2)` expects 2 colors but fruit 2 has color_ids: [3], test passes only because pretender always returns fruits[0]"
+      },
+      {
+        "candidate": "Client sets an undefined category after saving with no category selected - server falls back to uncategorized_category_id but client sets category from null categoryId, showing no badge until reload"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 17,
+    "total_golden": 7,
+    "tp": 7,
+    "fp": 10,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.4117647058823529,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/discourse-graphite",
+    "pr_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/10"
+  },
+  "judgeUsage": {
+    "calls": 121,
+    "inputTokens": 34345,
+    "outputTokens": 13156,
+    "costUsd": 0.500625
+  }
+}

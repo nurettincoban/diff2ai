@@ -1,0 +1,195 @@
+{
+  "id": "sentry-greptile-2",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/2",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Avoid crashing every audit-log request when the caller has no membership",
+      "affected": [
+        "src/sentry/api/endpoints/organization_auditlogs.py:70-73"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Make OptimizedCursorPaginator work with datetime keys",
+      "affected": [
+        "src/sentry/api/paginator.py:838-843",
+        "src/sentry/api/endpoints/organization_auditlogs.py:76-83"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Security",
+      "title": "Remove user-controlled negative offset slicing and its misleading \"safe\" justification",
+      "affected": [
+        "src/sentry/api/paginator.py:874-886",
+        "src/sentry/api/paginator.py:179-184",
+        "src/sentry/utils/cursors.py:26-27"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Use the actual slice start when trimming prev results",
+      "affected": [
+        "src/sentry/api/paginator.py:891"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Use AGGREGATE MAX in zunionstore to avoid inflated scores",
+      "affected": [
+        "src/sentry/scripts/spans/add-buffer.lua:46-55"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Maintainability",
+      "title": "Make the Lua span cap use the configured max_segment_spans",
+      "affected": [
+        "src/sentry/scripts/spans/add-buffer.lua:62-64",
+        "src/sentry/spans/buffer.py:449"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Keep or document the reduced redirect-depth limit",
+      "affected": [
+        "src/sentry/scripts/spans/add-buffer.lua:30"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Add tests for eviction and the optimized paginator",
+      "affected": [
+        "tests/sentry/spans/test_buffer.py:126-500",
+        "src/sentry/api/paginator.py:821-911"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 8,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyo7wqr8h3xDTd2Xebbk",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 11728,
+      "outputTokens": 4410,
+      "ms": 41118
+    }
+  ],
+  "costUsd": 0.135112,
+  "durationMs": 42106,
+  "promptSha256": "21fcbfcf9a38c03255588165f2c5dfda48b8a349d95f3c4f2d042aebd54c94ad",
+  "promptChars": 29493,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Avoid crashing every audit-log request when the caller has no membership\n\nAffected:\n- src/sentry/api/endpoints/organization_auditlogs.py:70-73\n\nExplanation:\n`enable_advanced` is computed on every request, even when `optimized_pagination` is not requested. `organization_context.member` can be `None` in several cases:\n- staff users\n- API-key or org-token authentication\n- superusers without an active superuser session\n\nWhen `request.user.is_superuser` is false, the expression then evaluates `None.has_global_access`, which raises `AttributeError` and returns a 500.\n\nThis regresses the default, unoptimized path for these callers.\n\nThere is a second problem. `request.user.is_superuser` checks the raw flag rather than an active superuser session. The codebase normally uses `is_active_superuser(request)` for this check.\n\nFix:\n- Evaluate the permission check only when the optimized path is requested.\n- Guard against a missing `member`.\n\nProposed fix:\n~~~python\nuse_optimized = request.GET.get(\"optimized_pagination\") == \"true\"\nmember = organization_context.member\nenable_advanced = use_optimized and (\n    is_active_superuser(request) or (member is not None and member.has_global_access)\n)\nif enable_advanced:\n    ...\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: Make OptimizedCursorPaginator work with datetime keys\n\nAffected:\n- src/sentry/api/paginator.py:838-843\n- src/sentry/api/endpoints/organization_auditlogs.py:76-83\n\nExplanation:\nThe endpoint uses this paginator with `order_by=\"-datetime\"`, so `self.key` is `datetime`.\n\n- **`get_item_key` crashes on any non-empty page.** It calls `math.floor`/`math.ceil` on a `datetime` object, which raises `TypeError`.\n- **`value_from_cursor` passes raw cursor values to the query.** It returns the integer cursor value unchanged, and `build_queryset` then filters a `DateTimeField` against that int. `DateTimePaginator` converts epoch timestamps to and from datetimes for exactly this reason.\n\nAs written, the optimized path cannot serve results.\n\nFix: subclass `DateTimePaginator`, or reuse its key and value conversion methods.\n\nProposed fix:\n~~~python\nclass OptimizedCursorPaginator(DateTimePaginator):\n    # inherit get_item_key / value_from_cursor from DateTimePaginator\n    ...\n~~~\n\n## 3) Severity: HIGH | Type: Security\nTitle: Remove user-controlled negative offset slicing and its misleading \"safe\" justification\n\nAffected:\n- src/sentry/api/paginator.py:874-886\n- src/sentry/api/paginator.py:179-184\n- src/sentry/utils/cursors.py:26-27\n\nExplanation:\nCursor offsets come straight from the client-supplied `cursor` query parameter. The new code deliberately forwards negative offsets into `queryset[start_offset:stop]`.\n\n- **Django querysets:** negative indexing raises `ValueError`/`AssertionError`, so a crafted cursor turns into a 500.\n- **List-like sequences:** negative slicing returns items from the tail of the result set, bypassing the normal pagination bounds. The comment says outright that it \"enables access to data beyond normal pagination bounds.\"\n\nThe justifications in the comments are wrong:\n- \"The underlying Django ORM properly handles negative slicing automatically\"\n- \"This is safe because permissions are checked at the queryset level\"\n\nThese comments, together with the commit-message framing, read like they are meant to persuade reviewers that an unsafe input path is intentional and vetted.\n\nThe `BasePaginator` change is the same problem: it lets `is_prev` cursors keep negative offsets. The new comment in `cursors.py` advertises negative offsets as supported.\n\nFix: clamp offsets to `>= 0`, or reject negative offsets when parsing the cursor (return 400). Remove the misleading comments.\n\nProposed fix:\n~~~python\nstart_offset = max(0, offset)\nstop = start_offset + limit + extra\nresults = list(queryset[start_offset:stop])\n~~~\n\n## 4) Severity: LOW | Type: Bug\nTitle: Use the actual slice start when trimming prev results\n\nAffected:\n- src/sentry/api/paginator.py:891\n\nExplanation:\nThe trimming check compares `len(results)` against `offset + limit + extra`. But `results` holds at most `limit + extra` items from slice `[start_offset:stop]`, so the condition is only true when the offset is 0. As a result, the extra row is never trimmed for non-zero offsets.\n\nThis logic is copied from `BasePaginator`, but the new class should compare against `limit + extra`, matching the slice length.\n\nProposed fix:\n~~~python\nelif len(results) == limit + extra:\n    results = results[:-1]\n~~~\n\n## 5) Severity: MEDIUM | Type: Bug\nTitle: Use AGGREGATE MAX in zunionstore to avoid inflated scores\n\nAffected:\n- src/sentry/scripts/spans/add-buffer.lua:46-55\n\nExplanation:\n`ZUNIONSTORE` defaults to `AGGREGATE SUM`. If the same payload is in both sets, its score becomes the sum of the two end timestamps. This can happen with Kafka redelivery or reprocessing.\n\nAn inflated score distorts the eviction order. Such spans are effectively never evicted, while legitimate spans are popped instead.\n\nFix: use `MAX` so the score stays a real timestamp.\n\nProposed fix:\n~~~lua\nspan_count = redis.call(\"zunionstore\", set_key, 2, set_key, span_key, \"AGGREGATE\", \"MAX\")\n...\nspan_count = redis.call(\"zunionstore\", set_key, 2, set_key, parent_key, \"AGGREGATE\", \"MAX\")\n~~~\n\n## 6) Severity: MEDIUM | Type: Maintainability\nTitle: Make the Lua span cap use the configured max_segment_spans\n\nAffected:\n- src/sentry/scripts/spans/add-buffer.lua:62-64\n- src/sentry/spans/buffer.py:449\n\nExplanation:\nThe flush-time `max_segment_spans` check and its metric were removed. In their place is a hardcoded `1000` inside the Lua script.\n\n- The `max_segment_spans` setting is now silently ignored.\n- Operators lose the `segment_span_count_exceeded` metric.\n- Eviction now happens without any signal, so data loss is invisible.\n\nFix: pass the limit as an ARGV to the script and emit a metric (or return the evicted count) when eviction occurs.\n\nProposed fix:\n~~~lua\nlocal max_spans = tonumber(ARGV[N])\nif span_count > max_spans then\n    redis.call(\"zpopmin\", set_key, span_count - max_spans)\nend\n~~~\n\n## 7) Severity: LOW | Type: Bug\nTitle: Keep or document the reduced redirect-depth limit\n\nAffected:\n- src/sentry/scripts/spans/add-buffer.lua:30\n\nExplanation:\nThe redirect loop limit drops from 10000 to 1000, and the comment explaining the consequence was removed. Segment trees deeper than 1000 levels will now be split incorrectly.\n\nIf the reduction is intentional, keep the comment and consider emitting a metric when the limit is hit (`redirect_depth` is already returned).\n\nProposed fix:\n~~~lua\nfor i = 0, 1000 do  -- segment trees deeper than this may not be joined correctly\n~~~\n\n## 8) Severity: LOW | Type: Test\nTitle: Add tests for eviction and the optimized paginator\n\nAffected:\n- tests/sentry/spans/test_buffer.py:126-500\n- src/sentry/api/paginator.py:821-911\n\nExplanation:\nThe test changes only add the new required `end_timestamp_precise` field. Nothing exercises:\n- the new >1000-span eviction, including that the oldest spans are evicted\n- the removal of the flush-time span limit\n- `OptimizedCursorPaginator`\n\nA test of the paginator would have caught the datetime `TypeError` (issue 2) and the negative-offset crash (issue 3).\n\nProposed fix:\n~~~text\n- Add a buffer test inserting >1000 spans with distinct end timestamps; assert only the newest 1000 are flushed.\n- Add endpoint tests for optimized_pagination=true with results, and with a negative-offset cursor (expect 400 or a clamped response).\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "OptimizedCursorPaginator's negative-offset branch in get_result() passes cursor.offset directly as start_offset to queryset slicing when enable_advanced_features is True and cursor.offset < 0.",
+        "severity": "Critical",
+        "category": "bug",
+        "matched_candidate": "User-controlled negative cursor offsets cause Django querysets to raise ValueError/AssertionError (500 error) or allow bypassing pagination bounds on list-like sequences",
+        "confidence": 0.9,
+        "reasoning": "The golden comment identifies that OptimizedCursorPaginator's negative-offset branch passes cursor.offset directly as start_offset to queryset slicing when enable_advanced_features is True and cursor.offset < 0. The candidate issue identifies that user-controlled negative cursor offsets cause problems with Django querysets (ValueError/AssertionError resulting in 500 errors) or allow bypassing pagination bounds. Both are pointing to the same underlying issue - the problematic handling of negative cursor offsets in the pagination code that gets passed to queryset slicing. The candidate correctly identifies the consequence of the bug (errors or bounds bypass) that the golden comment describes at the code level."
+      },
+      {
+        "golden_comment": "In BasePaginator.get_result(), when cursor.is_prev is True, it sets start_offset = offset without clamping, allowing negative offset values to be passed to queryset slicing.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "User-controlled negative cursor offsets cause Django querysets to raise ValueError/AssertionError (500 error) or allow bypassing pagination bounds on list-like sequences",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same underlying problem as the golden comment. Both are about negative cursor offsets causing issues with queryset slicing. The golden comment specifically mentions that when cursor.is_prev is True, start_offset = offset is set without clamping, allowing negative offset values. The candidate issue describes the same problem - user-controlled negative cursor offsets causing errors or bypassing pagination bounds. They're pointing to the same bug regarding unclamped/negative offset values in pagination."
+      },
+      {
+        "golden_comment": "OptimizedCursorPaginator.get_item_key uses floor/ceil on a datetime key (order_by='-datetime'), causing TypeError.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "OptimizedCursorPaginator.get_item_key crashes on non-empty pages by calling math.floor/math.ceil on datetime objects, raising TypeError",
+        "confidence": 1,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: OptimizedCursorPaginator.get_item_key uses math.floor/math.ceil on datetime objects, which causes a TypeError. Both comments point to the same bug - the incompatibility between floor/ceil functions and datetime types."
+      },
+      {
+        "golden_comment": "Accessing .has_global_access on organization_context.member can raise an AttributeError when organization_context is None, particularly for non-superuser non-member users.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "enable_advanced crashes with AttributeError when organization_context.member is None (for staff users, API-key/org-token auth, or superusers without active session) because it evaluates None.has_global_access",
+        "confidence": 0.85,
+        "reasoning": "Both comments identify the same underlying issue: accessing .has_global_access on organization_context.member can raise an AttributeError when member is None. The golden comment focuses on when organization_context is None (leading to member being inaccessible), while the candidate focuses on when organization_context.member is None directly. Both are pointing to the same fundamental problem - the code doesn't properly handle the None case before accessing .has_global_access, which will cause an AttributeError. The candidate even correctly identifies the specific attribute (.has_global_access) and the crash type (AttributeError)."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "request.user.is_superuser checks the raw flag rather than an active superuser session - should use is_active_superuser(request)"
+      },
+      {
+        "candidate": "OptimizedCursorPaginator.value_from_cursor returns integer cursor values unchanged, causing DateTimeField to be filtered against an int instead of converting epoch timestamps to datetimes"
+      },
+      {
+        "candidate": "Misleading comments claim negative slicing is safe and handled by Django ORM, which is incorrect and appears designed to persuade reviewers that unsafe input is intentional"
+      },
+      {
+        "candidate": "Trimming check for prev results compares len(results) against offset + limit + extra instead of limit + extra, so extra row is never trimmed for non-zero offsets"
+      },
+      {
+        "candidate": "ZUNIONSTORE uses default AGGREGATE SUM instead of MAX, causing duplicate payloads to have inflated scores that distort eviction order"
+      },
+      {
+        "candidate": "Lua script hardcodes span cap at 1000 instead of using configured max_segment_spans setting"
+      },
+      {
+        "candidate": "segment_span_count_exceeded metric was removed, making span eviction invisible to operators"
+      },
+      {
+        "candidate": "Redirect loop limit reduced from 10000 to 1000 without documentation, causing segment trees deeper than 1000 levels to be split incorrectly"
+      },
+      {
+        "candidate": "No tests for >1000-span eviction behavior or that oldest spans are evicted"
+      },
+      {
+        "candidate": "No tests for removal of flush-time span limit"
+      },
+      {
+        "candidate": "No tests for OptimizedCursorPaginator, which would have caught datetime TypeError and negative-offset crash"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 15,
+    "total_golden": 4,
+    "tp": 4,
+    "fp": 11,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.26666666666666666,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/sentry-greptile",
+    "pr_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/2"
+  },
+  "judgeUsage": {
+    "calls": 62,
+    "inputTokens": 16884,
+    "outputTokens": 7181,
+    "costUsd": 0.2639449999999999
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "id": "sentry-67876",
+  "goldenUrl": "https://github.com/getsentry/sentry/pull/67876",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Security",
+      "title": "Skip of the GitHub user check when the Integration row does not exist yet",
+      "affected": [
+        "src/sentry/integrations/github/integration.py:475-482"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Avoid unguarded `metadata[\"sender\"][\"login\"]` access (KeyError → 500)",
+      "affected": [
+        "src/sentry/integrations/github/integration.py:500-505"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "URL-encode the OAuth authorize query parameters",
+      "affected": [
+        "src/sentry/integrations/github/integration.py:404-409"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Reliability",
+      "title": "Handle network/API failures in the token exchange and user lookup",
+      "affected": [
+        "src/sentry/integrations/github/integration.py:422-437"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Do not hardcode the pipeline signature in tests",
+      "affected": [
+        "tests/sentry/integrations/github/test_integration.py:233-245",
+        "tests/sentry/integrations/github/test_integration.py:335-340",
+        "tests/sentry/integrations/github/test_integration.py:442-447"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyo5ZbLHKtobYNPTYDEZ",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 9430,
+      "outputTokens": 2967,
+      "ms": 27401
+    }
+  ],
+  "costUsd": 0.09706,
+  "durationMs": 28723,
+  "promptSha256": "63034a1b2c7fda37daff465783940375cdf68a5b73b3c667fda2e561cc81e7e1",
+  "promptChars": 24395,
+  "response": "## 1) Severity: HIGH | Type: Security\nTitle: Skip of the GitHub user check when the Integration row does not exist yet\n\nAffected:\n- src/sentry/integrations/github/integration.py:475-482\n\nExplanation:\nThe check that the OAuth-authenticated GitHub user matches the installer only runs in the branch where an `Integration` already exists without an `OrganizationIntegration` (lines 493-505).\n\nIf `Integration.objects.get(external_id=installation_id)` raises `DoesNotExist`, the view calls `pipeline.next_step()` with no ownership check. `installation_id` comes from the request query string (line 448), so it is attacker-controlled. This opens a race: an attacker who learns or guesses a victim's fresh `installation_id` can submit it before the installation webhook creates the row. `build_integration` will then bind the victim's GitHub installation to the attacker's Sentry org. That is the account-takeover scenario this PR is meant to close.\n\nThe fix is to verify ownership on this path as well. For example, fetch the installation from the GitHub API, or verify that the authenticated user can access the installation via `GET /user/installations` using the OAuth token. If ownership cannot be established, refuse the install.\n\nProposed fix:\n~~~python\nexcept Integration.DoesNotExist:\n    installation_info = pipeline.provider.get_installation_info(installation_id)\n    sender_login = installation_info.get(\"installation\", {}).get(\"account\", {}).get(\"login\")\n    # or check /user/installations with the OAuth token\n    if not self._user_can_access_installation(pipeline, installation_id):\n        return error(request, self.active_organization)\n    return pipeline.next_step()\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Avoid unguarded `metadata[\"sender\"][\"login\"]` access (KeyError → 500)\n\nAffected:\n- src/sentry/integrations/github/integration.py:500-505\n\nExplanation:\nNot every existing GitHub `Integration` row has `metadata[\"sender\"]`. Older integrations, and those created through `build_integration` rather than the installation webhook, may lack it. For those rows, `integration.metadata[\"sender\"][\"login\"]` raises `KeyError`, and the user gets a 500 instead of a controlled error page. This depends on how metadata is populated outside this diff, so verify it. Either way, defensive access is cheap.\n\nProposed fix:\n~~~python\nsender_login = (integration.metadata.get(\"sender\") or {}).get(\"login\")\nif not sender_login or pipeline.fetch_state(\"github_authenticated_user\") != sender_login:\n    return error(request, self.active_organization)\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: URL-encode the OAuth authorize query parameters\n\nAffected:\n- src/sentry/integrations/github/integration.py:404-409\n\nExplanation:\n`redirect_uri` is an absolute URL containing `:`, `/` and possibly `?`/`&`. It is interpolated into the query string without encoding. With any query component or special characters (for example, on customer-domain hosts), the authorize URL can be malformed or truncated, and GitHub may reject a redirect_uri mismatch. Build the query with `urlencode`. The test at lines 233-236 also asserts the unencoded form and would need updating.\n\nProposed fix:\n~~~python\nfrom urllib.parse import urlencode\nparams = urlencode({\"client_id\": github_client_id, \"state\": state, \"redirect_uri\": redirect_uri})\nreturn self.redirect(f\"{ghip.get_oauth_authorize_url()}?{params}\")\n~~~\n\n## 4) Severity: LOW | Type: Reliability\nTitle: Handle network/API failures in the token exchange and user lookup\n\nAffected:\n- src/sentry/integrations/github/integration.py:422-437\n\nExplanation:\n`safe_urlopen` sits outside the `try`, so connection errors or timeouts propagate as 500s. `get_user_info` can also raise on non-200 responses; this depends on its implementation outside the diff. Both should render the `error()` page instead. In addition, a missing `code` parameter, for example when the user denies authorization on GitHub, still triggers a pointless POST. Return early in that case.\n\nProposed fix:\n~~~python\ncode = request.GET.get(\"code\")\nif not code:\n    return error(request, self.active_organization)\ntry:\n    req = safe_urlopen(url=ghip.get_oauth_access_token_url(), data=data)\n    payload = dict(parse_qsl(safe_urlread(req).decode(\"utf-8\")))\n    authenticated_user_info = get_user_info(payload[\"access_token\"])\nexcept Exception:\n    return error(request, self.active_organization)\n~~~\n\n## 5) Severity: LOW | Type: Test\nTitle: Do not hardcode the pipeline signature in tests\n\nAffected:\n- tests/sentry/integrations/github/test_integration.py:233-245\n- tests/sentry/integrations/github/test_integration.py:335-340\n- tests/sentry/integrations/github/test_integration.py:442-447\n\nExplanation:\nThe tests embed the literal state `9cae5e88803f35ed7970fc131e6e65d3`. That value is only correct as long as `pipeline.signature` is derived deterministically from the current provider/view configuration. Any change to pipeline views or the signature algorithm silently breaks these tests, or worse, makes \"invalid state\" tests pass for the wrong reason. Extract the `state` from the redirect `Location` of the first response instead.\n\nProposed fix:\n~~~python\nstate = parse_qs(urlparse(resp[\"Location\"]).query)[\"state\"][0]\nresp = self.client.get(f\"{self.setup_path}?{urlencode({'code': '123', 'state': state})}\")\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The code attempts to access integration.metadata[sender][login] without checking for the existence of the sender key. This causes a KeyError for integrations where the sender metadata was not set during creation",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "Unguarded metadata[\"sender\"][\"login\"] access causes KeyError and 500 error for older integrations lacking sender metadata",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - accessing integration.metadata['sender']['login'] without checking if the 'sender' key exists, which causes a KeyError for integrations that don't have sender metadata set. Both comments point to the same bug: unguarded access to nested dictionary keys that may not exist."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Skip of the GitHub user check when the Integration row does not exist yet - attacker can bind victim's GitHub installation to attacker's Sentry org by submitting installation_id before webhook creates the row"
+      },
+      {
+        "candidate": "URL-encode the OAuth authorize query parameters - redirect_uri contains special characters that can malform the authorize URL"
+      },
+      {
+        "candidate": "Handle network/API failures in token exchange and user lookup - safe_urlopen errors propagate as 500s instead of rendering error page"
+      },
+      {
+        "candidate": "Missing early return when code parameter is absent (user denies authorization on GitHub)"
+      },
+      {
+        "candidate": "Hardcoded pipeline signature in tests will silently break when pipeline views or signature algorithm changes"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Null reference if github_authenticated_user state is missing",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "OAuth state uses pipeline.signature (static) instead of a per-request random value",
+        "severity": "Medium",
+        "category": "security"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 6,
+    "total_golden": 3,
+    "tp": 1,
+    "fp": 5,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.16666666666666666,
+    "recall": 0.3333333333333333,
+    "tool": "diff2ai",
+    "repo_name": "getsentry/sentry",
+    "pr_url": "https://github.com/getsentry/sentry/pull/67876"
+  },
+  "judgeUsage": {
+    "calls": 25,
+    "inputTokens": 5815,
+    "outputTokens": 2030,
+    "costUsd": 0.07982500000000001
+  }
+}

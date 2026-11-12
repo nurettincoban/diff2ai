@@ -1,0 +1,222 @@
+{
+  "id": "cal.com-10967",
+  "goldenUrl": "https://github.com/calcom/cal.com/pull/10967",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Avoid crash when Google Meet is selected and no destination calendar exists",
+      "affected": [
+        "packages/core/EventManager.ts:117-119"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Restore the slug condition for organization creation",
+      "affected": [
+        "packages/trpc/server/routers/viewer/organizations/create.handler.ts:151"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Restore the fallback to the destination calendar in Google update/delete",
+      "affected": [
+        "packages/app-store/googlecalendar/lib/CalendarService.ts:254-256",
+        "packages/app-store/googlecalendar/lib/CalendarService.ts:315-317"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Google createEvent ignores destination calendars without a credentialId",
+      "affected": [
+        "packages/app-store/googlecalendar/lib/CalendarService.ts:147-154"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Other calendar providers always use the main host's calendar for every host's credential",
+      "affected": [
+        "packages/app-store/office365calendar/lib/CalendarService.ts:73-77",
+        "packages/lib/CalendarService.ts:156-165",
+        "packages/app-store/larkcalendar/lib/CalendarService.ts:128-129"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Team hosts' calendars are dropped when the organizer has no destination calendar",
+      "affected": [
+        "packages/features/bookings/lib/handleNewBooking.ts:1063-1079"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Video/conferencing references lose their credentialId",
+      "affected": [
+        "packages/core/EventManager.ts:169-170"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Dynamic users no longer select organization",
+      "affected": [
+        "packages/features/bookings/lib/handleNewBooking.ts:731-740"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Recurring cancellation repeats deletes once per reference and ignores other hosts",
+      "affected": [
+        "packages/features/bookings/lib/handleCancelBooking.ts:422-470"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "updateEvent may be called with an undefined credential",
+      "affected": [
+        "packages/core/EventManager.ts:511-542"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Restore logging of update failures",
+      "affected": [
+        "packages/core/EventManager.ts:593-608"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 11,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoA9jHQ2q1o5eVuFgFb",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 23964,
+      "outputTokens": 5577,
+      "ms": 48233
+    }
+  ],
+  "costUsd": 0.207396,
+  "durationMs": 49232,
+  "promptSha256": "2e9c2e84caeb53babadab75cf100fabcc155cca69c121af83a9b072ff29af4b8",
+  "promptChars": 59461,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Avoid crash when Google Meet is selected and no destination calendar exists\n\nAffected:\n- packages/core/EventManager.ts:117-119\n\nExplanation:\n`mainHostDestinationCalendar` is `undefined` whenever `evt.destinationCalendar` is `null` or `[]`. Many callers in this PR now pass `[]` or `null`.\n\nBefore this change, `evt.destinationCalendar?.integration` safely evaluated to `undefined`, and the code fell back to Cal Video. Now, if the location is Google Meet, `mainHostDestinationCalendar.integration` throws a `TypeError`, so `create()` fails and the booking fails.\n\nProposed fix:\n~~~ts\nconst [mainHostDestinationCalendar] = evt.destinationCalendar ?? [];\nif (evt.location === MeetLocationType && mainHostDestinationCalendar?.integration !== \"google_calendar\") {\n  evt[\"location\"] = \"integrations:daily\";\n}\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: Restore the slug condition for organization creation\n\nAffected:\n- packages/trpc/server/routers/viewer/organizations/create.handler.ts:151\n\nExplanation:\nThe original code set `slug` only when billing is **disabled**: `...(!IS_TEAM_BILLING_ENABLED && { slug })`. The rewrite sets it only when billing is **enabled**, which flips the behavior.\n\nThe result:\n- With billing enabled, the slug is assigned immediately, before payment or verification. It also duplicates `requestedSlug`.\n- With billing disabled, organizations are created with no slug.\n\nThis change is also unrelated to the PR's purpose.\n\nProposed fix:\n~~~ts\n...(!IS_TEAM_BILLING_ENABLED ? { slug } : {}),\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Restore the fallback to the destination calendar in Google update/delete\n\nAffected:\n- packages/app-store/googlecalendar/lib/CalendarService.ts:254-256\n- packages/app-store/googlecalendar/lib/CalendarService.ts:315-317\n\nExplanation:\nThe fallback branch only runs when `externalCalendarId` is falsy. In that branch, `find((cal) => cal.externalId === externalCalendarId)` compares each entry against that same falsy value, so it effectively always returns `undefined`.\n\nPreviously the code fell back to `event.destinationCalendar.externalId`. Now:\n- `update` sends `calendarId: undefined`, which fails the API call.\n- `delete` targets `primary` even when the event lives in another calendar.\n\nThis hits legacy references that have no `externalCalendarId`.\n\nProposed fix:\n~~~ts\nconst [mainHostDestinationCalendar] = event.destinationCalendar ?? [];\nconst selectedCalendar = externalCalendarId || mainHostDestinationCalendar?.externalId;\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: Google createEvent ignores destination calendars without a credentialId\n\nAffected:\n- packages/app-store/googlecalendar/lib/CalendarService.ts:147-154\n\nExplanation:\n`selectedCalendar` is now found only by matching `credentialId`. Destination calendars with a null `credentialId` are legacy records, handled by the `else` branch in `EventManager.createAllCalendarEvents`. For those, no match is found, so the event is created in `primary` instead of the user's chosen calendar.\n\nBefore this change, `destinationCalendar.externalId` was used directly. Fall back to the first entry whose `credentialId` is unset.\n\nProposed fix:\n~~~ts\nconst selectedCalendar =\n  calEventRaw.destinationCalendar?.find((cal) => cal.credentialId === credentialId)?.externalId ??\n  calEventRaw.destinationCalendar?.find((cal) => !cal.credentialId)?.externalId;\n~~~\n\n## 5) Severity: MEDIUM | Type: Bug\nTitle: Other calendar providers always use the main host's calendar for every host's credential\n\nAffected:\n- packages/app-store/office365calendar/lib/CalendarService.ts:73-77\n- packages/lib/CalendarService.ts:156-165\n- packages/app-store/larkcalendar/lib/CalendarService.ts:128-129\n\nExplanation:\n`EventManager` now calls `createEvent` once per collective host, each time with that host's credential. However, Office365, CalDAV (base service) and Lark always pick `destinationCalendar[0]`, which is the main host's calendar.\n\nThe effect for a non-main host's credential:\n- **Office365:** it targets a calendar id that host doesn't own, which gives a 404 or the wrong calendar.\n- **CalDAV:** the `filter` matches nothing, so no event is created.\n- **Lark:** it uses the wrong calendar.\n\nUse the `credentialId` now passed to `createEvent` to pick the matching destination, as the Google implementation does.\n\nProposed fix:\n~~~ts\nasync createEvent(event: CalendarEvent, credentialId: number) {\n  const destination =\n    event.destinationCalendar?.find((c) => c.credentialId === credentialId) ??\n    event.destinationCalendar?.[0];\n  ...\n}\n~~~\n\n## 6) Severity: MEDIUM | Type: Bug\nTitle: Team hosts' calendars are dropped when the organizer has no destination calendar\n\nAffected:\n- packages/features/bookings/lib/handleNewBooking.ts:1063-1079\n\nExplanation:\n`evt.destinationCalendar` is set to `null` when neither the event type nor the organizer has a destination calendar. In that case, `evt.destinationCalendar?.push(...teamDestinationCalendars)` silently does nothing.\n\nAs a result, the collective hosts' destination calendars are ignored. This is the exact scenario the PR is meant to fix.\n\nProposed fix:\n~~~ts\ndestinationCalendar: eventType.destinationCalendar\n  ? [eventType.destinationCalendar]\n  : organizerUser.destinationCalendar\n  ? [organizerUser.destinationCalendar]\n  : [],\n...\nif (isTeamEventType && eventType.schedulingType === \"COLLECTIVE\") {\n  evt.destinationCalendar = [...(evt.destinationCalendar ?? []), ...teamDestinationCalendars];\n}\n~~~\n\n## 7) Severity: MEDIUM | Type: Bug\nTitle: Video/conferencing references lose their credentialId\n\nAffected:\n- packages/core/EventManager.ts:169-170\n\nExplanation:\nPreviously, non-calendar results stored `credentialId: result.credentialId`. Now non-calendar results (video apps such as Zoom or Daily) get `credentialId: undefined`.\n\nLater update/delete paths that look up the video credential by `reference.credentialId` will no longer find it. Only calendar references should change.\n\nProposed fix:\n~~~ts\nexternalCalendarId: isCalendarType ? result.externalId : undefined,\ncredentialId: result.credentialId,\n~~~\n\n## 8) Severity: MEDIUM | Type: Bug\nTitle: Dynamic users no longer select organization\n\nAffected:\n- packages/features/bookings/lib/handleNewBooking.ts:731-740\n\nExplanation:\nThe refactor of `loadUsers` removed `organization: { select: { slug: true } }` from the dynamic-user query. Downstream code that reads `organizerUser.organization?.slug` (for example, booker URL generation) will silently get `undefined` for dynamic group bookings.\n\nThe change also alters error handling:\n- An empty `dynamicUserList` now becomes a generic 500 instead of the previous behavior.\n- Any `HttpError` (e.g. a 404) is rewritten to 400.\n\nThis depends on code outside the diff, which is why the severity is MEDIUM.\n\nProposed fix:\n~~~ts\nselect: {\n  ...userSelect.select,\n  credentials: true,\n  metadata: true,\n  organization: { select: { slug: true } },\n},\n~~~\nRethrow an `HttpError` unchanged instead of converting it to a 400.\n\n## 9) Severity: MEDIUM | Type: Bug\nTitle: Recurring cancellation repeats deletes once per reference and ignores other hosts\n\nAffected:\n- packages/features/bookings/lib/handleCancelBooking.ts:422-470\n\nExplanation:\nThe recurring branch is now inside the per-reference loop. For every calendar reference it:\n- iterates over all of the organizer's calendar credentials, and\n- deletes the first calendar reference of every updated booking.\n\nWith N host references, the same events are deleted N times. That produces 404/410 errors and wasted API calls. Other hosts' events in recurring bookings are never deleted, because `updBooking.references.find` only takes the first reference and only the organizer's credentials are used.\n\nRun the recurring branch once outside the loop. Within it, iterate over each booking's references and use each reference's own credential.\n\nProposed fix:\n~~~ts\nif (isRecurringCancelAll) {\n  for (const updBooking of updatedBookings) {\n    for (const ref of updBooking.references.filter((r) => r.type.includes(\"_calendar\"))) {\n      const cred = await resolveCredential(ref.credentialId);\n      const cal = cred && (await getCalendar(cred));\n      apiDeletes.push(cal?.deleteEvent(ref.uid, evt, ref.externalCalendarId));\n    }\n  }\n} else { /* per-reference loop */ }\n~~~\n\n## 10) Severity: LOW | Type: Bug\nTitle: updateEvent may be called with an undefined credential\n\nAffected:\n- packages/core/EventManager.ts:511-542\n\nExplanation:\nIf the credential is neither in `this.calendarCredentials` nor in the DB (or has no app slug), `credential` stays `undefined`. It is still passed to `updateEvent`, which will throw or behave unpredictably.\n\nAlso, `credential` is declared outside the loop, so a value from a previous iteration could leak into the next one.\n\nProposed fix:\n~~~ts\nlet credential = this.calendarCredentials.find((c) => c.id === reference.credentialId);\n...\nif (credential) result.push(updateEvent(credential, event, bookingRefUid, calenderExternalId));\n~~~\n\n## 11) Severity: LOW | Type: Maintainability\nTitle: Restore logging of update failures\n\nAffected:\n- packages/core/EventManager.ts:593-608\n\nExplanation:\n`console.error(message)` was removed from the catch block, so failures while updating calendar events are now swallowed silently. Restore logging, preferably with the project logger.\n\nProposed fix:\n~~~ts\nlog.error(message);\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "A null reference occurs in GoogleCalendarService.createEvent() and updateEvent() when mainHostDestinationCalendar is destructured from evt.destinationCalendar but evt.destinationCalendar is null or an empty array, causing mainHostDestinationCalendar to be undefined.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "mainHostDestinationCalendar is undefined when evt.destinationCalendar is null or [], causing TypeError crash when location is Google Meet instead of falling back to Cal Video",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: mainHostDestinationCalendar being undefined when evt.destinationCalendar is null or an empty array. Both point to the same null reference/destructuring issue in the Google Calendar service. The candidate adds context about the TypeError crash and Google Meet location, but the core issue identified is identical."
+      },
+      {
+        "golden_comment": "Logic inversion in organization creation: The slug property is now conditionally set when IS_TEAM_BILLING_ENABLED is true, instead of when it's false as originally intended. This change, combined with requestedSlug still being set when IS_TEAM_BILLING_ENABLED is true, results in both properties being set when billing is enabled, and neither when disabled",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Organization creation slug condition is inverted - slug is now set when billing is enabled instead of disabled, causing slug assignment before payment/verification and missing slugs when billing is disabled",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - the logic inversion in organization creation where the slug property is now set when IS_TEAM_BILLING_ENABLED is true instead of when it's false. The candidate correctly notes this causes slug assignment before payment/verification when billing is enabled, and missing slugs when billing is disabled. This is the same underlying bug about the inverted condition."
+      },
+      {
+        "golden_comment": "The `credential` may be undefined when passed to `updateEvent` if `reference.credentialId` is set but the credential is not found. This can lead to a runtime error when `updateEvent` is called with an undefined credential, which should be handled to prevent crashes.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "updateEvent may be called with undefined credential if not found in calendarCredentials or DB, and credential declared outside loop may leak between iterations",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same core problem as the golden comment - that `updateEvent` may be called with an undefined credential when the credential is not found. The candidate mentions both the calendarCredentials lookup and DB lookup scenarios, which aligns with the golden comment's concern about `reference.credentialId` being set but the credential not being found. Both issues point to the same potential runtime error from passing undefined credential to updateEvent."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Google calendar update/delete fallback branch compares against falsy externalCalendarId, causing update to send undefined calendarId and delete to target primary instead of correct calendar for legacy references"
+      },
+      {
+        "candidate": "Google createEvent ignores destination calendars without credentialId - legacy records with null credentialId are not matched, causing events to be created in primary instead of user's chosen calendar"
+      },
+      {
+        "candidate": "Office365, CalDAV and Lark calendar providers always use destinationCalendar[0] (main host's calendar) for every host's credential, causing 404 errors or wrong calendar for non-main hosts"
+      },
+      {
+        "candidate": "Team hosts' calendars are dropped when organizer has no destination calendar because push on null silently does nothing"
+      },
+      {
+        "candidate": "Video/conferencing references lose their credentialId - non-calendar results now get undefined credentialId, breaking later update/delete paths that look up video credential by reference.credentialId"
+      },
+      {
+        "candidate": "Dynamic users query no longer selects organization slug, causing undefined for organizerUser.organization?.slug in dynamic group bookings"
+      },
+      {
+        "candidate": "Dynamic users error handling changed - empty dynamicUserList becomes generic 500 and HttpError is rewritten to 400"
+      },
+      {
+        "candidate": "Recurring cancellation is inside per-reference loop, causing same events to be deleted N times and other hosts' events in recurring bookings to never be deleted"
+      },
+      {
+        "candidate": "Logging of calendar update failures was removed, causing failures to be swallowed silently"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The optional chaining on mainHostDestinationCalendar?.integration is redundant since you already check mainHostDestinationCalendar in the ternary condition.",
+        "severity": "Low",
+        "category": "style"
+      },
+      {
+        "golden_comment": "Logic error: when externalCalendarId is provided, you're searching for a calendar where externalId === externalCalendarId, but this will always fail since you're looking for a calendar that matches itself. Should likely find by credentialId or use different logic.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "The Calendar interface now requires createEvent(event, credentialId), but some implementations (e.g., Lark/Office365) still declare createEvent(event) only—this breaks the interface contract (also applies to other locations in the PR).",
+        "severity": "Low",
+        "category": "api"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 12,
+    "total_golden": 6,
+    "tp": 3,
+    "fp": 9,
+    "fn": 3,
+    "errors_count": 0,
+    "precision": 0.25,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "calcom/cal.com",
+    "pr_url": "https://github.com/calcom/cal.com/pull/10967"
+  },
+  "judgeUsage": {
+    "calls": 82,
+    "inputTokens": 21408,
+    "outputTokens": 8003,
+    "costUsd": 0.3071150000000001
+  }
+}

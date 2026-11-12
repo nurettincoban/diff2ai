@@ -1,0 +1,115 @@
+{
+  "id": "discourse-graphite-5",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/5",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Map `order` values for the legacy box model instead of passing them through",
+      "affected": [
+        "app/assets/stylesheets/common/foundation/mixins.scss:125-131"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Translate `align-items` values for legacy syntaxes and drop the non-existent `-ms-align-items`",
+      "affected": [
+        "app/assets/stylesheets/common/foundation/mixins.scss:117-123"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Long header content may overflow and push `.panel` off-screen in the new flex row",
+      "affected": [
+        "app/assets/stylesheets/common/base/header.scss:14-19",
+        "app/assets/stylesheets/common/base/header.scss:35-40",
+        "app/assets/stylesheets/common/base/topic.scss:29-37"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 3,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoHhxhuNfRMbZRDcJfD",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 2924,
+      "outputTokens": 2628,
+      "ms": 24951
+    }
+  ],
+  "costUsd": 0.064256,
+  "durationMs": 25922,
+  "promptSha256": "f994a4d27ef3bf6268afae061ac286bcf244e35a78522c73efe74ae8151a9199",
+  "promptChars": 6504,
+  "response": "## 1) Severity: LOW | Type: Bug\nTitle: Map `order` values for the legacy box model instead of passing them through\n\nAffected:\n- app/assets/stylesheets/common/foundation/mixins.scss:125-131\n\nExplanation:\n`order` defaults to `0`, but the legacy `-webkit-box-ordinal-group` / `-moz-box-ordinal-group` properties are 1-based and default to `1`. Ordinal groups must be positive integers.\n\nThe mixin passes `$val` through unchanged, so the two models disagree:\n- With the current values (2 and 3), unordered siblings get `order: 0` in the modern model but ordinal-group `1` in the legacy model. The ordering happens to come out the same.\n- `@include order(0)` emits an invalid ordinal-group, so the declaration is dropped.\n- A negative value, which `order` allows, is also invalid there.\n\nAny other mix of values can reorder differently in legacy WebKit/Gecko than in modern browsers. The legacy value should be `$val + 1`.\n\nProposed fix:\n~~~scss\n@mixin order($val) {\n  -webkit-box-ordinal-group: $val + 1;\n  -moz-box-ordinal-group: $val + 1;\n  -ms-flex-order: $val;\n  -webkit-order: $val;\n  order: $val;\n}\n~~~\n\n## 2) Severity: LOW | Type: Bug\nTitle: Translate `align-items` values for legacy syntaxes and drop the non-existent `-ms-align-items`\n\nAffected:\n- app/assets/stylesheets/common/foundation/mixins.scss:117-123\n\nExplanation:\nThe mixin forwards `$alignment` unchanged to every syntax, but they use different keywords:\n- `-webkit-box-align` (2009) and `-ms-flex-align` (2012) use `start` / `end`.\n- Modern `align-items` uses `flex-start` / `flex-end`.\n\nCalling `@include align-items(flex-start)` therefore emits invalid legacy declarations. The current callers use `center` and `baseline`, so this is latent today, but the mixin is a shared foundation helper and will be reused.\n\n`-ms-align-items` is not a real property; IE10 uses `-ms-flex-align`, and IE11 uses unprefixed `align-items`. It is dead output.\n\nAlso, `-moz-box` is emitted in `flexbox()`, but no `-moz-box-align` is emitted here.\n\nProposed fix:\n~~~scss\n@mixin align-items($alignment) {\n  $legacy: $alignment;\n  @if $alignment == flex-start { $legacy: start; }\n  @else if $alignment == flex-end { $legacy: end; }\n  -webkit-box-align: $legacy;\n  -moz-box-align: $legacy;\n  -ms-flex-align: $legacy;\n  -webkit-align-items: $alignment;\n  align-items: $alignment;\n}\n~~~\n\n## 3) Severity: LOW | Type: Bug\nTitle: Long header content may overflow and push `.panel` off-screen in the new flex row\n\nAffected:\n- app/assets/stylesheets/common/base/header.scss:14-19\n- app/assets/stylesheets/common/base/header.scss:35-40\n- app/assets/stylesheets/common/base/topic.scss:29-37\n\nExplanation:\n`.contents` is now a flex container, and `.extra-info-wrapper` (the topic title and category shown in the header) is a flex item. Flex items default to `min-width: auto`, so they will not shrink below their content width.\n\nAny `overflow: hidden` or `text-overflow: ellipsis` truncation on the title will stop working. A long topic title would then widen the item and push `.panel` (which relies on `margin-left: auto`) out of the header or wrap it.\n\nWith the previous float layout, the floated panel kept its space. This depends on rules for `.extra-info-wrapper` and `.title` that are outside the diff, so please verify with a very long topic title.\n\nSeparately, auto margins are not honored by the legacy `display: -webkit-box` / `-moz-box` model. On those engines `.panel` would no longer be right-aligned now that `float: right` was removed.\n\nProposed fix:\n~~~scss\n.extra-info-wrapper {\n  @include order(2);\n  min-width: 0;        // allow shrinking so truncation works\n  flex: 1 1 auto;\n  line-height: 1.5;\n}\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "Mixing float: left with flexbox causes layout issues. Further this PR removes the float-based right alignment for .d-header .panel, which may cause the login panel in the non-Ember/noscript header (where .panel is nested inside .row and not a flex item) to stack under the title instead of remaining right-aligned.",
+        "severity": "Low",
+        "category": "bug",
+        "matched_candidate": "Auto margins are not honored by legacy display: -webkit-box / -moz-box model, so .panel would no longer be right-aligned after float: right was removed",
+        "confidence": 0.8,
+        "reasoning": "Both comments identify the same core issue: removing float:right from .panel causes right-alignment problems. The golden comment specifically mentions the non-Ember/noscript header where .panel is not a flex item, while the candidate mentions legacy -webkit-box/-moz-box display models not honoring auto margins. Both are pointing to the same underlying problem - that removing the float-based alignment breaks right-alignment in certain contexts where flexbox doesn't work properly. The candidate's explanation about legacy box model is a specific technical reason why the alignment breaks, which aligns with the golden comment's concern about layout issues."
+      },
+      {
+        "golden_comment": "-ms-align-items never existed in any version of IE/Edge; the correct legacy property is -ms-flex-align.",
+        "severity": "Low",
+        "category": "bug",
+        "matched_candidate": "-ms-align-items is not a real property (IE10 uses -ms-flex-align, IE11 uses unprefixed align-items) and produces dead output",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: that -ms-align-items is not a valid/real property. Both comments point out that IE10 uses -ms-flex-align instead (the golden says 'the correct legacy property is -ms-flex-align', the candidate says 'IE10 uses -ms-flex-align'). The candidate adds additional context about IE11 using unprefixed align-items, but the core issue identified is identical."
+      },
+      {
+        "golden_comment": "-webkit-box-ordinal-group and -moz-box-ordinal-group require values starting from 1, not 0. If $val is 0, this will cause incorrect rendering in older browsers, leading to layout issues.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "The order mixin passes values unchanged but legacy -webkit-box-ordinal-group and -moz-box-ordinal-group properties are 1-based, causing order(0) to emit invalid ordinal-group and negative values to be invalid",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same underlying problem as the golden comment: the legacy -webkit-box-ordinal-group and -moz-box-ordinal-group properties are 1-based (require values starting from 1), so passing 0 or negative values will cause issues. The candidate even specifically mentions 'order(0)' causing invalid ordinal-group values, which matches the golden comment's concern about $val being 0 causing incorrect rendering in older browsers."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "The align-items mixin forwards alignment values unchanged but legacy syntaxes use start/end while modern uses flex-start/flex-end, making flex-start/flex-end values invalid for legacy declarations"
+      },
+      {
+        "candidate": "-moz-box is emitted in flexbox() but no corresponding -moz-box-align is emitted in the align-items mixin"
+      },
+      {
+        "candidate": "Long header content may overflow because flex items default to min-width: auto, preventing shrinking below content width and breaking text truncation"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 6,
+    "total_golden": 3,
+    "tp": 3,
+    "fp": 3,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.5,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/discourse-graphite",
+    "pr_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/5"
+  },
+  "judgeUsage": {
+    "calls": 25,
+    "inputTokens": 6398,
+    "outputTokens": 2410,
+    "costUsd": 0.09224000000000002
+  }
+}

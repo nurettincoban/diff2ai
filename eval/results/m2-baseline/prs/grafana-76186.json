@@ -1,0 +1,130 @@
+{
+  "id": "grafana-76186",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/76186",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Test",
+      "title": "Make `TestLogger.FromContext` return the same fake so logs are still captured",
+      "affected": [
+        "pkg/plugins/log/fake.go:46-48"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Implementation",
+      "title": "Stop `FromContext` from silently dropping contextual attributes on the fallback path",
+      "affected": [
+        "pkg/plugins/log/logger.go:48-56"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Adding `FromContext` to the `Logger` interface breaks other implementations",
+      "affected": [
+        "pkg/plugins/log/ifaces.go:22-23"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Add tests for `ContextualLoggerMiddleware` and the attributes `LoggerMiddleware` now depends on",
+      "affected": [
+        "pkg/services/pluginsintegration/clientmiddleware/contextual_logger_middleware.go:27-69",
+        "pkg/services/pluginsintegration/pluginsintegration.go:159-161"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoCkjWPBwrzX6d1N9qj",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 12563,
+      "outputTokens": 2742,
+      "ms": 24858
+    }
+  ],
+  "costUsd": 0.105092,
+  "durationMs": 25864,
+  "promptSha256": "24d1d5169d8d671dda92f9315fad2efd6f3466bc333360b4c9c36771335b39f6",
+  "promptChars": 26904,
+  "response": "## 1) Severity: MEDIUM | Type: Test\nTitle: Make `TestLogger.FromContext` return the same fake so logs are still captured\n\nAffected:\n- pkg/plugins/log/fake.go:46-48\n\nExplanation:\n`FromContext` returns a brand-new `TestLogger` instead of the receiver. `LoggerMiddleware.logRequest` now always logs through `m.logger.FromContext(ctx).Info(...)`. As a result, the `InfoLogs`, `ErrorLogs` and other fields on the `TestLogger` a test injected are never updated.\n\nThe consequences for tests:\n- A test that asserts a \"Plugin Request Completed\" entry was written will fail.\n- A test that asserts no logs were written will pass even when logs were written.\n\nThe fake no longer records what the code under test does. Returning `f` keeps the recorded calls observable. The fake does not model contextual attributes, so this loses nothing.\n\nProposed fix:\n~~~go\nfunc (f *TestLogger) FromContext(_ context.Context) Logger {\n\treturn f\n}\n~~~\n\n## 2) Severity: LOW | Type: Implementation\nTitle: Stop `FromContext` from silently dropping contextual attributes on the fallback path\n\nAffected:\n- pkg/plugins/log/logger.go:48-56\n\nExplanation:\nIf `d.l.FromContext(ctx)` returns anything other than a `*log.ConcreteLogger`, the wrapper falls back to `d.New()`. That fallback throws away the contextual attributes it just resolved: endpoint, pluginId, dsName, dsUID, uname and traceID.\n\nThis matters more now than before. `logger_middleware.go` no longer adds these fields explicitly and relies entirely on the contextual logger. If the fallback is ever taken, the \"grafana-data-egress\" audit log line is emitted without plugin or user identification, and nothing reports the loss.\n\nI could not see the concrete return types in `pkg/infra/log`. It is safer to store the `log.Logger` interface in the wrapper so no type assertion is needed.\n\nProposed fix:\n~~~go\ntype grafanaInfraLogWrapper struct {\n\tl log.Logger // interface instead of *log.ConcreteLogger\n}\n\nfunc (d *grafanaInfraLogWrapper) FromContext(ctx context.Context) Logger {\n\treturn &grafanaInfraLogWrapper{l: d.l.FromContext(ctx)}\n}\n~~~\n\n## 3) Severity: LOW | Type: Maintainability\nTitle: Adding `FromContext` to the `Logger` interface breaks other implementations\n\nAffected:\n- pkg/plugins/log/ifaces.go:22-23\n\nExplanation:\n`FromContext` is now a required method on the exported `plog.Logger` interface. Any other implementation of this interface will stop compiling, including fakes in other packages and external consumers of `pkg/plugins/log`. The diff only updates `TestLogger` and `grafanaInfraLogWrapper`, and I cannot see the rest of the repo, so please verify that no other implementers exist.\n\nThe doc comment is also inaccurate. It says the method adds \"the given context\", but it actually adds the attributes stored in the `context.Context`.\n\nProposed fix:\n~~~go\n// FromContext returns a new Logger that has this logger's context plus\n// the contextual attributes stored in ctx (e.g. via log.WithContextualAttributes).\nFromContext(ctx context.Context) Logger\n~~~\nAlso grep the repo for other `plog.Logger` implementers and update them.\n\n## 4) Severity: LOW | Type: Test\nTitle: Add tests for `ContextualLoggerMiddleware` and the attributes `LoggerMiddleware` now depends on\n\nAffected:\n- pkg/services/pluginsintegration/clientmiddleware/contextual_logger_middleware.go:27-69\n- pkg/services/pluginsintegration/pluginsintegration.go:159-161\n\nExplanation:\nThe new middleware has no tests. Correct logging now depends on two things that nothing checks:\n- **Ordering:** `NewContextualLoggerMiddleware` must run before `NewLoggerMiddleware` in `CreateMiddlewares`.\n- **Attributes:** the contextual attributes must actually reach the \"Plugin Request Completed\" log line.\n\nIf someone reorders the middlewares or removes this one, the egress log silently loses pluginId, endpoint, the data source fields and uname. The renamed test also still uses the name `TestInstrumentationMiddleware`.\n\nProposed fix:\n~~~text\n- Add contextual_logger_middleware_test.go asserting that log.WithContextualAttributes\n  values (endpoint, pluginId, dsName, dsUID, uname) are present in ctx passed to next.\n- Add a test (or comment) in CreateMiddlewares documenting that ContextualLoggerMiddleware\n  must precede LoggerMiddleware.\n- Rename TestInstrumentationMiddleware -> TestMetricsMiddleware.\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The `TestLogger.FromContext` method returns a new `TestLogger` instance via `NewTestLogger()` instead of returning the receiver (f). This causes logs to be recorded on an un-referenced instance, leading to broken test assertions that expect logs to be recorded on the original logger.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "TestLogger.FromContext returns a brand-new TestLogger instead of the receiver, causing InfoLogs, ErrorLogs and other fields on the injected TestLogger to never be updated, making test assertions fail or pass incorrectly",
+        "confidence": 1,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment: TestLogger.FromContext returns a new TestLogger instance instead of the receiver, which causes logs to be recorded on an unreferenced instance, breaking test assertions. Both comments point to the same bug with the same consequences."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "FromContext silently drops contextual attributes (endpoint, pluginId, dsName, dsUID, uname, traceID) on the fallback path when d.l.FromContext(ctx) returns anything other than *log.ConcreteLogger"
+      },
+      {
+        "candidate": "Adding FromContext to the Logger interface breaks other implementations that don't have this method, including fakes in other packages and external consumers"
+      },
+      {
+        "candidate": "FromContext doc comment is inaccurate - says it adds 'the given context' but actually adds attributes stored in the context.Context"
+      },
+      {
+        "candidate": "ContextualLoggerMiddleware has no tests to verify correct behavior"
+      },
+      {
+        "candidate": "No tests verify that NewContextualLoggerMiddleware runs before NewLoggerMiddleware in CreateMiddlewares, which is required for correct logging"
+      },
+      {
+        "candidate": "No tests verify that contextual attributes actually reach the 'Plugin Request Completed' log line"
+      },
+      {
+        "candidate": "TestInstrumentationMiddleware test name should be renamed to TestMetricsMiddleware"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The ContextualLoggerMiddleware methods (QueryData, CallResource, CheckHealth, CollectMetrics) panic when a nil request is received. This occurs because they directly access req.PluginContext (via the instrumentContext function) without first checking if req is nil. This is a regression, as previous middleware layers gracefully handled nil requests.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "The traceID is no longer logged for plugin requests. During a refactoring, the tracing import and the logic to extract and add traceID from the context to log parameters were removed from the LoggerMiddleware. The newly introduced ContextualLoggerMiddleware does not add this information, resulting in missing traceID in plugin request logs and impacting debugging and request tracing capabilities.",
+        "severity": "Low",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 8,
+    "total_golden": 3,
+    "tp": 1,
+    "fp": 7,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.125,
+    "recall": 0.3333333333333333,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/76186"
+  },
+  "judgeUsage": {
+    "calls": 26,
+    "inputTokens": 8228,
+    "outputTokens": 2879,
+    "costUsd": 0.113115
+  }
+}

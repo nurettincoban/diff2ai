@@ -1,0 +1,2902 @@
+{
+  "https://github.com/calcom/cal.com/pull/8087": {
+    "diff2ai": [
+      {
+        "text": "App imports are not wrapped in thunks, causing all 29 app packages to load eagerly when @calcom/app-store is imported instead of loading lazily as intended",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Each app package being split into its own async chunk adds bundling overhead",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "If any app module fails to load, the rejected promise sits in the map as an unhandled rejection, which can crash Node processes even when the failing app is never used",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Using forEach with async callbacks causes errors to escape the try/catch block, resulting in unhandled rejections from getCalendar, deleteEvent, or deleteMeeting calls",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Using forEach with async callbacks means nothing waits for calendar and video deletions to complete before the handler continues with emails, DB updates, and response, causing race conditions and silently dropped failures",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "getCalendarCredentials now returns a Promise in the calendar field, which will break other callers that check if (calendar) or call calendar.method() since they will see a truthy Promise instead of the actual calendar object",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Calendar promises in getCalendarCredentials are created eagerly, so if one rejects and is never awaited it becomes an unhandled rejection",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/10600": {
+    "diff2ai": [
+      {
+        "text": "Backup code consumption is not atomic - two concurrent logins with the same code can both succeed because both read the same stored ciphertext before either writes, allowing a single-use code to be used twice",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Backup code lookup uses indexOf on secrets which is not a constant-time comparison, creating a timing side-channel vulnerability",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Download button inside the form lacks e.preventDefault() and likely submits the TOTP form again when clicked, potentially causing spurious errors or unintended requests",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Putting a <button> inside an <a> is invalid interactive nesting and hurts accessibility",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Dismissing the dialog on the backup codes step via Escape or clicking overlay skips onEnable() and resetState(), leaving the parent unaware 2FA was enabled and causing stale state on reopen",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "resetState does not clear backupCodes or backupCodesUrl, leaving plaintext codes in component state after the flow ends",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Blob URL for backup codes is never revoked on close or unmount, causing a memory leak",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Disable endpoint returns 500 instead of 400 for a non-string backupCode because replaceAll assumes the value is a string",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "When all backup codes have been used (array holds only nulls), users see 'incorrect backup code' instead of the MissingBackupCodes message",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Copy shows success toast without waiting for navigator.clipboard.writeText promise, so failures become unhandled rejections while user believes codes were copied",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "BackupCode component is exported as TwoFactor, duplicating the name of the real TwoFactor component and causing confusion in stack traces and React DevTools",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "No tests exist for backup code login, rejecting already-used codes, or disabling 2FA with a backup code",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Download content and clipboard content are not tested",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/10967": {
+    "diff2ai": [
+      {
+        "text": "mainHostDestinationCalendar is undefined when evt.destinationCalendar is null or [], causing TypeError crash when location is Google Meet instead of falling back to Cal Video",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Organization creation slug condition is inverted - slug is now set when billing is enabled instead of disabled, causing slug assignment before payment/verification and missing slugs when billing is disabled",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Google calendar update/delete fallback branch compares against falsy externalCalendarId, causing update to send undefined calendarId and delete to target primary instead of correct calendar for legacy references",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Google createEvent ignores destination calendars without credentialId - legacy records with null credentialId are not matched, causing events to be created in primary instead of user's chosen calendar",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Office365, CalDAV and Lark calendar providers always use destinationCalendar[0] (main host's calendar) for every host's credential, causing 404 errors or wrong calendar for non-main hosts",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Team hosts' calendars are dropped when organizer has no destination calendar because push on null silently does nothing",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Video/conferencing references lose their credentialId - non-calendar results now get undefined credentialId, breaking later update/delete paths that look up video credential by reference.credentialId",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Dynamic users query no longer selects organization slug, causing undefined for organizerUser.organization?.slug in dynamic group bookings",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Dynamic users error handling changed - empty dynamicUserList becomes generic 500 and HttpError is rewritten to 400",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Recurring cancellation is inside per-reference loop, causing same events to be deleted N times and other hosts' events in recurring bookings to never be deleted",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "updateEvent may be called with undefined credential if not found in calendarCredentials or DB, and credential declared outside loop may leak between iterations",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Logging of calendar update failures was removed, causing failures to be swallowed silently",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/22345": {
+    "diff2ai": [
+      {
+        "text": "Returned SQL fragments are not wrapped in parentheses, causing top-level OR to bleed into caller predicates when combined with AND, potentially returning data outside requested filters and causing authorization leaks",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unreachable branches in getBaseConditions: getAuthorizationConditions() always returns a non-null Prisma.Sql object, making the else if (filterConditions) branch and final NOTHING_CONDITION branch dead code that misleadingly suggests filter conditions alone could act as base condition",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Public findMany method removed without visible migration of callers - replaced by getBaseConditions which returns raw SQL instead of rows, breaking any existing callers like tRPC insights routers",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Caching tests deleted without replacement while caching logic (cachedAuthConditions and cachedFilterConditions) still exists and is no longer covered by any test",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Loosened constructor type InsightsBookingServicePublicOptions makes teamId optional for every scope, allowing invalid combinations like { scope: 'team' } without teamId to type-check, making misuse hard to diagnose",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/7232": {
+    "diff2ai": [
+      {
+        "text": "One failed SendGrid cancel blocks all later cancellations - if any client.request throws, the loop stops, remaining reminders are never cancelled, and deletes queued so far are never awaited",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Query uses lte: now + 1h with no lower bound, matching reminders whose send time has already passed, and cancelling already-sent or invalid batch_id can fail at SendGrid",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Failing rows are never deleted, so they are picked up again on every cron run and fail repeatedly, blocking all reminders after the bad one from being cancelled",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "SendGrid requests are awaited one at a time, making the cron slower as the backlog grows",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "immediateDelete path cancels at SendGrid but never removes the WorkflowReminder DB row",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "DELETE /v3/user/scheduled_sends/{id} call was removed, so cancelled batches pile up on the SendGrid account",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Reminder cancellation is now fire-and-forget with unawaited promises - deleteScheduledEmailReminder and deleteScheduledSMSReminder are called inside forEach without awaiting",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "On serverless environments, the function can be frozen once response is sent, causing cancelled update, row delete, or Twilio/SendGrid cancel to never run",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "try/catch in handleNewBooking cannot catch rejections from unawaited promises",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Ownership scope dropped from reminder deletion - old code used where: { id, booking: { userId: ctx.user.id } } but new helpers delete/update by id only",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Type-only imports (PrismaPromise, Prisma, App, Credential, EventTypeCustomInput) converted to value imports, which may be unused and can cause lint/build errors under isolatedModules or verbatimModuleSyntax settings",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/8330": {
+    "diff2ai": [
+      {
+        "text": "Skip of the busy-time check on days with a date override - when a slot falls on a day that has a date override and inside its range, the function returns true straight away and the busy.every(...) check never runs, causing existing bookings and busy events from external calendars to be ignored and allowing double-booking",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Slots rejected on days with more than one override or working-hours range - both checks use find which rejects the slot as soon as any single range on that day does not contain it, but a day can have several ranges and a slot should only be rejected when outside every range for that day",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unavailable all day check compares Dayjs objects by reference - dayjs(a) === dayjs(b) compares two newly created objects so it is always false, meaning a full-day-off override is never detected and slots starting exactly at the override start are still offered",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Slot end time ignored in the override and working-hours checks - in the working-hours check end is computed from slotStartTime not slotEndTime, and the override check tests slotStartTime.isAfter(date.end), so slots that start inside but run past the end are incorrectly accepted",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Override day matched by UTC calendar date not the organizer's local date - the override start is converted to real UTC and only its UTC date is compared with the slot's UTC date, but for organizers far from UTC one local day spans two UTC dates causing slots to be offered or blocked incorrectly",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Override shifted to the invitee time zone can wrap past midnight - when the shift crosses midnight startTime becomes greater than endTime giving an invalid range and losing or misplacing the override's slots",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "When override.timeZone is undefined, dayjs(...).tz(undefined) falls back to the default or server time zone which can produce a wrong offset",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "dayjs(override.start.toString()) parses the non-ISO Date.toString() output which is fragile - should use dayjs(override.start) instead",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/11059": {
+    "diff2ai": [
+      {
+        "text": "Google refresh persists the safeParse wrapper instead of the credential - parseRefreshTokenResponse returns a zod SafeParseReturnType but line 100 writes it straight to credential.key, causing the stored key to become { success: true, data: {...} } which breaks Google Calendar after first token refresh",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Sync endpoint returns a fetch Response but callers expect SDK/axios shapes - Google reads res?.data.access_token, Zoho reads .data.error, HubSpot treats result as token object, but on Response .data is undefined causing TypeError or storing undefined tokens",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Sync endpoint helper never checks response.ok and is typed any which hides the shape mismatch",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Zoho Bigin sends credentialId as the user id to the sync endpoint instead of credential.userId, causing potential cross-tenant token leakage or lookup failures",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Zoho Bigin bypasses the userId null check meant to exclude team credentials",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "minimumTokenResponseSchema uses z.string().toString() which evaluates to '[object Object]' for computed keys, resulting in a single optional key literally named '[object Object]' instead of proper field names",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "minimumTokenResponseSchema with z.object strips unknown keys like expiry_date, expires_in, instance_url causing credentials to lose required fields",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Placeholder 'refresh_token' string overwrites real refresh tokens when provider omits refresh_token from response, permanently breaking refresh ability for Office365 and similar apps",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Salesforce refreshes token on every getClient call with no expiry check, hitting token endpoint and writing to DB unnecessarily",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Salesforce bypasses refreshOAuthTokens so sync endpoint is never used, but uses minimal schema when sync enabled which strips instance_url",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Salesforce uses response.statusText !== 'OK' which is unreliable since HTTP/2 responses have empty statusText - should use response.ok",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Salesforce lines 92-94 are dead code because parseRefreshTokenResponse throws on failure",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "HttpError may not be imported in the Salesforce diff",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Webhook secret compared with non-constant-time equality (!==) which leaks timing information",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Webhook secret header value can be string[] but is not handled",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Webhook endpoint has no HTTP method restriction so GET or other methods are processed",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Invalid body from schema.parse throws unhandled exception producing 500 instead of 400",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "symmetricDecrypt/JSON.parse failures throw unhandled exceptions producing 500 instead of 400 and may leak error messages",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Outbound sync request to CALCOM_CREDENTIAL_SYNC_ENDPOINT is unauthenticated - sends only calcomUserId and appSlug with no shared secret or signature",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "parsedToken.success checks in Zoom and Office365 are dead code since parseRefreshTokenResponse now throws on failure",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Office365 lost logging of zod error and Microsoft response making token refresh failures harder to debug",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Thrown generic error discards zod details",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/14943": {
+    "diff2ai": [
+      {
+        "text": "Retry-count cleanup deletes reminders of every method, not just SMS - the new OR branch { retryCount: { gt: 1 } } has no method filter, so the SMS cron job will delete any WorkflowReminder whose retryCount > 1, including EMAIL and WHATSAPP reminders",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unguarded DB update in catch block can abort the whole batch - prisma.workflowReminder.update inside catch is not protected and can throw (P2025 if reminder was deleted concurrently, or on DB connectivity error), causing remaining reminders to go unprocessed and returning a 500",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Reminders already scheduled with Twilio can be counted as failures and deleted - if twilio.scheduleSMS succeeds but the later update that sets scheduled: true and referenceId throws, the reminder is counted as failed and retryCount is incremented, leading to duplicate messages and lost referenceId",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Non-atomic increment of retryCount - retryCount: reminder.retryCount + 1 is a read-modify-write on a stale value, so if two cron invocations overlap, increments are lost; should use Prisma's { increment: 1 } instead",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Duplicated retry threshold logic with magic number - the cutoff gt: 1 is a magic number allowing only two failed attempts before silent deletion, and the update logic is duplicated in two places",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unindexed retryCount predicate in an OR forces a table scan on every cron run - Postgres cannot satisfy the OR condition from existing indexes, causing full table scans on the potentially large WorkflowReminder table",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/14740": {
+    "diff2ai": [
+      {
+        "text": "isTeamAdminOrOwner uses && instead of ||, requiring users to be both admin AND owner, so team admins get FORBIDDEN error when they should be allowed",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "EventManager uses caller's credentials instead of organizer's credentials, causing calendar updates to fail or update wrong calendar when attendees or team admins call the handler",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Guest emails are not normalized to lowercase before blacklist and duplicate checks, allowing blacklisted addresses with uppercase letters to pass and same person to be added twice with different casing",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "No maximum size limit on guests array and no restriction on who can trigger emails, allowing any attendee to add unlimited addresses and abuse mail infrastructure for spam",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "sendAddGuestsEmails receives raw input list instead of uniqueGuests, causing existing attendees to receive 'scheduled' email instead of 'guests added' notice",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "For seated events, handler adds attendees without checking seatsPerTimeSlot and exposes other attendees' details when seatsShowAttendees is false",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Calendar update failures after DB write cause mutation to return error even though guests were added, and no emails are sent; retries then reject guests as duplicates",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Error toast fallback t('unable_to_add_guests') is unreachable because message is a template string that is never empty",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "isInvalidEmail state is only reset on Cancel click, not after success or input edits, leaving stale error message visible",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "When booking.userId is null, lookup uses id: 0 and findFirstOrThrow throws unhandled Prisma error instead of meaningful error",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/22532": {
+    "diff2ai": [
+      {
+        "text": "updateManyByCredentialId passes an empty data object, which may cause Prisma to skip the query or issue no column changes, so updatedAt is not guaranteed to change",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The updateManyByCredentialId call runs unconditionally on every cache refresh and rewrites every SelectedCalendar row for the credential, including rows for unrelated event-type scopes, adding write load on each Google webhook",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "data is typed as Prisma.SelectedCalendarUpdateInput but updateMany expects UpdateManyMutationInput, so callers can pass relation writes that updateMany cannot honor",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "When the credential is missing or not owned by the user, the handler throws a plain Error instead of TRPCError, causing it to be mapped to INTERNAL_SERVER_ERROR (500) and logged as a server fault",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The deleteCache handler bypasses the CalendarCacheRepository and calls prisma.calendarCache directly, even though the repository already has deleteManyByCredential",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Intl.DateTimeFormat hard-codes 'en-US' locale and ignores the user's locale and timezone, causing non-English users to see ambiguous M/D/YY format",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Migration DEFAULT NOW() stamps every pre-existing CalendarCache row with the migration time, causing misleading 'last updated' values until rows are refreshed",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Migration header comment contradicts the SQL - it says the column is added without a default, but the statement adds one",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "sed -i '' -E is BSD/macOS syntax and fails with GNU sed on Linux/CI",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "ENV_FILE='../.env' is resolved relative to caller's cwd, not the script's location, potentially creating a stray .env file",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "pgrep can return several PIDs, causing issues in the script",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "In the reuse branch, the URL is read from a log that may be stale or missing",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "cleanup function exits 0 on failure, so callers cannot detect errors",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "npx tsx downloads tsx from the registry when it is not a declared dependency, making the script non-reproducible, network-dependent, and a minor supply-chain risk",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "updatedAt and googleChannelId selections appear to be dead data loaded on every user/calendars fetch after the refactor removed their usage",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/1": {
+    "diff2ai": [
+      {
+        "text": "Second `downsize` definition silently replaces the 4-argument version due to Ruby not supporting overloading by arity, causing existing callers using the old width/height form to break with ArgumentError or TypeError",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Client-side size check hard-codes 10MB for all upload types, ignoring site settings like max_attachment_size_kb, blocking attachments larger than 10MB even when admin settings allow them",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Attachments under 10MB pass client check but fail server-side when max_attachment_size_kb is smaller than 10MB, wasting bandwidth and giving worse error messages",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Up to 5 synchronous ImageMagick runs per upload inside the request thread blocks web workers, and no limit on pixel dimensions allows decompression bombs to consume excessive CPU and memory",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Return value of downsize is ignored in the loop, causing failed convert operations to retry the same failing operation until attempts are exhausted",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "\"80%\" geometry may be invalid for the animated-GIF path when using gifsicle's --resize-fit which expects WxH geometry, causing large animated GIFs to never shrink and be rejected",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Magic 10MB limit is duplicated across client and server in three places, not tied to any setting or nginx client_max_body_size, causing potential drift and misleading error messages",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/2": {
+    "diff2ai": [
+      {
+        "text": "Global unsubscribe_link translation requires %{unsubscribe_url} placeholder but other mailers (like digests) that set add_unsubscribe_link: true never pass this value, causing I18n::MissingInterpolationArgument errors or broken text",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Per-topic unsubscribe sentence makes no sense in non-topic emails such as digests",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "TopicUser.find_by returns nil when user has no row for the topic, causing NoMethodError on tu.notification_level and a 500 error",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "GET request changes user's notification level, creating CSRF vulnerability where third-party pages can silently change notification levels via embedded images",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Email security scanners and link prefetchers trigger the notification level change before user clicks due to GET request mutation",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unsubscribe logic is not idempotent - lowers level on every request (Watching \u2192 regular on first visit, regular \u2192 muted on refresh)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Direct assignment to notification_level with save! bypasses TopicUser.change, preventing MessageBus notification_level_change event publication and leaving notifications_reason_id stale",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Moving from tracking/watching to 'regular' still sends notifications for replies and mentions, contradicting UI text 'You will stop receiving notifications'",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Triple-stash {{{stopNotificiationsText}}} renders raw HTML with interpolated fancyTitle, creating potential XSS if title escaping regresses",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Typo in template: 'Notificiations' should be 'Notifications'",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3": {
+    "diff2ai": [
+      {
+        "text": "BlockedEmail.where(email: email) is case-sensitive on PostgreSQL, allowing bypass of email blocks by using different casing (e.g., Bad@Spammers.org bypasses bad@spammers.org block)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "should_block? method runs inside model validation but writes to database, causing inflated statistics from repeated validation calls and availability checks",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "match_count increment uses read-modify-write pattern (match_count += 1; save) which loses updates under concurrent requests",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Domain whitelist/blacklist regex is unanchored, allowing whitelist bypass (x@example.com.attacker.org passes) and blacklist false positives (x@spam.com.au rejected when spam.com blacklisted)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Domain settings only escape '.' character, interpreting other regex metacharacters as regex syntax",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Client adds email to rejectedEmails for any server error (not just blocking), showing generic 'invalid' message instead of actual error like 'has already been taken'",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Server-normalized email (e.g., downcased) won't match user input in accountEmail, preventing client-side rejected email check from triggering",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "rejectedEmails: Em.A([]) declared on class prototype causes array to be shared across controller instances",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Moved whitelist/blacklist logic has no tests in the new EmailValidator spec",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Spec doesn't verify that should_block? is skipped when a domain error already exists",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4": {
+    "diff2ai": [
+      {
+        "text": "Imported HTML is stored and rendered without sanitization, allowing stored XSS attacks through script tags, onerror handlers, or javascript: content in RSS feeds",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Source URL is interpolated unescaped into anchor href attribute, allowing attribute breakout and markup injection via single quotes in feed links",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unauthenticated callers can create unlimited topics by varying embed_url query parameters, bypassing throttle and flooding the forum with topics",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Kernel#open used on URLs allows command execution risk when string starts with pipe character",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "No open/read timeouts on URL fetching, allowing slow remote hosts to tie up Sidekiq workers",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Feed items without content property crash the whole poll because nil.scrub raises NoMethodError, breaking RSS 2.0 feeds that use description instead",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Stray 'if' after 'end' in ERB template changes control flow and only works by accident",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Concurrent imports race on unique embed_url index causing RecordNotUnique errors and potential side effect inconsistencies",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "PostRevisor.new(nil) will crash if embed.post is nil due to hard-deleted post",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "postMessage origin check uses substring match instead of exact match, potentially allowing malicious origins that are prefixes of the expected origin",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "absolutize_urls mangles protocol-relative URLs by stripping leading slashes incorrectly",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Port check in absolutize_urls omits port only for 80 or 443 regardless of scheme, producing incorrect URLs",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Disqus import loses category option that was removed",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Disqus import loses created_at from original Disqus thread, dating imported topics as 'now'",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Modifying already-shipped migrations has no effect on databases that already ran them",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Using force: true in migrations silently drops existing tables and their data",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/5": {
+    "diff2ai": [
+      {
+        "text": "The order mixin passes values unchanged but legacy -webkit-box-ordinal-group and -moz-box-ordinal-group properties are 1-based, causing order(0) to emit invalid ordinal-group and negative values to be invalid",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The align-items mixin forwards alignment values unchanged but legacy syntaxes use start/end while modern uses flex-start/flex-end, making flex-start/flex-end values invalid for legacy declarations",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "-ms-align-items is not a real property (IE10 uses -ms-flex-align, IE11 uses unprefixed align-items) and produces dead output",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "-moz-box is emitted in flexbox() but no corresponding -moz-box-align is emitted in the align-items mixin",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Long header content may overflow because flex items default to min-width: auto, preventing shrinking below content width and breaking text truncation",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Auto margins are not honored by legacy display: -webkit-box / -moz-box model, so .panel would no longer be right-aligned after float: right was removed",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/6": {
+    "diff2ai": [
+      {
+        "text": "Method `include_website_name` should be renamed to `include_website_name?` with trailing question mark so ActiveModel::Serializers will call it - currently website_name is always serialized as null when there is no website",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Sibling-subdomain check incorrectly treats unrelated domains as same site - domains like `forum.co.uk` and `attacker.co.uk` both reduce to `co.uk`, and `meta.github.io` and `someone.github.io` both reduce to `github.io`",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Domain comparison is case-sensitive but URI#host keeps user's casing, so `http://Example.com/user` will not match `example.com`",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "URL is parsed up to three times redundantly (`URI(website.to_s)` is repeated)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Website values without a scheme (like `example.com/user`) return nil from `URI().host`, causing such websites to be hidden from the profile entirely",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "String literal mutation with `<<` operator (`\".\" << website_host`) will raise FrozenError if frozen_string_literal is enabled",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Missing test coverage for sibling-subdomain branch (`www.example.com` vs `forum.example.com`)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Missing test coverage for blank website case",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Missing test coverage for unparsable or scheme-less URLs",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Missing test coverage for public-suffix false positive (`a.co.uk` vs `b.co.uk`)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/7": {
+    "diff2ai": [
+      {
+        "text": "Gap link color has swapped lightness values - light theme uses 70% instead of original 30%, and dark theme uses 30% instead of 70%, reducing contrast on light themes and inverting emphasis on dark themes",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Mobile custom-message-length has inverted lightness values - uses 30% for primary and 70% for secondary instead of original 70%/30%, making hint text dark and prominent on light themes instead of muted, and differs from desktop version",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "User-card name lightness changed from original 30% to 50%/50%, making the name the same color as the adjacent .title element so they can no longer be visually distinguished",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Mobile topic-map h3 lightness changed from original 20% to 50%/50%, altering light-theme heading color to match h4 below it, and differs from desktop version which uses 20%/80%",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/8": {
+    "diff2ai": [
+      {
+        "text": "Off-by-one error in totalPages calculation when user_count is an exact multiple of limit - Math.floor(user_count / limit) + 1 reports one page too many",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "limit and offset parameters on public members endpoint are not validated or bounded, allowing unbounded query sizes (DoS vector) and negative values causing PostgreSQL errors",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Public group members page is silently truncated to 50 users with no pagination controls, preventing access to remaining members",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Breaking change to /groups/:id/members response shape (bare array to {members, meta}) and findMembers contract (now resolves to undefined and mutates model instead of returning array)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Adding an already-present member may raise ActiveRecord::RecordNotUnique and return 500, potentially leaving batch partially applied",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "No error handling or input reset after add/remove member - rejected promises are ignored and usernames input is never cleared after successful add",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Specs rely on hard-coded group id (Group.find(1)) which is brittle and depends on seed data",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "remove_member automatic-group test uses wrong HTTP verb (PUT instead of DELETE)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/9": {
+    "diff2ai": [
+      {
+        "text": "Fallback locales are loaded only in the web request path, not in jobs, mailers or console - translate still loads only config.locale, and I18n.fallbacks.ensure_loaded! is only called in the controller's locale setup, causing 'translation missing' errors in Sidekiq jobs, mailers, rake tasks and console",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The translation cache key ignores the site default locale, so fallback results can leak between sites in multisite or go stale when admin changes the default locale - cache is keyed only on key, config.locale and backend but not the fallback chain",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "SiteSetting.default_locale.to_sym raises NoMethodError if the setting is nil, which can happen early in boot, during asset precompile without a DB, or during tests",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "locale can be passed as a String but .uniq does not dedupe string 'en' against symbol :en, causing duplicate locale checks and inconsistent @loaded_locales.include? behavior",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "FallbackLocaleList subclasses Hash and overrides only [], but some libraries and newer i18n versions may call other I18n::Locale::Fallbacks methods like defaults, defaults= or map which would fail or silently do nothing",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/10": {
+    "diff2ai": [
+      {
+        "text": "Migration crashes when `embed_category` is not set because `execute(...)[0]['id']` assumes the query returns a row, but on fresh installs or sites that never set embed_category, the JOIN returns zero rows causing PG::Result#[] to raise or return nil",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The `uncategorized_category_id` lookup in the migration has the same flaw - that setting is not always present as a row in site_settings because defaults are not stored",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Migrated hosts have unescaped SQL - each host string is interpolated directly into SQL, so values containing single quotes break the migration and the pattern is SQL injection-prone",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Migrated hosts are not normalized - old settings allowed values with schemes, paths, or trailing whitespace which are inserted verbatim, bypassing the model's before_validation stripping, causing existing embeds to silently stop working",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Host lookup is case-sensitive on the input side - `where(\"lower(host) = ?\", host)` lowercases the DB column but not the incoming value, so referers with uppercase letters are rejected",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Host lookup never matches hosts stored with a port because the validation regex allows ports but `uri.host` drops the port",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "`before_validation` raises NoMethodError on nil host when `self.host.sub!` is called with nil, resulting in a 500 instead of a validation error",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Admin host endpoints return 500 on unknown id because `where(id:).first` returns nil and then `nil.destroy` or `nil.host=` raises NoMethodError",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Admin host endpoints return 500 when params[:embeddable_host][:host] is called but the root key is missing",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "category_id is not validated to reference an existing category - there is no FK and no model validation, so bogus ids are accepted and later used when creating topics",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Fabricator file contents are swapped - category_fabricator.rb defines only :embeddable_host while embeddable_host_fabricator.rb contains all category fabricators",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "`_ids` hydration assumes obj[k] is an array - `obj[k].map` throws if a `*_ids` key holds null or a non-array",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "`_ids` hydration leaves undefined entries in the array when `_lookupSubType` returns undefined for unknown ids",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "`replace('_', '-')` only replaces the first underscore because String#replace with a string pattern replaces only the first occurrence",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Topic spec is misleading - 'is false if embeddable_host is blank' passes only because of defaults, but expandable_first_post? no longer checks hosts at all",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Store test assumes behavior the mock doesn't provide - `store.find('fruit', 2)` expects 2 colors but fruit 2 has color_ids: [3], test passes only because pretender always returns fruits[0]",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Client sets an undefined category after saving with no category selected - server falls back to uncategorized_category_id but client sets category from null categoryId, showing no badge until reload",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/79265": {
+    "diff2ai": [
+      {
+        "text": "Inside WithDbSession callback, args = append([]interface{}{query}, args...) reassigns the captured outer args variable, causing the query string to be prepended again on retry, resulting in malformed Exec statements",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "MySQL reports changed rows rather than matched rows by default, so updating an existing device with same values reports 0 rows affected, wrongly triggering ErrDeviceLimitReached",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Device limit check is not atomic - CountDevices and upsert run as separate unsynchronized steps, allowing concurrent requests to exceed the configured limit",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "TagDevice now runs synchronously on the auth hot path instead of in a background goroutine, adding DB latency to every anonymous authentication request",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "COUNT query runs on every local-cache miss when limit is configured, adding overhead to the auth path",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Panic recovery that guarded the old goroutine is gone from TagDevice",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Request ctx is used in TagDevice, so client disconnect cancels the write",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "If local cache is populated before DB write fails, a rejected device would be denied on first request but accepted for ~29 minutes due to cached entry bypassing the limit",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "ErrDeviceLimitReached is a plain fmt.Errorf error instead of errutil error, likely rendering as generic 500 instead of proper 401/403 with meaningful message",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "ProvideAnonDBStore signature change to require int64 may break wire/DI since wire cannot supply bare int64",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "anonymousDeviceExpiration constant is duplicated in api and anonstore packages, risking divergence if one changes",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Limit test does not verify that existing devices can still be updated after limit is reached",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test mutates and reuses the same struct and leaves CreatedAt as zero value",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/103633": {
+    "diff2ai": [
+      {
+        "text": "Denial cache hides newly granted permissions for the whole TTL - once a deny is cached, Check returns Allowed: false without consulting the permission cache or DB, causing users who were just granted access to still get 403 errors",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Denial cache keyed per resource name can grow without bound - cache size now scales with users \u00d7 resources instead of users \u00d7 actions, raising memory use and enabling memory inflation with arbitrary names",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Denial cache key is ambiguous and omits identity type - using underscore separators when UIDs can contain underscores causes key collisions, and the key shares prefix with userPermCacheKey causing potential type mismatches between bool and map[string]bool",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Cached-deny path does duplicate work - when cached permissions exist but don't allow access, Check resolves user identifiers again, re-runs DB permission fetch, and evaluates checkPermission a second time",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Cached-deny path records a cache hit as a miss - increments permissionCacheUsage with 'false' even though the cache was hit, skewing hit/miss metrics",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Errors from getCachedIdentityPermissions are silently treated as cache miss - should distinguish cache.ErrNotFound from real errors like DB errors",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "getUserPermissions and getAnonymousPermissions no longer read permCache, only write it - any caller of getIdentityPermissions other than Check and List now always hits the database",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test case covering cache-hit behavior was deleted rather than moved",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Explicit-deny test cannot prove the denial cache short-circuits - the cached permission map value is false so the test passes regardless of denial-cache logic; should set value to true to demonstrate short-circuit",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/76186": {
+    "diff2ai": [
+      {
+        "text": "TestLogger.FromContext returns a brand-new TestLogger instead of the receiver, causing InfoLogs, ErrorLogs and other fields on the injected TestLogger to never be updated, making test assertions fail or pass incorrectly",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "FromContext silently drops contextual attributes (endpoint, pluginId, dsName, dsUID, uname, traceID) on the fallback path when d.l.FromContext(ctx) returns anything other than *log.ConcreteLogger",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Adding FromContext to the Logger interface breaks other implementations that don't have this method, including fakes in other packages and external consumers",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "FromContext doc comment is inaccurate - says it adds 'the given context' but actually adds attributes stored in the context.Context",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "ContextualLoggerMiddleware has no tests to verify correct behavior",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "No tests verify that NewContextualLoggerMiddleware runs before NewLoggerMiddleware in CreateMiddlewares, which is required for correct logging",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "No tests verify that contextual attributes actually reach the 'Plugin Request Completed' log line",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "TestInstrumentationMiddleware test name should be renamed to TestMetricsMiddleware",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/107534": {
+    "diff2ai": [
+      {
+        "text": "Ad-hoc filters are applied twice because applyTemplateVariables is called before runQuery, and then DataSourceWithBackend.query() calls it again, causing label matchers to be injected a second time",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Variable values containing $ sequences (regexes, line filters, literal $foo text) are re-interpolated on the second pass, silently changing the executed query",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test mock for applyTemplateVariables mutates query.expr on the original request.targets objects instead of returning a new object, which prevents detection of bugs that wrongly reuse un-interpolated targets and hides double-interpolation behavior",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/106778": {
+    "diff2ai": [
+      {
+        "text": "Skipped prom-rule abilities still grant Duplicate, enabling it for non-Grafana rules - when skipToken is passed, useAllGrafanaPromRuleAbilities(undefined) still builds a full abilities map that incorrectly allows Duplicate action for cloud/Mimir rules",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Federated rule groups no longer treated as immutable in legacy hook - useAllAlertRuleAbilities now delegates to useAllRulerRuleAbilities which hardcodes isFederated = false, allowing Edit, Delete and Pause for Mimir federated rule groups that should be blocked",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Missing React key on GrafanaRuleListItem in list rendering - the replacement component drops the key prop while being rendered inside a .map, causing React key warnings and incorrect reconciliation",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Pause/Restore/Export/DeletePermanently restricted to alerting rules, excluding Grafana recording rules - the new prom-based hook gates these actions on prometheusRuleType.grafana.alertingRule(rule) instead of the broader check that includes recording rules",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Rule view link lost returnTo parameter - the new component drops returnTo from the href, breaking navigation back to the list with preserved filters and location",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "logWarning invoked during render on every re-render - getEditableIdentifier runs in the render path and calls logWarning repeatedly for the same rule due to polling interval re-renders",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Potential Rules of Hooks violation - the early return null in getEditableIdentifier comes after some hooks, which may cause hooks declared later in the component to violate React's Rules of Hooks",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/90045": {
+    "diff2ai": [
+      {
+        "text": "Background legacy writes use request context which gets cancelled when handler returns, causing legacy storage to silently stop receiving writes in mode 3 - should use context.WithoutCancel to detach from request context",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Create and Update failure metrics for unified storage are incorrectly recorded with recordLegacyDuration instead of recordStorageDuration",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "DeleteCollection legacy goroutine incorrectly records metrics with recordStorageDuration instead of recordLegacyDuration",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Delete success metric passes 'name' as the 'kind' label, which is incorrect and creates unbounded label cardinality",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Legacy update receives raw objInfo instead of the unified-store result, causing legacy to recompute update against its own possibly divergent old object, leading to potential store divergence",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Preconditions or resourceVersion in objInfo belonging to unified store can cause legacy update to fail",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "objInfo is used concurrently in a goroutine after request returns, which may not be safe depending on implementation",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Asynchronous legacy write failures are not logged, only metrics are bumped, making legacy drift invisible and hard to debug",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Delete stores d.Log instead of the enriched log in context, causing downstream logs to lose name, kind and method values",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Mode 3 unit tests use shared mock.Mock for legacyStoreMock and storageMock, making the two stores indistinguishable",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Create error test case is named 'unified store fails' but only configures setupLegacyFn, with storage Create call matching that expectation instead",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Update test has identical legacy and storage Update expectations, so either one satisfies both calls",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Tests never wait for or assert legacy goroutines, leaving legacy path effectively untested",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Duplicate go.work.sum entry at line 408 duplicates line 404 for github.com/grafana/grafana/pkg/apimachinery",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/80329": {
+    "diff2ai": [
+      {
+        "text": "Debug logging at Error level dumps full ID lists (up to 32767 entries) causing log flooding, false error alerts, and hundreds of KB written per batch",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Pre-delete logs include 'err' field that is always nil since error was already checked above",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Cleanup ticker interval changed from 10 minutes to 1 minute without justification, causing 10x more frequent runs of all cleanup jobs and increased DB load/lock contention",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "SQLite inline IN-list building uses repeated fmt.Sprintf with string concatenation causing O(n\u00b2) time complexity and gigabytes of copying with large batch sizes",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "t.Cleanup is registered after createTestAnnotations and assertions, so if those fail the cleanup never runs, leaving leftover rows that cause duplicate-key failures in subsequent subtests",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/90939": {
+    "diff2ai": [
+      {
+        "text": "Cache is not re-checked after acquiring write lock, causing redundant loads when multiple concurrent callers see empty cache and queue on Lock(), each running the full load even though the first caller already filled the cache",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "In dev mode, global write lock is held across potentially slow I/O for the entire asset load, serializing all concurrent page loads on file and possibly network I/O when the mutex only needs to protect the read and write of the shared pointer",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/94942": {
+    "diff2ai": [
+      {
+        "text": "enableSqlExpressions helper always returns false regardless of flag state - the inverted flag check has no effect and the variable named 'enabled' actually holds 'flag is disabled'",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Turning the feature flag on does nothing - future maintainers may expect enabling it to restore the feature but will get a confusing 'not implemented' error instead",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "enableSqlExpressions helper can panic if h.features is nil when dereferencing, even though the result is ignored",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Plain fmt.Errorf error for SQL expression rejection will surface as generic/internal error rather than 4xx/501, and message is misleading since feature was implemented and is now disabled",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "TablesList still builds DuckDB-specific SQL commands and passes them to a stub RunCommands that always errors - dead code is still being executed",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "SQL commands may be built through other paths like UnmarshalSQLCommand/NewSQLCommand that now fail at runtime with only generic 'not implemented' message",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Existing tests for TablesList and SQL commands in parser_test.go and sql_command_test.go will likely fail but are not touched in this change",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "New exported DB type and NewInMemoryDB() look like working in-memory database API but every method returns 'not implemented' error - callers have no way to detect this is a placeholder",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "No sentinel error exported for the stub DB type, forcing callers to compare strings instead of using errors.Is",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/97529": {
+    "diff2ai": [
+      {
+        "text": "Concurrent BuildIndex calls for the same key are no longer guarded after removing the function-wide lock, causing race conditions where two goroutines can build the same key simultaneously, leading to file-backed index failures or in-memory index resource leaks",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "NewResourceServer blocks synchronously on full search index build during construction, delaying startup on large deployments and potentially causing constructor failures that prevent the storage server from existing even for plain CRUD operations",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The context passed to Init may be short-lived or cancelled after construction, which would silently stop the event-indexing goroutine",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Init error is logged twice - once in Init itself and again in the constructor",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Handlers no longer guard against a server that was never initialized since all s.Init(ctx) calls were removed, causing potential nil pointer dereferences for servers built directly or when Init was skipped",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "History and Origin methods dereference s.search without the nil check that Search has",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Postgres integration test is skipped without a tracking issue, potentially hiding a real regression related to eager initialization causing slower startup or timing dependencies",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1": {
+    "diff2ai": [
+      {
+        "text": "Call to `isConditionalPasskeysEnabled()` does not compile - UsernameForm still calls a no-arg method that no longer exists after commit 3214b188de changed it to require a UserModel parameter",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The `user != null` check inverts the original condition, causing passkey form and conditional UI to not render on first unauthenticated login when user is null",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Passkeys are incorrectly offered to any identified user on re-authentication, even users without passwordless credentials",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "UsernameForm will skip its form for users who are still eligible for passkeys once the compilation issue is fixed, which is not intended behavior",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test claiming to check re-authentication of user without passkey actually disables passkeys for the whole realm instead of testing a user with only password credentials",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Broad `catch (Exception)` pattern swallows any exception including stale element or timeout errors, causing tests to pass silently on unrelated WebDriver failures",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Re-authentication check logic is duplicated between the new utility and `isUserAlreadySetBeforeUsernamePasswordAuth`, and the constant visibility was widened to public unnecessarily",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Missing `@Override` annotation on `shouldShowWebAuthnAuthenticators` in `WebAuthnConditionalUIAuthenticator`",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/keycloak/keycloak/pull/32918": {
+    "diff2ai": [
+      {
+        "text": "Test cleanup uses literal string 'alias' instead of the actual IDP alias, leaving 21 IDPs (idp-alias-0 through idp-alias-20) not removed after the test, which can cause flaky tests",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Login IDP cache is only invalidated on IDP create/update/remove but not when organization state changes (e.g., disabling an organization), causing stale cached IDP IDs",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The isEnabled() re-check was only added in OrganizationAwareIdentityProviderBean, so other callers of getForLogin may get IDPs belonging to disabled organizations",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "getLoginPredicate() semantic change now requires BROKER_PUBLIC=true for org-linked IDPs, which affects all existing consumers of this public SPI helper and may silently exclude non-public org IDPs in unintended contexts",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/keycloak/keycloak/pull/33832": {
+    "diff2ai": [
+      {
+        "text": "Adding `int order()` as an abstract method to a public SPI interface will break third-party CryptoProvider implementations - they will fail to compile, and already-compiled providers will throw AbstractMethodError at runtime. Should be a default method returning 0.",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Default, Elytron and FIPS CryptoProviders all return order 200, making provider selection arbitrary based on classpath order. A FIPS deployment can silently fall back to non-FIPS crypto. Should fail on ambiguity among highest-order providers.",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "`logger.debugf(builder.toString())` uses dynamic content as the format string - any `%` in it would be treated as a format specifier. The message also ends with a trailing `\", \"`. Should use `debug` or `debugf` with a real format argument.",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Lines 114-115 in `concatenatedRSToASN1DER` build two encoders and immediately discard them - this is dead code that should be removed.",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "`concatenatedRSToASN1DER` never validates that `signature.length == signLength`, causing ArrayIndexOutOfBoundsException instead of IOException for malformed/truncated JWS signatures.",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test uses a single default EC key pair for ES256, ES384 and ES512, but the default curve is JDK-dependent so ES384/ES512 are not tested with their real r/s sizes. ES512 with P-521 and 66-byte components is never exercised.",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test only checks that R||S output round-trips through the custom encoder but never confirms that `concatenatedRSToASN1DER` produces DER the JDK accepts via Signature.verify.",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unused `org.hamcrest:hamcrest` test dependency is added but the test only uses `org.junit.Assert` - should be removed.",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/keycloak/keycloak/pull/36882": {
+    "diff2ai": [
+      {
+        "text": "RECREATE_UPGRADE_EXIT_CODE changes from 4 to 3, and value 4 is reused for FEATURE_DISABLED, which will break scripts, CI pipelines, automation, operator images, and tests that check for literal exit code 4 expecting 'recreate required'",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Profile.isFeatureEnabled() is called before validateConfig(), which may cause NPE if Profile.getInstance() is null, or may check against stale/default feature set ignoring CLI options like --features=rolling-updates",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Documentation macro always appends --features=rolling-updates after user parameters, which with last-wins semantics would drop user's other features if they already specified --features",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "setEnabledFeatures(List.of(ROLLING_UPDATES)) in test replaces any existing enabled features on the default test Keycloak CR instead of merging with them",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/keycloak/keycloak/pull/36880": {
+    "diff2ai": [
+      {
+        "text": "ClientPermissionsV2.setPermissionsEnabled throws UnsupportedOperationException, and when a client is removed under FGAP v2, the per-client Resource and scope permissions are not cleaned up, leaving orphaned resources that pile up and affect evaluation and listing",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "If both v1 and v2 features are enabled, management(...) may return MgmtPermissionsV2 and clients().setPermissionsEnabled(...) would throw during client removal, causing client deletion to fail",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "When there is no per-client resource, getResourceTypeResource result is passed to findByResource without null check, potentially causing NullPointerException if the Clients type resource is absent",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "getClientsWithPermission runs a separate root.evaluatePermission for every resource of type Clients, causing N full policy evaluations per client-list request in realms with many client-specific permissions",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "getClientsWithPermission collects resource.getName() for every typed resource, including the type resource itself, causing the literal string 'Clients' to end up in the returned ID set",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "getEvaluationContext is a private method that is never called and appears to be dead code copied from token-exchange logic",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "TOKEN_EXCHANGE, ClientModelIdentity and DefaultEvaluationContext imports are unused",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "hasPermission(ClientModel, ...), hasPermission(String) and hasGrantedPermission repeat the same scope-matching loop and unnecessarily wrap a single scope in Arrays.asList",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Javadoc on requireView() and requireViewClientScopes() says 'Returns true if...' but the methods return void and throw ForbiddenException",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "testManageOnlyOneClient renames myclient, removes one of its default client scopes, and adds it as an optional scope without cleanup, potentially breaking other tests",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "testMapRolesAndCompositesOnlyOneClient creates client roles and assigns them to myadmin without cleanup, potentially causing 409 errors on re-run",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "clients().create(null) test only returns 403 if authorization check happens before request body processing; should use a valid representation to properly exercise authorization decision",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/keycloak/keycloak/pull/37038": {
+    "diff2ai": [
+      {
+        "text": "canManage() returns true when all-groups permission grants VIEW or MANAGE, causing privilege escalation where read-only access allows operations guarded by requireManage() like creating top-level groups",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "In getGroupIdsWithViewPermission, hasPermission uses resource UUID instead of group ID, causing permission check to never match and fall back to all-groups resource instead of per-group permissions",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "In getGroupIdsWithViewPermission, granted.add() returns resource UUIDs instead of group IDs, breaking user search and count filtering by group membership",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "findByType may return the type-level 'Groups' resource itself which is not a group ID and should be skipped",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Per-user view filtering (.filter(usersEvaluator::canView)) was removed from user search results, potentially exposing users when caller has query-users but no view permission and no group grants",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "GroupRemovedEvent handler calls setPermissionsEnabled which throws UnsupportedOperationException in V2 realms, causing group deletion to fail",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "requireManageMembers Javadoc incorrectly references canManageMembership instead of canManageMembers",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "getGroupIdsWithViewPermission Javadoc says it returns 'Stream of IDs' but it actually returns a Set",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/keycloak/keycloak/pull/37429": {
+    "diff2ai": [
+      {
+        "text": "Lithuanian totpStep1 and loginTotpStep1 translations were replaced with Italian text instead of proper Lithuanian translations",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "zh_CN locale file uses Traditional Chinese characters instead of Simplified Chinese for totpStep1",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "React/i18next bundles changed from {{0}} interpolation syntax to Java MessageFormat {0} syntax, which may cause raw text to display in the UI",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Diff-trimming logic doesn't guard against overlapping prefix and suffix, causing StringIndexOutOfBoundsException when they overlap",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Missing English counterpart file throws raw RuntimeException instead of MojoExecutionException with a clear message",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Anchor-mismatch error message doesn't include the key and file information, making failures hard to locate",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "ANCHOR_PATTERN regex matches tags that start with 'a' (like abbr, area, audio, aside) instead of only matching actual anchor tags",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/keycloak/keycloak/pull/37634": {
+    "diff2ai": [
+      {
+        "text": "isAccessTokenId matcher uses wrong slice substring(3, 5) instead of substring(4, 6) for grant type check",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "isAccessTokenId matcher has inverted condition - returns false when slice equals expected shortcut instead of when it doesn't match",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "isAccessTokenId matcher doesn't check that prefix has length 6, causing StringIndexOutOfBoundsException on shorter prefixes",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Null check on line 73 validates grantType twice instead of checking rawTokenId, allowing null rawTokenId which produces IDs like 'onrtac:null'",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Shortcut length is not enforced - 3-letter shortcuts as documented would break decoding which requires exactly 6 character encoded context (2-char grant shortcut)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Lazy refresh of grant shortcuts skips uniqueness check, allowing late-deployed grants with colliding shortcuts to silently overwrite existing mappings",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "New abstract getShortcut() method breaks third-party OAuth2GrantTypeFactory implementations - they won't compile or will throw AbstractMethodError at runtime",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Public copy constructor Context(Context) removed without deprecation, breaking extensions or internal callers that rely on it",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "getShouldUseLightweightToken reads lightweight flag from session.getContext().getClient() instead of the client the token is issued for, causing wrong token type in token exchange flows",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "getShouldUseLightweightToken causes NPE when building tokens without a context client (internal/admin-generated tokens, flows that set client after token creation)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "grantType is captured once in constructor and becomes stale after setFormParams replaces form params",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Constructor dereferences formParams without null check, causing NPE when formParams is null",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unknown shortcuts in attacker-supplied token IDs trigger full factory scan on every lookup since negative results are not cached",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/keycloak/keycloak/pull/38446": {
+    "diff2ai": [
+      {
+        "text": "Recovery codes are sent to user storage as plaintext JSON instead of hashed, allowing credential providers to persist, log, or forward codes in clear text, weakening MFA security",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Credential id is set to empty string instead of null, which may confuse providers that branch on the id",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Authenticator cannot consume or remove federated recovery codes - used codes are never marked as consumed in the federated store, making codes effectively reusable",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Federated credential id may be null or not exist in local store, causing exhaustion handling to fail when trying to remove the credential",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Hardcoded string 'keycloak-recovery-authn-codes' used instead of RecoveryAuthnCodesCredentialProviderFactory.PROVIDER_ID constant - if id changes, getProvider returns null causing NPE",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Provider is looked up even when user storage handles the credential, should only be looked up in fallback branch and null-checked",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Optional.get() called unchecked on credentialModelOpt, throws NoSuchElementException if neither user storage nor local store returns a credential, causing 500 error instead of graceful failure",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test provider's isValid accepts any stored code instead of the specific requested code index, and never removes used codes, allowing indefinite code replay",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test provider's getCredentials returns a recovery model without an id",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Config alias 'delayed-suthenticator-config' is a typo",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Delayed-authenticator with delay 0 adds no value to the test",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "testAppHelper.logout() called without asserting its result, unlike other tests",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/keycloak/keycloak/pull/40940": {
+    "diff2ai": [
+      {
+        "text": "Background reader thread is started but never joined, allowing exceptions from in-flight requests to be added after assertion runs, causing test to pass even when bug occurred",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Thread can outlive the test and keep calling admin API during next test or realm cleanup, causing interference and flakiness",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Only Exception is caught in the thread, so an Error (like AssertionError) would silently kill the thread and never be reported",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test cannot guarantee the race actually happens, making it a weak regression guard that may pass without the fix",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "getSubGroupsCount() may now return null for deleted groups, and callers that unbox the returned Long could NPE",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "GroupModel contract doesn't document null as a valid return value for getSubGroupsCount()",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Other GroupAdapter methods that go through getGroupModel() may have the same concurrent-deletion problem but weren't fixed",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/1": {
+    "diff2ai": [
+      {
+        "text": "OptimizedCursorPaginator's get_item_key calls math.floor/math.ceil on datetime objects, raising TypeError and causing 500 errors when optimized_pagination=true returns rows",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "OptimizedCursorPaginator's value_from_cursor returns raw integer cursor value, causing incorrect comparison between datetime column and integer in build_queryset",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Django querysets do not support negative indexing, but the code passes client-supplied negative offsets through when cursor.is_prev is set, allowing users to trigger unhandled 500 errors via cursors like 0:-10:1",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Negative offsets are silently clamped to 0 for non-prev cursors but crash for prev cursors, creating inconsistent behavior",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The trimming check compares against offset + limit + extra but the slice uses start_offset, causing incorrect sentinel row trimming when offsets differ",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "organization_context.member can be None (for staff, API/integration tokens, etc.), causing AttributeError when accessing member.has_global_access and returning 500 for the audit-log endpoint",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "request.user.is_superuser reads the raw flag and ignores active superuser session/sudo state instead of using is_active_superuser(request)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "has_global_access is true for any member of an org with open membership, not only administrators, making the admin-only pagination path accessible to non-admins",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Comments falsely claim safety (e.g., 'Django ORM properly handles negative slicing automatically', 'safe because permissions are checked at the queryset level') that the code does not provide, potentially misleading reviewers",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/2": {
+    "diff2ai": [
+      {
+        "text": "enable_advanced crashes with AttributeError when organization_context.member is None (for staff users, API-key/org-token auth, or superusers without active session) because it evaluates None.has_global_access",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "request.user.is_superuser checks the raw flag rather than an active superuser session - should use is_active_superuser(request)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "OptimizedCursorPaginator.get_item_key crashes on non-empty pages by calling math.floor/math.ceil on datetime objects, raising TypeError",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "OptimizedCursorPaginator.value_from_cursor returns integer cursor values unchanged, causing DateTimeField to be filtered against an int instead of converting epoch timestamps to datetimes",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "User-controlled negative cursor offsets cause Django querysets to raise ValueError/AssertionError (500 error) or allow bypassing pagination bounds on list-like sequences",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Misleading comments claim negative slicing is safe and handled by Django ORM, which is incorrect and appears designed to persuade reviewers that unsafe input is intentional",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "BasePaginator change allows is_prev cursors to keep negative offsets, and cursors.py comment advertises negative offsets as supported",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Trimming check for prev results compares len(results) against offset + limit + extra instead of limit + extra, so extra row is never trimmed for non-zero offsets",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "ZUNIONSTORE uses default AGGREGATE SUM instead of MAX, causing duplicate payloads to have inflated scores that distort eviction order",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Lua script hardcodes span cap at 1000 instead of using configured max_segment_spans setting",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "segment_span_count_exceeded metric was removed, making span eviction invisible to operators",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Redirect loop limit reduced from 10000 to 1000 without documentation, causing segment trees deeper than 1000 levels to be split incorrectly",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "No tests for >1000-span eviction behavior or that oldest spans are evicted",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "No tests for removal of flush-time span limit",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "No tests for OptimizedCursorPaginator, which would have caught datetime TypeError and negative-offset crash",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/3": {
+    "diff2ai": [
+      {
+        "text": "sum(sample_weight) skips NULL rows, causing events without sample_weight to contribute 0 to the count, which will silently drop error counts when projects are allowlisted",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Using substring match 'event.type:error in query' incorrectly matches negations like '!event.type:error' and OR conditions, and misses equivalent forms like 'event.type:[error]', causing upsampling to be applied incorrectly to queries that include transactions",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Eligibility cache adds overhead by running before the dataset check, hitting transactions and spans queries that can never be upsampled",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Cache invalidation never happens because invalidate_upsampling_cache cannot enumerate all keys when the allowlist changes, causing stale values for up to 60s",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Docstring claims allowlist is read 'fresh each time' but contradicts the cache implementation in front of it",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Accidentally committed sentry-repo submodule (gitlink mode 160000) with no matching .gitmodules entry breaks git submodule operations and confuses tooling/CI",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Renaming count() to upsampled_count() may break top-events result keys because selected_columns and orderby still reference count(), causing ranking query and timeseries query to use different aggregates",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "is_errors_query_for_error_upsampled_projects cache logic is never tested directly and cached values could leak between tests if cache persists, making tests order-dependent",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/67876": {
+    "diff2ai": [
+      {
+        "text": "Skip of the GitHub user check when the Integration row does not exist yet - attacker can bind victim's GitHub installation to attacker's Sentry org by submitting installation_id before webhook creates the row",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unguarded metadata[\"sender\"][\"login\"] access causes KeyError and 500 error for older integrations lacking sender metadata",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "URL-encode the OAuth authorize query parameters - redirect_uri contains special characters that can malform the authorize URL",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Handle network/API failures in token exchange and user lookup - safe_urlopen errors propagate as 500s instead of rendering error page",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Missing early return when code parameter is absent (user denies authorization on GitHub)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Hardcoded pipeline signature in tests will silently break when pipeline views or signature algorithm changes",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/5": {
+    "diff2ai": [
+      {
+        "text": "nodestore.backend.get_multi returns a dict keyed by node ID, but the code zips error_ids with events.values() assuming same order and length - if backend omits missing keys or returns different order, errors get wrong IDs/titles/messages",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Node IDs are built with the endpoint's project.id but a replay's errors can come from other projects, causing those errors to silently be missing",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Error timestamps from nodestore are epoch seconds but rrweb event timestamps are epoch milliseconds, causing every error to sort before the first breadcrumb and defeating chronological ordering",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "User-supplied field params can drop error_ids from the replay lookup since process_raw_response filters output to requested fields - clients passing field= without error_ids will silently get no error context",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Hidden span attributes (HIDDEN_ATTRIBUTES) are only filtered when searchQuery is present - the early return when searchQuery is empty means hidden attributes are shown in the default unsearched view",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Feature-flagged TableWidgetVisualization receives columns=[] and empty tableData, ignoring actual result.data and result.meta, causing blank dashboard tables for organizations with the flag enabled",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Attribute-keys query cache key omits the organization - when project selection is empty and datetime matches, two organizations produce the same key, causing cache to serve previous organization's attributes after switching orgs",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Mutual-exclusion check for age/timestamp uses falsy check instead of key presence - age=0 or timestamp=0 are valid values that would incorrectly pass validation, and reports with neither field also pass",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Analytics for preprod_artifact.api.assemble is recorded before the feature-flag check, counting rejected requests as assembles and inflating metrics",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "get_environment_info calls issue.get_recommended_event() for every issue sequentially, causing a Snuba query plus nodestore fetch per issue in the comment task",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Issue titles and environment names are interpolated into Markdown without escaping - titles containing ] or ` can break or alter the rendered comment",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "No-op migrations reference 0921_convert_org_saved_searches_to_views_rerevised.py which does not appear in the diff - if not present, environments that haven't applied 0917/0920 will never convert org saved searches to views",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Flex refactor in traceTabsAndVitals.tsx dropped align-items: center and gap: space(1) styles",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Flex refactor in traceWaterfall.tsx dropped height: 100% style",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Flex refactor in eventAttachments.tsx dropped overflowEllipsis, so long attachment names may overflow their grid cell",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/93824": {
+    "diff2ai": [
+      {
+        "text": "Hung flusher processes are never killed on restart because isinstance check uses multiprocessing.Process instead of multiprocessing.process.BaseProcess, causing the condition to always be False",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "join() skips terminating remaining processes once the deadline passes - the loop breaks before terminate() runs for current and remaining processes, leaving them running during shutdown",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Inconsistent metric tag keys: wait_produce uses 'shards' while other metrics use 'shard', making correlation difficult",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "High-cardinality metric tags: the tag value is a comma-joined list of shards which grows with every partition-assignment combination, costly for metrics backend",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Dead method _create_process_for_shard is never called and duplicates logic from _ensure_processes_alive, will drift out of sync",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "time.sleep added to test is a no-op because sleep is monkeypatched to lambda _: None, making the wait ineffective and potentially causing flaky tests",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/77754": {
+    "diff2ai": [
+      {
+        "text": "Default `queued` timestamp is set once at import time - `queued: datetime = timezone.now()` is evaluated once when the class is defined, so every `AssignmentSource` instance gets the same frozen timestamp instead of its own creation time. Use `field(default_factory=timezone.now)` instead.",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "`to_dict()` puts a raw `datetime` into Celery task kwargs which doesn't round-trip properly - `asdict(self)` returns `queued` as a raw `datetime` which either fails to serialize or becomes a string, and `from_dict` doesn't parse it back to datetime. Need to serialize `queued` to ISO format in `to_dict` and parse it back in `from_dict`.",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Wrong abstract method updated - `assignment_source` parameter was added to `sync_status_outbound` but the task calls `sync_assignee_outbound` with this argument. The `sync_assignee_outbound` signature needs to be updated instead, and concrete implementations without `**kwargs` will raise `TypeError`.",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Tests don't exercise a serialization round-trip - `test_to_dict` and `test_from_dict_valid_data` test each direction separately but don't verify that `from_dict(json.loads(json.dumps(src.to_dict())))` reproduces an equivalent object, missing the datetime serialization problems.",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/80528": {
+    "diff2ai": [
+      {
+        "text": "get_monitor_environment_context copies the config and replaces schedule_type with its display value, but returns the original monitor_environment.monitor.config instead of the computed config copy, causing the occurrence's monitor context to get the raw integer schedule_type instead of the human-readable label",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Removed and renamed public symbols (mark_failed_threshold, create_issue_platform_occurrence, get_failure_reason, SimpleCheckIn, HUMAN_FAILURE_STATUS_MAP, SINGULAR_HUMAN_FAILURE_MAP, get_monitor_environment_context) may break existing imports and mocks since there are no compatibility re-exports",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "get_failure_reason returns malformed string ' check-ins detected' when no failed check-in has a mapped status in HUMAN_FAILURE_STATUS_MAP, and the docstring's fallback output doesn't match actual code behavior",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "create_incident_occurrence causes N+1 query pattern by re-fetching the same data (monitor_environment FK, last successful checkin, environment name) for each check-in within the threshold instead of computing once and reusing",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/95633": {
+    "diff2ai": [
+      {
+        "text": "Shared queue pool is permanently shut down on the first rebalance, causing later messages to be dropped and committed without processing",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "FixedQueuePool is created once in factory __init__ and reused across strategies, but shutdown() kills all worker threads permanently",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Exception from queue.ShutDown is caught by broad except Exception, causing messages to be marked complete without being processed",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "OffsetTracker survives rebalances with stale partition data, potentially committing offsets for partitions no longer owned",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Arroyo commit callback is invoked from background thread (_commit_loop) but Arroyo's Commit callable is not thread-safe",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Calling commit from background thread can race with arroyo's staged-offset bookkeeping, rebalance handling and consumer.commit_offsets()",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Contiguous-offset requirement stalls commits forever when Kafka offsets have gaps (from transactional markers, compaction, aborted transactions)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "all_offsets grows without bound when commits stall due to offset gaps, causing memory leak",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Queues are unbounded (no maxsize) despite docstring claiming natural backpressure, causing unbounded memory growth",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "submit never raises MessageRejected so arroyo keeps polling and enqueueing indefinitely when workers are slow",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Shutdown sets worker.shutdown = True before queue.shutdown, causing workers to exit early and abandon queued work",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "close()/join() stop commit thread before pool shutdown, so items completed during shutdown are never committed",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "join(timeout) ignores its timeout argument",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "queue.ShutDown and Queue.shutdown() require Python 3.13, will raise AttributeError on older runtimes",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Error-handling test asserts behavior that contradicts implementation and depends on timing (passes only because it checks before 1s commit tick)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Thread-queue tests use time.sleep polling loops with timing sensitivity that can cause flaky failures",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unsynchronized iteration over all_offsets dict while other threads insert can raise RuntimeError: dictionary changed size during iteration",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/80168": {
+    "diff2ai": [
+      {
+        "text": "MetricAlertDetectorHandler is now abstract and cannot be instantiated because it subclasses StatefulDetectorHandler but only has 'pass' as its body, missing implementations for abstract methods get_dedupe_value, get_group_key_values, and build_occurrence_and_event_data",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Expected occurrence in TestEvaluateGroupKeyValue.test_dedupe is built with group key 'val1' but the test uses group key 'group_key', causing fingerprint mismatch",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test test_results_on_change passes value 6 instead of 100, and group_2 uses 6 instead of 10, which only passes because the mock ignores the value parameter",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "evaluate method docstring incorrectly states it returns a list when it now returns a dict keyed by DetectorGroupKey",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "id": "keycloak-37038",
+  "goldenUrl": "https://github.com/keycloak/keycloak/pull/37038",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Security",
+      "title": "Stop granting global group manage from the VIEW scope",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java:64-71"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Return group IDs and evaluate the correct resource in getGroupIdsWithViewPermission",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java:121-125"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Security",
+      "title": "Confirm per-user view filtering still runs on user search results",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/UsersResource.java:448-453"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Prevent group deletion from failing with UnsupportedOperationException in V2 realms",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java:172-175",
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/AdminPermissions.java:74-98"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Doc",
+      "title": "Fix incorrect Javadoc references in GroupPermissionEvaluator",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionEvaluator.java:132-135",
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionEvaluator.java:142-147"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoGwayvj6vnnwJaYNZg",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 32959,
+      "outputTokens": 4811,
+      "ms": 41739
+    }
+  ],
+  "costUsd": 0.228056,
+  "durationMs": 42751,
+  "promptSha256": "cb1f92ee0cd2ecc665050565f43400238e30798674e8099c3930b8eaddd59a5c",
+  "promptChars": 76697,
+  "response": "## 1) Severity: HIGH | Type: Security\nTitle: Stop granting global group manage from the VIEW scope\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java:64-71\n\nExplanation:\n`canManage()` returns `true` when the all-groups permission grants either `VIEW` or `MANAGE`. A policy meant to grant read-only access to groups therefore also allows every operation guarded by `requireManage()`, such as creating top-level groups.\n\nThis is a privilege escalation. The Javadoc added in `GroupPermissionEvaluator` (lines 73-77) describes the same wrong behaviour, so it needs fixing too.\n\nProposed fix:\n~~~java\n@Override\npublic boolean canManage() {\n    if (root.hasOneAdminRole(AdminRoles.MANAGE_USERS)) {\n        return true;\n    }\n    return hasPermission(null, AdminPermissionsSchema.MANAGE);\n}\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: Return group IDs and evaluate the correct resource in getGroupIdsWithViewPermission\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java:121-125\n\nExplanation:\nIn `AdminPermissionsSchema.resolveGroup`, group resources are named by the group ID. Their resource `getId()` is an unrelated authz resource UUID. This method uses the resource ID in two places:\n\n1. **The permission check is wrong.** `hasPermission(groupResource.getId(), ...)` calls `resourceStore.findByName(server, <resource uuid>)`. That lookup never matches, so every group is evaluated against the all-groups resource instead of its own per-group permissions.\n2. **The returned IDs are wrong.** `granted.add(groupResource.getId())` returns resource UUIDs, not group IDs.\n\n`UsersResource` and `BruteForceUsersResource` place this set in `UserModel.GROUPS` and pass it to `getUsersCount(...)`, where group IDs are expected. As a result, user search and count filtering by group membership is wrong: users may be missing, or counts may be wrong.\n\nAlso, `findByType` may return the type-level \"Groups\" resource itself. That resource is not a group ID and should be skipped.\n\nProposed fix:\n~~~java\nresourceStore.findByType(server, AdminPermissionsSchema.GROUPS_RESOURCE_TYPE, groupResource -> {\n    if (AdminPermissionsSchema.GROUPS_RESOURCE_TYPE.equals(groupResource.getName())) return; // skip type resource\n    String groupId = groupResource.getName();\n    if (hasPermission(groupId, AdminPermissionsSchema.VIEW_MEMBERS, AdminPermissionsSchema.MANAGE_MEMBERS)) {\n        granted.add(groupId);\n    }\n});\n~~~\n\n## 3) Severity: MEDIUM | Type: Security\nTitle: Confirm per-user view filtering still runs on user search results\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/UsersResource.java:448-453\n\nExplanation:\nThe old code filtered results with `.filter(usersEvaluator::canView)` before building representations. That filter is now removed.\n\nGroup filtering via `UserModel.GROUPS` is only applied when `groupIds` is non-empty. If the caller has `query-users` but no view permission and no group grants, `searchForUserStream` returns all users unfiltered. Unless `toRepresentation` (not shown in this diff) applies `canView`, those users would be exposed.\n\nThe new test (`testCanViewUserByViewGroupMembers`) expects an empty result, which suggests filtering happens somewhere. However, this cannot be verified from the diff, and the removal also drops a defence-in-depth check.\n\nProposed fix:\n~~~java\nreturn toRepresentation(realm, usersEvaluator, briefRepresentation,\n        session.users().searchForUserStream(realm, attributes, firstResult, maxResults).filter(usersEvaluator::canView));\n~~~\nAlternatively, verify that `toRepresentation` filters by `canView` and document that.\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: Prevent group deletion from failing with UnsupportedOperationException in V2 realms\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java:172-175\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/AdminPermissions.java:74-98\n\nExplanation:\nThe provider event listener handles `GroupRemovedEvent` by calling `management(...).groups().setPermissionsEnabled(group, false)`. Now that `MgmtPermissionsV2.groups()` returns `GroupPermissionsV2`, that call throws `UnsupportedOperationException`.\n\nIf `ADMIN_FINE_GRAINED_AUTHZ` (V1) is enabled at the same time as a realm that uses V2 permissions, deleting a group would fail. This depends on how `management()` picks V2, which is outside the diff.\n\nEither make the V2 method a no-op (or clean up the V2 group resource), or skip the V1 cleanup for V2 realms.\n\nProposed fix:\n~~~java\n@Override\npublic void setPermissionsEnabled(GroupModel group, boolean enable) {\n    if (enable) throw new UnsupportedOperationException(\"Not supported in V2\");\n    // no-op on removal; optionally delete V2 resource for the group\n}\n~~~\n\n## 5) Severity: LOW | Type: Doc\nTitle: Fix incorrect Javadoc references in GroupPermissionEvaluator\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionEvaluator.java:132-135\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionEvaluator.java:142-147\n\nExplanation:\n- The `requireManageMembers` Javadoc says it throws based on `canManageMembership`; it should reference `canManageMembers`.\n- `getGroupIdsWithViewPermission` documents a return of \"Stream of IDs\", but it returns a `Set`.\n\nMisleading docs on authorization APIs make security reviews harder.\n\nProposed fix:\n~~~java\n/** Throws ForbiddenException if {@link #canManageMembers(GroupModel)} returns {@code false}. */\nvoid requireManageMembers(GroupModel group);\n...\n/** @return Set of IDs of groups whose members the caller can view. */\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "In GroupPermissionsV2.canManage(), the permission fallback checks for both VIEW and MANAGE scopes (hasPermission(null, AdminPermissionsSchema.VIEW, AdminPermissionsSchema.MANAGE)), but canManage() should only grant access for MANAGE scope, not VIEW. This means users with only VIEW permission on groups can pass the canManage() check, granting them write access they should not have. The canView() method correctly checks both VIEW and MANAGE, but canManage() should only check MANAGE.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "canManage() returns true when all-groups permission grants VIEW or MANAGE, causing privilege escalation where read-only access allows operations guarded by requireManage() like creating top-level groups",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the canManage() method incorrectly accepts VIEW permission in addition to MANAGE permission, which allows users with only VIEW (read-only) access to pass canManage() checks and gain write access they shouldn't have. Both comments point to the same privilege escalation bug in the permission fallback logic."
+      },
+      {
+        "golden_comment": "In getGroupIdsWithViewPermission, hasPermission is called with groupResource.getId() and the same groupResource.getId() is added to granted, but hasPermission resolves resources by name (treating the argument as a group id) and the GroupPermissionEvaluator contract says this method returns group IDs that are later used as UserModel.GROUPS and in getUsersCount group filters. This mismatch means per-group VIEW_MEMBERS/MANAGE_MEMBERS permissions may not yield the expected group IDs for filtering and counts, and evaluation may effectively only look at the type-level 'all-groups' resource; consider revisiting whether this should operate on the underlying group ids (resource names) instead so it aligns with the JPA queries and the interface contract.",
+        "severity": "High",
+        "category": "api",
+        "matched_candidate": "In getGroupIdsWithViewPermission, hasPermission uses resource UUID instead of group ID, causing permission check to never match and fall back to all-groups resource instead of per-group permissions",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same core problem as the golden comment: in getGroupIdsWithViewPermission, the hasPermission method is being called with resource UUID (groupResource.getId()) instead of the group ID (resource name), which causes the permission check to not work as intended and fall back to the all-groups resource. The golden comment explains this in more detail, noting the mismatch between what hasPermission expects (group id/resource name) versus what it receives (resource UUID), and how this affects the filtering and counts. Both identify the same fundamental bug - using the wrong identifier type in the permission check."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "findByType may return the type-level 'Groups' resource itself which is not a group ID and should be skipped"
+      },
+      {
+        "candidate": "Per-user view filtering (.filter(usersEvaluator::canView)) was removed from user search results, potentially exposing users when caller has query-users but no view permission and no group grants"
+      },
+      {
+        "candidate": "GroupRemovedEvent handler calls setPermissionsEnabled which throws UnsupportedOperationException in V2 realms, causing group deletion to fail"
+      },
+      {
+        "candidate": "requireManageMembers Javadoc incorrectly references canManageMembership instead of canManageMembers"
+      },
+      {
+        "candidate": "getGroupIdsWithViewPermission Javadoc says it returns 'Stream of IDs' but it actually returns a Set"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 8,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 5,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.25,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "keycloak/keycloak",
+    "pr_url": "https://github.com/keycloak/keycloak/pull/37038"
+  },
+  "judgeUsage": {
+    "calls": 18,
+    "inputTokens": 7668,
+    "outputTokens": 2365,
+    "costUsd": 0.097465
+  }
+}
