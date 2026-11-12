@@ -35,7 +35,9 @@ if (prompt.trim().length === 0) fail('empty prompt on stdin');
 const started = Date.now();
 let message;
 try {
-  const client = new Anthropic();
+  // Rate-limit and overload responses are retried with backoff (not billed),
+  // so a long run is not derailed by a temporary limit.
+  const client = new Anthropic({ maxRetries: 6 });
   // Streaming keeps long generations clear of HTTP timeouts. No fallback model
   // is configured on purpose: a review must come from the pinned model or fail.
   const stream = client.messages.stream({
