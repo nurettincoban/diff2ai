@@ -1,0 +1,141 @@
+{
+  "runId": "m1-smoke",
+  "label": "self-run, not independently scored",
+  "mock": false,
+  "startedAt": "2026-11-12T21:57:59.353Z",
+  "finishedAt": "2026-11-12T21:59:45.555Z",
+  "wallMs": 106202,
+  "prs": [
+    "cal.com-14943",
+    "sentry-77754",
+    "discourse-graphite-4"
+  ],
+  "configFile": "eval/config/baseline.json",
+  "configHash": "e653698262ee2d4847334eed53dc7293ddd5a0688052875028446d409f7f8441",
+  "config": {
+    "name": "baseline",
+    "budgetUsd": 200,
+    "benchmark": {
+      "repo": "https://github.com/withmartian/code-review-benchmark.git",
+      "commit": "e616e849755441da38f18bf3adba2c9583b03803"
+    },
+    "tool": "diff2ai",
+    "reviewer": {
+      "runner": "eval-api",
+      "model": "claude-opus-5-5",
+      "effort": "medium",
+      "maxTokens": 64000,
+      "reviewArgs": []
+    },
+    "judge": {
+      "model": "claude-opus-4-5-20251101",
+      "baseUrl": "https://api.anthropic.com/v1/",
+      "apiKeyEnv": "ANTHROPIC_API_KEY"
+    },
+    "split": {
+      "seed": 20261112,
+      "devPerSource": 2
+    },
+    "pricingUsdPerMTok": {
+      "claude-opus-5-5": {
+        "input": 4,
+        "output": 20
+      },
+      "claude-sonnet-5-5": {
+        "input": 2,
+        "output": 10
+      },
+      "claude-haiku-5-5": {
+        "input": 0.1,
+        "output": 0.5
+      },
+      "claude-fable-5-2": {
+        "input": 8,
+        "output": 40
+      },
+      "claude-opus-4-5-20251101": {
+        "input": 5,
+        "output": 25
+      }
+    },
+    "estimate": {
+      "reviewerOutputTokens": {
+        "low": 3000,
+        "high": 8000
+      },
+      "candidatesPerPr": {
+        "low": 5,
+        "high": 10
+      },
+      "judgeCallTokens": {
+        "input": 350,
+        "output": 100
+      },
+      "extractDedupTokens": {
+        "input": 4000,
+        "output": 1000
+      }
+    }
+  },
+  "diff2ai": {
+    "commit": "2b3f66786f42e23dd9bff08e324bfdedd4a89635",
+    "uncommittedChanges": []
+  },
+  "benchmarkCommit": "e616e849755441da38f18bf3adba2c9583b03803",
+  "approvedUsd": 1.29,
+  "estimate": {
+    "prs": 3,
+    "reviewerInputTokens": {
+      "low": 15644.25,
+      "high": 20859
+    },
+    "reviewerUsd": {
+      "low": 0.242577,
+      "high": 0.563436
+    },
+    "judgeUsd": {
+      "low": 0.4325,
+      "high": 0.73
+    },
+    "totalUsd": {
+      "low": 0.6750769999999999,
+      "high": 1.293436
+    }
+  },
+  "stoppedByCostCap": false,
+  "judge": {
+    "ok": true,
+    "steps": [
+      {
+        "name": "extract",
+        "code": 0,
+        "ms": 10309,
+        "tail": "Reviews needing LLM extraction: 3 | Processing 3 extractions in batches of 50... | Done! | Successful: 3 | Errors: 0 | Data saved to results\\claude-opus-4-5-20251101\\candidates.json"
+      },
+      {
+        "name": "dedup",
+        "code": 0,
+        "ms": 2823,
+        "tail": "Reviews to deduplicate: 3 | Done! | Succeeded : 3 | Fallbacks : 0  (all-singletons, no dedup applied) | Errors    : 0 | Saved to  : results\\claude-opus-4-5-20251101\\dedup_groups.json"
+      },
+      {
+        "name": "judge",
+        "code": 0,
+        "ms": 34651,
+        "tail": "Results saved to: results\\claude-opus-4-5-20251101\\evaluations.json | Aggregate metrics by tool: | Tool          Precision     Recall         F1  Reviews   Errors | ------------------------------------------------------------ | diff2ai           34.6%      64.3%      45.0%        3        0 | Judging:   0%|          | 0/3 [00:00<?, ?review/s]\rJudging:   0%|          | 0/3 [00:00<?, ?review/s, eval=0, skip=0, timeout=0, tool=diff2ai]\rJudging:  33%|███▎      | 1/3 [00:03<00:07,  3.91s/review, eval=0, skip=0, timeout=0, tool=diff2ai]\rJudging:  33%|███▎      | 1/3 [00:03<00:07,  3.91s/review, eval=1, skip=0, timeout=0, tool=diff2ai]\rJudging:  67%|██████▋   | 2/3 [00:10<00:05,  5.37s/review, eval=1, skip=0, timeout=0, tool=diff2ai]\rJudging:  67%|██████▋   | 2/3 [00:10<00:05,  5.37s/review, eval=2, skip=0, timeout=0, tool=diff2ai]\rJudging: 100%|██████████| 3/3 [00:33<00:00, 13.53s/review, eval=2, skip=0, timeout=0, tool=diff2ai]\rJudging: 100%|██████████| 3/3 [00:33<00:00, 11.18s/review, eval=2, skip=0, timeout=0, tool=diff2ai]"
+      },
+      {
+        "name": "score_profiles",
+        "code": 0,
+        "ms": 140,
+        "tail": ""
+      }
+    ],
+    "calls": 146,
+    "unattributedCalls": 0
+  },
+  "environment": {
+    "node": "v24.22.1",
+    "platform": "win32"
+  }
+}

@@ -1,0 +1,218 @@
+{
+  "https://github.com/calcom/cal.com/pull/14943": {
+    "diff2ai": {
+      "skipped": false,
+      "true_positives": [
+        {
+          "golden_comment": "Using retryCount: reminder.retryCount + 1 reads a possibly stale value and can lose increments under concurrency; consider an atomic increment via Prisma (increment: 1) to avoid race conditions (also applies to the similar update in the catch block).",
+          "severity": "High",
+          "category": "concurrency",
+          "matched_candidate": "Non-atomic increment for retryCount (retryCount: reminder.retryCount + 1) uses a stale read value, causing lost increments if two cron invocations overlap",
+          "confidence": 0.98,
+          "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the non-atomic increment of retryCount using `reminder.retryCount + 1` which reads a potentially stale value and can cause lost increments under concurrent execution. Both comments point to the same race condition bug with the same root cause (stale read) and same consequence (lost increments)."
+        },
+        {
+          "golden_comment": "The deletion logic in scheduleSMSReminders.ts incorrectly deletes non-SMS workflow reminders (e.g., Email, WhatsApp) that have retryCount > 1. This occurs because the retryCount condition within the OR clause for deletion lacks a method: WorkflowMethods.SMS filter, causing it to apply to all reminder types instead of only SMS reminders, which is the intended scope of this function.",
+          "severity": "High",
+          "category": "bug",
+          "matched_candidate": "The retry-exhausted delete branch (retryCount > 1) has no method filter, causing the SMS cron job to delete any WorkflowReminder with retryCount exceeding 1, including EMAIL and WHATSAPP reminders",
+          "confidence": 0.99,
+          "reasoning": "The candidate issue identifies exactly the same problem as the golden comment: the retry-exhausted delete branch (retryCount > 1) lacks a method filter for SMS, causing the SMS cron job to incorrectly delete non-SMS workflow reminders (EMAIL, WHATSAPP) that have retryCount > 1. Both comments point to the same bug in the deletion logic within scheduleSMSReminders.ts."
+        }
+      ],
+      "false_positives": [
+        {
+          "candidate": "Failure inside the catch block aborts the whole batch - if prisma.workflowReminder.update fails (DB hiccup or concurrent row deletion), the exception escapes the loop, skipping remaining reminders and returning 500 instead of ok: true"
+        },
+        {
+          "candidate": "Magic number gt: 1 for retry limit is undocumented and easy to misread - should extract a named constant like MAX_SMS_RETRIES"
+        },
+        {
+          "candidate": "Failed reminders are hard-deleted with no logging, leaving no trace of why attendees or hosts never received SMS notifications"
+        },
+        {
+          "candidate": "Unindexed OR predicate with retryCount column and no method filter will force sequential scan of entire WorkflowReminder table on every cron run"
+        }
+      ],
+      "false_negatives": [],
+      "errors": [],
+      "total_candidates": 6,
+      "total_golden": 2,
+      "tp": 2,
+      "fp": 4,
+      "fn": 0,
+      "errors_count": 0,
+      "precision": 0.3333333333333333,
+      "recall": 1.0,
+      "tool": "diff2ai",
+      "repo_name": "calcom/cal.com",
+      "pr_url": "https://github.com/calcom/cal.com/pull/14943"
+    }
+  },
+  "https://github.com/getsentry/sentry/pull/77754": {
+    "diff2ai": {
+      "skipped": false,
+      "true_positives": [
+        {
+          "golden_comment": "The AssignmentSource dataclass uses queued: datetime = timezone.now() as a default field value, which evaluates timezone.now() once at class definition time and shares that single datetime instance across all objects.",
+          "severity": "Medium",
+          "category": "concurrency",
+          "matched_candidate": "The `queued` default value `queued: datetime = timezone.now()` is evaluated once at import time, causing all AssignmentSource instances to share the same stale timestamp in long-running processes",
+          "confidence": 1.0,
+          "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the `queued: datetime = timezone.now()` default value is evaluated once at class definition/import time rather than per-instance, causing all AssignmentSource instances to share the same datetime value. Both comments point to the same bug with the mutable default argument pattern in the dataclass."
+        },
+        {
+          "golden_comment": "to_dict() returns a datetime for queued; if this dict is passed in task kwargs (e.g., via apply_async), JSON serialization may fail depending on the serializer, which can cause enqueue errors.",
+          "severity": "Medium",
+          "category": "bug",
+          "matched_candidate": "`to_dict()` returns a raw datetime for `queued` which fails JSON serialization or becomes a string that violates the type when reconstructed via `from_dict`",
+          "confidence": 0.95,
+          "reasoning": "The candidate issue identifies the same core problem as the golden comment: the `to_dict()` method returns a raw datetime object for the `queued` field, which causes JSON serialization issues. The golden comment specifically mentions this can cause enqueue errors when passed to task kwargs via apply_async, while the candidate mentions it fails JSON serialization or causes type violations when reconstructed. Both are pointing to the same underlying bug - the datetime object not being properly serialized in `to_dict()`."
+        }
+      ],
+      "false_positives": [
+        {
+          "candidate": "The `sync_assignee_outbound` implementations across providers may not accept the new `assignment_source` kwarg, causing TypeError for any provider without `**kwargs` or explicit parameter"
+        },
+        {
+          "candidate": "The `assignment_source` parameter was incorrectly added to `sync_status_outbound` instead of `sync_assignee_outbound` - no caller passes it to status sync and status sync doesn't use AssignmentSource"
+        },
+        {
+          "candidate": "Missing test for deassign cycle-breaking when source integration matches target"
+        },
+        {
+          "candidate": "Missing test for propagation to other integrations when source is from a different integration"
+        }
+      ],
+      "false_negatives": [
+        {
+          "golden_comment": "The method name has a typo: test_from_dict_inalid_data should be test_from_dict_invalid_data.",
+          "severity": "Low",
+          "category": "style"
+        },
+        {
+          "golden_comment": "Method name says 'empty_array' but tests empty dict - consider renaming to 'test_from_dict_empty_dict' for clarity.",
+          "severity": "Low",
+          "category": "style"
+        }
+      ],
+      "errors": [],
+      "total_candidates": 6,
+      "total_golden": 4,
+      "tp": 2,
+      "fp": 4,
+      "fn": 2,
+      "errors_count": 0,
+      "precision": 0.3333333333333333,
+      "recall": 0.5,
+      "tool": "diff2ai",
+      "repo_name": "getsentry/sentry",
+      "pr_url": "https://github.com/getsentry/sentry/pull/77754"
+    }
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4": {
+    "diff2ai": {
+      "skipped": false,
+      "true_positives": [
+        {
+          "golden_comment": "The current origin validation using indexOf is insufficient and can be bypassed. An attacker could use a malicious domain like evil-discourseUrl.com to pass this check.",
+          "severity": "Medium",
+          "category": "security",
+          "matched_candidate": "postMessage handler uses indexOf substring check for origin comparison, allowing origins like forum.example.co to pass when expecting forum.example.com",
+          "confidence": 0.95,
+          "reasoning": "Both comments identify the same security vulnerability: the postMessage handler's origin validation using indexOf is insufficient because it allows substring matches. The golden comment gives the example of 'evil-discourseUrl.com' bypassing the check, while the candidate gives the example of 'forum.example.co' passing when expecting 'forum.example.com'. Both are pointing to the exact same underlying issue - that indexOf-based origin checking can be bypassed with malicious domains that contain the expected origin as a substring."
+        },
+        {
+          "golden_comment": "The TopicEmbed.import method is susceptible to a NoMethodError if the contents parameter is nil when attempting to append a string, and an XSS vulnerability due to unescaped url interpolation in the generated HTML.",
+          "severity": "Medium",
+          "category": "bug",
+          "matched_candidate": "URL is interpolated directly into href attribute without escaping, allowing attribute breakout with single quotes to inject event handlers",
+          "confidence": 0.85,
+          "reasoning": "The golden comment mentions two issues: (1) NoMethodError if contents is nil, and (2) XSS vulnerability due to unescaped url interpolation. The candidate issue specifically identifies the XSS vulnerability from unescaped URL interpolation in the href attribute, which matches the second part of the golden comment. While the candidate doesn't mention the NoMethodError issue, it does correctly identify the XSS vulnerability portion of the golden comment."
+        },
+        {
+          "golden_comment": "The ERB block closes with end if, which is invalid Ruby/ERB and will raise at render; it should just be end to close the if block.",
+          "severity": "Medium",
+          "category": "bug",
+          "matched_candidate": "ERB template uses 'end if' which compiles incorrectly, causing rendering to work only by accident with altered output ordering",
+          "confidence": 0.95,
+          "reasoning": "The candidate issue identifies the same problem as the golden comment - the use of 'end if' in ERB templates. The golden comment states that 'end if' is invalid Ruby/ERB and will raise at render, while the candidate says 'end if' compiles incorrectly. Both are pointing to the same underlying bug: the incorrect use of 'end if' instead of just 'end' to close an if block in ERB."
+        },
+        {
+          "golden_comment": "Calling `i.content.scrub` assumes that `i.content` is always populated. However, many RSS feeds do not provide a `content` field, leading to a potential nil pointer exception when `i.content` is nil. A fallback to `description` should be implemented to prevent crashes.",
+          "severity": "High",
+          "category": "bug",
+          "matched_candidate": "Feed items without content element cause NoMethodError when calling .scrub on nil, and one bad item aborts processing of entire feed due to retry: false",
+          "confidence": 0.95,
+          "reasoning": "The candidate issue identifies the same core problem as the golden comment: calling .scrub on i.content when content is nil will cause an error (NoMethodError). Both issues point out that feed items may not have a content element populated, leading to a nil-related exception. The candidate also adds additional context about the retry: false behavior, but the fundamental issue identified is the same - accessing .scrub on potentially nil content."
+        },
+        {
+          "golden_comment": "An unescaped request header (request.referer) is interpolated into JavaScript without proper escaping, which can lead to XSS vulnerabilities if the referer contains malicious content. This issue can allow attackers to execute arbitrary scripts in the context of the application.",
+          "severity": "Critical",
+          "category": "security",
+          "matched_candidate": "URL is interpolated directly into href attribute without escaping, allowing attribute breakout with single quotes to inject event handlers",
+          "confidence": 0.85,
+          "reasoning": "Both comments identify the same underlying security issue: unescaped user-controlled input (request.referer/URL) being interpolated into HTML/JavaScript without proper escaping, leading to XSS vulnerabilities. The golden comment focuses on JavaScript interpolation while the candidate mentions href attribute, but both are pointing to the same fundamental problem of unescaped request.referer being vulnerable to injection attacks. The candidate correctly identifies the security risk of attribute breakout and script injection."
+        }
+      ],
+      "false_positives": [
+        {
+          "candidate": "Posts with cook_method == raw_html skip sanitization, allowing stored XSS from untrusted RSS/Atom feeds and remote pages containing malicious HTML or javascript: URLs"
+        },
+        {
+          "candidate": "Kernel#open on URL strings allows shell command execution if string starts with pipe character, and import_remote receives untrusted URLs from Disqus exports"
+        },
+        {
+          "candidate": "Protocol-relative URLs starting with // are incorrectly matched by href.start_with?('/') check, causing them to be mangled into broken URLs"
+        },
+        {
+          "candidate": "Every request for unknown embed_url enqueues a job without checking throttle, allowing queue flooding by anonymous visitors with arbitrary embed_url values"
+        },
+        {
+          "candidate": "Redis throttle using setnx followed by separate expire is not atomic - if process dies between calls, key never expires and URL is permanently blocked"
+        },
+        {
+          "candidate": "Modifying already-shipped migration create_top_topics has no effect on existing installs, and force: true can silently destroy data"
+        },
+        {
+          "candidate": "Disqus importer regressed: --category option removed, created_at no longer preserved, and network errors during HTTP fetch abort entire import"
+        },
+        {
+          "candidate": "If embedded post has been deleted, embed.post is nil and PostRevisor.new(nil).revise! raises, breaking feed polling for all subsequent items"
+        },
+        {
+          "candidate": "Controller spec expects TopicRetriever.new but controller actually calls Jobs.enqueue, so spec only passes if jobs run inline in test environment"
+        }
+      ],
+      "false_negatives": [
+        {
+          "golden_comment": "The PollFeed job calls open(SiteSetting.feed_polling_url) without validating the URL, allowing an attacker who controls the feed_polling_url site setting to make the server fetch arbitrary internal or external URLs.",
+          "severity": "Critical",
+          "category": "security"
+        },
+        {
+          "golden_comment": "postMessage targetOrigin should be the origin (scheme+host+port), not the full referrer URL; using the full URL will cause the message to be dropped and prevent resizing.",
+          "severity": "Medium",
+          "category": "security"
+        },
+        {
+          "golden_comment": "The code sets X-Frame-Options: ALLOWALL which completely disables clickjacking protection. The referer validation can be bypassed (referer headers are easily spoofed), and the fallback to empty string for nil referer masks validation failures.",
+          "severity": "Medium",
+          "category": "security"
+        }
+      ],
+      "errors": [],
+      "total_candidates": 13,
+      "total_golden": 8,
+      "tp": 5,
+      "fp": 9,
+      "fn": 3,
+      "errors_count": 0,
+      "precision": 0.38461538461538464,
+      "recall": 0.625,
+      "tool": "diff2ai",
+      "repo_name": "ai-code-review-evaluation/discourse-graphite",
+      "pr_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4"
+    }
+  }
+}
