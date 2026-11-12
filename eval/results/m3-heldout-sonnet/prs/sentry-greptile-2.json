@@ -1,0 +1,166 @@
+{
+  "id": "sentry-greptile-2",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/2",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "type": "Security",
+      "title": "Negative offsets let admins read outside the normal pagination bounds",
+      "affected": [
+        "src/sentry/api/paginator.py:874-886",
+        "src/sentry/api/endpoints/organization_auditlogs.py:68-83",
+        "src/sentry/utils/cursors.py:26-28"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "BasePaginator now allows negative offsets for prev cursors",
+      "affected": [
+        "src/sentry/api/paginator.py:179-184"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Eviction in the Lua script is inaccurate and the redirect loop limit was reduced",
+      "affected": [
+        "src/sentry/scripts/spans/add-buffer.lua:30",
+        "src/sentry/scripts/spans/add-buffer.lua:43-64"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Segment span-count guard removed from flush and the size check is unreliable",
+      "affected": [
+        "src/sentry/spans/buffer.py:439-449"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Misleading comments and duplicated paginator logic",
+      "affected": [
+        "src/sentry/api/paginator.py:821-912",
+        "src/sentry/api/endpoints/organization_auditlogs.py:70-72"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqcQUFkQmCwuvV6eEiS",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 11728,
+      "outputTokens": 1616,
+      "ms": 12403
+    }
+  ],
+  "costUsd": 0.039616,
+  "durationMs": 13582,
+  "promptSha256": "21fcbfcf9a38c03255588165f2c5dfda48b8a349d95f3c4f2d042aebd54c94ad",
+  "promptChars": 29493,
+  "response": "## 1) Severity: CRITICAL | Type: Security\nTitle: Negative offsets let admins read outside the normal pagination bounds\n\nAffected:\n- src/sentry/api/paginator.py:874-886\n- src/sentry/api/endpoints/organization_auditlogs.py:68-83\n- src/sentry/utils/cursors.py:26-28\n\nExplanation:\nOptimizedCursorPaginator accepts a client-controlled negative `cursor.offset` and uses it directly in `queryset[start_offset:stop]`. Django querysets raise `AssertionError: Negative indexing is not supported` for negative slice indices. The code comment claiming the ORM \"properly handles negative slicing\" is wrong. As a result, any request with `optimized_pagination=true` and a negative cursor offset crashes with a 500. If the queryset were ever evaluated differently, it would expose data beyond the pagination bounds. The \"safe because permissions are checked at the queryset level\" comment does not hold either. The feature is gated only by a user-supplied query parameter plus a superuser or global-access check, and nothing validates the offset. The change was made to an audit-log endpoint, which is sensitive.\n\nProposed fix:\n~~~python\n# Remove the negative-offset branch; always clamp\nstart_offset = max(0, offset)\nstop = start_offset + limit + extra\nresults = list(queryset[start_offset:stop])\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: BasePaginator now allows negative offsets for prev cursors\n\nAffected:\n- src/sentry/api/paginator.py:179-184\n\nExplanation:\nThe shared BasePaginator now uses the raw `offset` when `cursor.is_prev` is true. A crafted cursor such as `0:-5:1` produces a negative slice start, which makes Django raise an AssertionError and return a 500. This affects every endpoint that uses BasePaginator, not only the audit-log one. The old code did not clamp either, but the new comment explicitly endorses negative offsets. Prev cursors legitimately use a non-negative offset, so clamp unconditionally.\n\nProposed fix:\n~~~python\nstart_offset = max(0, offset)\nstop = start_offset + limit + extra\nresults = list(queryset[start_offset:stop])\n~~~\n\n## 3) Severity: HIGH | Type: Bug\nTitle: Eviction in the Lua script is inaccurate and the redirect loop limit was reduced\n\nAffected:\n- src/sentry/scripts/spans/add-buffer.lua:30\n- src/sentry/scripts/spans/add-buffer.lua:43-64\n\nExplanation:\n`span_count` is overwritten by the second `zunionstore`, so the first merge's count is lost. This is fine only because the union target is the same set. However, the `zadd` in buffer.py happens outside this script, so the count is recalculated correctly only through `zcard` when no merge happened. The redirect loop limit was cut from 10000 to 1000, silently changing the supported tree depth, so deep trees may not be joined correctly. The explanatory comment was also removed.\n\nProposed fix:\n~~~lua\nfor i = 0, 10000 do\n~~~\nand compute `span_count = redis.call(\"zcard\", set_key)` unconditionally before the eviction check.\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: Segment span-count guard removed from flush and the size check is unreliable\n\nAffected:\n- src/sentry/spans/buffer.py:439-449\n\nExplanation:\nThe `max_segment_spans` check was removed from flush. This is acceptable only if the Lua eviction is always applied. Segments written with `zadd` and no later merge are never trimmed, because eviction runs only in the add-buffer script. The `zadd` in `buffer.py` also bypasses the cap. Also, `end_timestamp_precise` is read with `val[...]`, which raises KeyError for spans lacking the field and would crash the batch.\n\nProposed fix:\n~~~python\nend_timestamp_precise=val.get(\"end_timestamp_precise\", 0.0)\n~~~\n\n## 5) Severity: LOW | Type: Maintainability\nTitle: Misleading comments and duplicated paginator logic\n\nAffected:\n- src/sentry/api/paginator.py:821-912\n- src/sentry/api/endpoints/organization_auditlogs.py:70-72\n\nExplanation:\nOptimizedCursorPaginator copies the whole `get_result` from BasePaginator, and its comments claim a performance benefit that the code does not deliver. The endpoint also has trailing whitespace. The paginator's `ceil`/`floor` key logic is untested, and no tests were added for the new paginator.\n\nProposed fix:\nSubclass and override only the differing part, or remove the paginator entirely. Add tests.\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "OptimizedCursorPaginator's negative-offset branch in get_result() passes cursor.offset directly as start_offset to queryset slicing when enable_advanced_features is True and cursor.offset < 0.",
+        "severity": "Critical",
+        "category": "bug",
+        "matched_candidate": "OptimizedCursorPaginator accepts negative cursor.offset from client and uses it directly in queryset slicing, causing Django to raise AssertionError and return 500 errors",
+        "confidence": 0.95,
+        "reasoning": "Both comments identify the same issue: OptimizedCursorPaginator accepts negative cursor.offset values and uses them directly in queryset slicing when enable_advanced_features is True. The golden comment describes the technical flow (negative offset passed as start_offset to queryset slicing), while the candidate describes the consequence (Django raises AssertionError causing 500 errors). They are pointing to the exact same bug."
+      },
+      {
+        "golden_comment": "In BasePaginator.get_result(), when cursor.is_prev is True, it sets start_offset = offset without clamping, allowing negative offset values to be passed to queryset slicing.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "BasePaginator allows negative offsets for prev cursors, causing AssertionError and 500 errors with crafted cursors like 0:-5:1",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same underlying problem as the golden comment. Both describe that BasePaginator allows negative offsets when handling prev cursors (cursor.is_prev is True). The golden comment specifically mentions that start_offset = offset is set without clamping, allowing negative values. The candidate issue describes the same problem - negative offsets for prev cursors - and even provides a concrete example (0:-5:1) showing how this can be exploited. Both point to the same bug in the same location."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Code comment incorrectly claims ORM properly handles negative slicing when it does not"
+      },
+      {
+        "candidate": "Negative cursor offset could expose data beyond pagination bounds if queryset were evaluated differently"
+      },
+      {
+        "candidate": "Security check relying on permissions at queryset level is insufficient for audit-log endpoint"
+      },
+      {
+        "candidate": "span_count is overwritten by second zunionstore in Lua script, losing first merge's count"
+      },
+      {
+        "candidate": "Redirect loop limit was reduced from 10000 to 1000 without documentation, potentially breaking deep tree joins"
+      },
+      {
+        "candidate": "max_segment_spans check was removed from flush, allowing segments written with zadd to bypass trimming"
+      },
+      {
+        "candidate": "end_timestamp_precise is read with val[...] instead of val.get(), causing KeyError for spans lacking the field"
+      },
+      {
+        "candidate": "OptimizedCursorPaginator duplicates entire get_result from BasePaginator"
+      },
+      {
+        "candidate": "Comments claim performance benefit that code does not deliver"
+      },
+      {
+        "candidate": "Trailing whitespace in endpoint code"
+      },
+      {
+        "candidate": "Paginator ceil/floor key logic is untested"
+      },
+      {
+        "candidate": "No tests added for new OptimizedCursorPaginator"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "OptimizedCursorPaginator.get_item_key uses floor/ceil on a datetime key (order_by='-datetime'), causing TypeError.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "Accessing .has_global_access on organization_context.member can raise an AttributeError when organization_context is None, particularly for non-superuser non-member users.",
+        "severity": "High",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 14,
+    "total_golden": 4,
+    "tp": 2,
+    "fp": 12,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.14285714285714285,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/sentry-greptile",
+    "pr_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/2"
+  },
+  "judgeUsage": {
+    "calls": 62,
+    "inputTokens": 14295,
+    "outputTokens": 6524,
+    "costUsd": 0.23457499999999992
+  }
+}

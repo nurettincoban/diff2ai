@@ -1,0 +1,122 @@
+{
+  "id": "keycloak-32918",
+  "goldenUrl": "https://github.com/keycloak/keycloak/pull/32918",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Cached login IDP set is keyed on the realm and fetch mode, but the delegate result varies with organizationId",
+      "affected": [
+        "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java:213-255"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Login predicate change affects all callers and may disagree with the delegate's query",
+      "affected": [
+        "server-spi/src/main/java/org/keycloak/models/IdentityProviderStorageProvider.java:254"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Removing or updating an org-linked IDP can leave stale ORG_ONLY and ALL entries",
+      "affected": [
+        "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java:403-418"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Test cleanup registers removal of a non-existent alias",
+      "affected": [
+        "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java:381",
+        "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java:425"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqbaWiYuHvVpeZm3RtL",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 11393,
+      "outputTokens": 1559,
+      "ms": 10611
+    }
+  ],
+  "costUsd": 0.038376,
+  "durationMs": 11884,
+  "promptSha256": "2eee9525d70d58ecbfea7b849b11750ef2ebf7cea01b37a375b381212e8c43d8",
+  "promptChars": 27606,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Cached login IDP set is keyed on the realm and fetch mode, but the delegate result varies with organizationId\n\nAffected:\n- model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java:213-255\n\nExplanation:\nAfter a cache hit, the code resolves IDs through `session.identityProviders().getById(id)`. This returns the cached IDP models rather than the delegate's results. `getForLogin` in the delegate may wrap IDPs (the change to `OrganizationAwareIdentityProviderBean` says \"idp might have been wrapped\"). Wrapping is applied on the miss path through `createOrganizationAwareIdentityProviderModel`, but not on the cache-hit path. The cache-hit path returns the raw cached model, so results differ depending on whether the cache is warm.\n\nThe first-load branch (`query == null`) also ignores the wrapping and re-reads through `getById`. This is inconsistent. In addition, the invalidated path returns different objects from the cached path. Apply the same wrapping to every returned model.\n\nProposed fix:\n~~~java\nidentityProviders.add(createOrganizationAwareIdentityProviderModel(idp));\n// or return identityProviders.stream().map(this::createOrganizationAwareIdentityProviderModel)\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Login predicate change affects all callers and may disagree with the delegate's query\n\nAffected:\n- server-spi/src/main/java/org/keycloak/models/IdentityProviderStorageProvider.java:254\n\nExplanation:\n`getLoginPredicate()` now also requires that an IDP either has no organization or is marked broker-public. This predicate is shared by every caller. It is also used to decide whether to invalidate the caches. If the JPA `getForLogin` query implements its own filtering, then the cache invalidation decision and the actual query result can diverge. For example, an IDP linked to an org with `BROKER_PUBLIC` removed would be treated as non-login on update. Verify that the JPA query and the predicate are consistent for each `FetchMode`.\n\nProposed fix:\n~~~java\n// Ensure the JPA getForLogin applies the same org/public rules, or add tests covering\n// toggling BROKER_PUBLIC on org-linked IDPs and invalidation.\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Removing or updating an org-linked IDP can leave stale ORG_ONLY and ALL entries\n\nAffected:\n- model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java:403-418\n\nExplanation:\nOn update, `registerIDPLoginInvalidationOnUpdate` skips invalidation when the login status and the organization ID are unchanged. But if the IDP's login-relevant state is stored on `original`, `getLoginPredicate().test(original)` is evaluated on a model from `getById` that may be a cached model. Also, `remove` calls `idpDelegate.getByAlias` unconditionally, which adds a DB lookup on every removal even when the cached entry exists. Finally, `remove` can pass a null `storedIdp` to `registerIDPInvalidation` when the IDP does not exist. This was previously the case only in the `isInvalid` branch.\n\nProposed fix:\n~~~java\nIdentityProviderModel storedIdp = idpDelegate.getByAlias(alias);\nif (storedIdp == null) return idpDelegate.remove(alias);\n~~~\n\n## 4) Severity: LOW | Type: Test\nTitle: Test cleanup registers removal of a non-existent alias\n\nAffected:\n- testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java:381\n- testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java:425\n\nExplanation:\nThe cleanup uses `identityProviders().get(\"alias\")` (a literal) instead of the real alias. The created IDPs are never cleaned up, which can leak state into other tests, and the cleanup itself fails at teardown.\n\nProposed fix:\n~~~java\nString alias = \"idp-alias-\" + i;\ngetCleanup().addCleanup(testRealm().identityProviders().get(alias)::remove);\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "InfinispanIdentityProviderStorageProvider.getForLogin() recursively calls session.identityProviders().getById() instead of idpDelegate.getById(), causing the cache lookup to re-enter the same caching layer.",
+        "severity": "Critical",
+        "category": "bug",
+        "matched_candidate": "First-load branch (query == null) ignores wrapping and re-reads through getById, which is inconsistent with other paths",
+        "confidence": 0.8,
+        "reasoning": "The candidate issue identifies that the 'first-load branch (query == null)' has inconsistent behavior with 'other paths' regarding 'wrapping and re-reads through getById'. This is pointing to the same underlying problem as the golden comment - that getForLogin() calls session.identityProviders().getById() instead of idpDelegate.getById(), causing it to go through the caching layer again rather than directly to the delegate. The candidate describes this as 'ignores wrapping and re-reads through getById' which captures the essence of the recursive cache lookup issue, though with different terminology."
+      },
+      {
+        "golden_comment": "Cleanup reference uses incorrect alias - should be 'idp-alias-' + i instead of 'alias'.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Test cleanup uses literal string 'alias' instead of real alias variable, causing created IDPs to never be cleaned up and cleanup to fail at teardown",
+        "confidence": 0.95,
+        "reasoning": "Both comments identify the same issue: the cleanup code uses the literal string 'alias' instead of the actual alias variable that was used to create the IDPs (which should be 'idp-alias-' + i or similar). The golden comment says it should be 'idp-alias-' + i instead of 'alias', and the candidate says it uses literal string 'alias' instead of the real alias variable. Both are pointing to the same bug where cleanup won't work properly because it references the wrong alias."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Cached login IDP set is keyed on realm and fetch mode, but delegate result varies with organizationId - cache-hit path returns raw cached model without wrapping, while miss path applies wrapping through createOrganizationAwareIdentityProviderModel, causing inconsistent results"
+      },
+      {
+        "candidate": "Login predicate change in getLoginPredicate() affects all callers and may disagree with the delegate's JPA query filtering - if JPA getForLogin implements its own filtering, cache invalidation decision and actual query result can diverge"
+      },
+      {
+        "candidate": "On update, registerIDPLoginInvalidationOnUpdate evaluates getLoginPredicate().test(original) on a model from getById that may be a cached model, potentially causing stale ORG_ONLY and ALL entries"
+      },
+      {
+        "candidate": "remove() calls idpDelegate.getByAlias unconditionally, adding a DB lookup on every removal even when cached entry exists"
+      },
+      {
+        "candidate": "remove() can pass null storedIdp to registerIDPInvalidation when IDP does not exist"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 7,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 5,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.2857142857142857,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "keycloak/keycloak",
+    "pr_url": "https://github.com/keycloak/keycloak/pull/32918"
+  },
+  "judgeUsage": {
+    "calls": 16,
+    "inputTokens": 5128,
+    "outputTokens": 1963,
+    "costUsd": 0.074715
+  }
+}

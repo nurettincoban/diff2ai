@@ -1,0 +1,104 @@
+{
+  "id": "keycloak-36882",
+  "goldenUrl": "https://github.com/keycloak/keycloak/pull/36882",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Changing the recreate exit code from 4 to 3 may break existing consumers",
+      "affected": [
+        "quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/compatibility/CompatibilityResult.java:30-35"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Implementation",
+      "title": "Feature check runs without the feature being enabled at build/runtime for the commands",
+      "affected": [
+        "quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/cli/command/UpdateCompatibilityCheck.java:46-50",
+        "quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/cli/command/UpdateCompatibilityMetadata.java:46-50"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Doc",
+      "title": "Doc template hard-codes the feature flag in the command, including the metadata command",
+      "affected": [
+        "docs/guides/templates/kc.adoc:53"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 3,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqeMTVBUDDep1AuFaqn",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 6518,
+      "outputTokens": 1136,
+      "ms": 8647
+    }
+  ],
+  "costUsd": 0.024396,
+  "durationMs": 9782,
+  "promptSha256": "95efe858b12a45677e49db1ee18bc32e137dffb0bb3baf1f3ee3088b7afd2085",
+  "promptChars": 14094,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Changing the recreate exit code from 4 to 3 may break existing consumers\n\nAffected:\n- quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/compatibility/CompatibilityResult.java:30-35\n\nExplanation:\n`RECREATE_UPGRADE_EXIT_CODE` changed from 4 to 3, and 4 now means \"feature disabled\". Anything that hard-codes the old value (the operator's upgrade logic, scripts, tests, other docs) will misread results. In particular, a disabled feature (4) would be read as \"recreate\" by any consumer still checking for 4, which could lead to wrong update decisions. The visible docs table lists 3 as \"recreate\", so it is consistent there. The diff does not show whether the operator code or the other tests that interpret the exit code were updated. Search for literal uses of 3 and 4 and confirm that all consumers use the constants.\n\nProposed fix:\n~~~java\n// Verify all callers (operator, tests, docs) use CompatibilityResult constants;\n// grep for literal exit code 4 / 3 handling and update accordingly.\n~~~\n\n## 2) Severity: MEDIUM | Type: Implementation\nTitle: Feature check runs without the feature being enabled at build/runtime for the commands\n\nAffected:\n- quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/cli/command/UpdateCompatibilityCheck.java:46-50\n- quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/cli/command/UpdateCompatibilityMetadata.java:46-50\n\nExplanation:\nThe check is duplicated in both commands, and it is placed before validateConfig(). It is also unclear whether `Profile` is initialized with the `--features` option at this point. Since the docs now pass `--features=rolling-updates` to `update-compatibility`, that option must be honored by these commands. If the profile is only built from persisted build-time options, the runtime flag may be ignored. Also, `picocli.exit(...)` followed by `return` relies on the exit code being applied later. Move the check into the shared base class to avoid drift, and verify that the feature flag is actually parsed for these commands.\n\nProposed fix:\n~~~java\n// In AbstractUpdatesCommand:\nprotected boolean featureEnabled() {\n    if (!Profile.isFeatureEnabled(Profile.Feature.ROLLING_UPDATES)) {\n        printFeatureDisabled();\n        picocli.exit(CompatibilityResult.FEATURE_DISABLED);\n        return false;\n    }\n    return true;\n}\n~~~\n\n## 3) Severity: LOW | Type: Doc\nTitle: Doc template hard-codes the feature flag in the command, including the metadata command\n\nAffected:\n- docs/guides/templates/kc.adoc:53\n\nExplanation:\n`--features=rolling-updates` is appended after `${parameters}` for every use of the macro. Examples that already pass `--features` or other options may conflict or be misleading. It also reads as if the flag is a permanent part of the command, even though it is only needed while the feature is in preview.\n\nProposed fix:\n~~~\nDocument the flag in the CAUTION block and keep the macro generic, or ensure no caller passes its own --features.\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [],
+    "false_positives": [
+      {
+        "candidate": "Changing RECREATE_UPGRADE_EXIT_CODE from 4 to 3 may break existing consumers that hard-code the old value, causing disabled feature (4) to be misread as 'recreate' by consumers still checking for 4"
+      },
+      {
+        "candidate": "Feature check is duplicated in both commands and placed before validateConfig(), unclear if Profile is initialized with --features option at this point - runtime flag may be ignored if profile is only built from persisted build-time options"
+      },
+      {
+        "candidate": "picocli.exit() followed by return relies on exit code being applied later - should move check into shared base class to avoid drift"
+      },
+      {
+        "candidate": "Doc template hard-codes --features=rolling-updates after ${parameters} for every macro use, which may conflict with examples that already pass --features or other options, and reads as if the flag is permanent rather than preview-only"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Incorrect method call for exit codes. The picocli.exit() method calls System.exit() directly, which is problematic:",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "Need to add changelog/release notes documenting the exit code change and migration guidance",
+        "severity": "Low",
+        "category": "doc_defect"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 4,
+    "total_golden": 2,
+    "tp": 0,
+    "fp": 4,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0,
+    "recall": 0,
+    "tool": "diff2ai",
+    "repo_name": "keycloak/keycloak",
+    "pr_url": "https://github.com/keycloak/keycloak/pull/36882"
+  },
+  "judgeUsage": {
+    "calls": 10,
+    "inputTokens": 3261,
+    "outputTokens": 1027,
+    "costUsd": 0.04198
+  }
+}

@@ -1,0 +1,164 @@
+{
+  "id": "keycloak-36880",
+  "goldenUrl": "https://github.com/keycloak/keycloak/pull/36880",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Client \"all-clients\" check can NPE and grants permission on the wrong resource",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:207-235"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Per-client permission lookup does not honor the all-clients permission when a client resource exists",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:214-232"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Unsupported V2 methods throw UnsupportedOperationException on reachable code paths",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:147-205",
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/AdminPermissions.java:77-95"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Dead code and duplicated evaluation logic in ClientPermissionsV2",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:262-272",
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:207-260"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Style",
+      "title": "Stray whitespace change and indentation noise",
+      "affected": [
+        "server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java:53"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Tests use JUnit 4 `fail` and swallow the failure in a catch-all",
+      "affected": [
+        "tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java:25",
+        "tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java:134-139"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 6,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqdC8d3uwLgYyDkyGqg",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 36679,
+      "outputTokens": 2084,
+      "ms": 14597
+    }
+  ],
+  "costUsd": 0.094198,
+  "durationMs": 15755,
+  "promptSha256": "85fa170b6e3a2cdfe631a69feb39e40ef6d1996315dc56189ba83030acc2fa7d",
+  "promptChars": 89037,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Client \"all-clients\" check can NPE and grants permission on the wrong resource\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:207-235\n\nExplanation:\nWhen no per-client resource exists, the code loads the type resource via `getResourceTypeResource` and calls `findByResource(server, resource)` without a null check. If the resource is null, this throws an NPE. If it is non-null but has no policies, the method returns false. When policies do exist, evaluation proceeds on the type-level resource. That is correct only if the type resource's scopes are what the evaluation expects. The evaluation uses `resource.getScopes()`, which depends on how that resource was created. A client that has no resource of its own, but is covered by an all-clients permission, relies on this fallback. It is also done differently from `hasPermission(String)`, which looks up the type resource by name. The two code paths are inconsistent, so one of them is likely wrong.\n\nProposed fix:\n~~~java\nif (resource == null) {\n    resource = AdminPermissionsSchema.SCHEMA.getResourceTypeResource(session, server, CLIENTS_RESOURCE_TYPE);\n    if (resource == null || policyStore.findByResource(server, resource).isEmpty()) return false;\n}\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Per-client permission lookup does not honor the all-clients permission when a client resource exists\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:214-232\n\nExplanation:\nIf a client-specific resource exists (for example, a MANAGE permission was created for that client), only that resource is evaluated. An all-clients permission, such as VIEW on all clients, is then ignored for that client. Users with a broad grant lose access to clients that have any individual permission. The Javadoc says \"all clients\" permissions apply. The user tests avoid this by relying on the evaluator's own handling. Here the fix is to also evaluate the type-level resource and OR the results.\n\nProposed fix:\n~~~java\nreturn evaluate(clientResource, scope) || hasPermission(scope);\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Unsupported V2 methods throw UnsupportedOperationException on reachable code paths\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:147-205\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/AdminPermissions.java:77-95\n\nExplanation:\n`isPermissionsEnabled`, `setPermissionsEnabled`, `resource`, `getPermissions` and similar methods throw in V2. The `ClientRemovedEvent` listener calls `clients().setPermissionsEnabled(client, false)`. The V2 `clients()` is now used when the feature is enabled, so deleting any client would throw `UnsupportedOperationException`. This breaks client deletion, including in `testManageAllClients`. The listener is also gated only on the `ADMIN_FINE_GRAINED_AUTHZ` feature. The same risk applies to the REST endpoints for client permissions, such as `ClientResource.getManagementPermissions`. Make the removal handler V2-aware, and make `setPermissionsEnabled` a no-op or return a sensible value.\n\nProposed fix:\n~~~java\n// in V2: make setPermissionsEnabled a no-op, or skip it in the listener when V2 is active\n@Override public void setPermissionsEnabled(ClientModel c, boolean e) { }\n~~~\n\n## 4) Severity: LOW | Type: Maintainability\nTitle: Dead code and duplicated evaluation logic in ClientPermissionsV2\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:262-272\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java:207-260\n\nExplanation:\n`getEvaluationContext` is unused, and its imports are unused with it. The two `hasPermission` overloads duplicate the evaluation loop. `hasGrantedPermission` repeats it a third time. `canManage()` calls `super.canManage()`, whose V1 behavior is not visible in this diff. Consolidate the evaluation into one helper.\n\nProposed fix:\n~~~java\nprivate boolean evaluate(ResourceServer s, Resource r, String scope) { ... }\n~~~\n\n## 5) Severity: LOW | Type: Style\nTitle: Stray whitespace change and indentation noise\n\nAffected:\n- server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java:53\n\nExplanation:\nA line with only trailing whitespace replaces a blank line. The `AdminPermissions` listener re-indentation adds diff noise but no behavior change.\n\nProposed fix:\n~~~java\n// restore the blank line without trailing spaces\n~~~\n\n## 6) Severity: LOW | Type: Test\nTitle: Tests use JUnit 4 `fail` and swallow the failure in a catch-all\n\nAffected:\n- tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java:25\n- tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java:134-139\n\nExplanation:\n`org.junit.Assert.fail` is imported in a JUnit 5 test. The `fail()` call throws an `AssertionError`. That is not an `Exception`, so it is not caught by `catch (Exception)`, and the pattern works only by accident. Use `assertThrows(ForbiddenException.class, ...)` from JUnit 5 instead.\n\nProposed fix:\n~~~java\nassertThrows(ForbiddenException.class, () -> clientResource.toRepresentation());\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "In ClientPermissionsV2.hasPermission, the method getResourceTypeResource could return null, leading to a NullPointerException in findByResource. Defensive null checks are needed to prevent this issue.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "Client 'all-clients' check can NPE when getResourceTypeResource returns null and findByResource is called without a null check",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: getResourceTypeResource can return null, which would cause a NullPointerException when findByResource is called without a null check. Both comments point to the same bug in the same code flow (ClientPermissionsV2.hasPermission method), just with slightly different wording."
+      },
+      {
+        "golden_comment": "Remove unused getEvaluationContext private method in ClientPermissionsV2 - it is defined but never called",
+        "severity": "Low",
+        "category": "style",
+        "matched_candidate": "getEvaluationContext is unused dead code along with its imports",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same problem as the golden comment - that getEvaluationContext is unused/dead code. The golden comment specifically says it's a 'private method in ClientPermissionsV2' that is 'defined but never called', while the candidate says it's 'unused dead code along with its imports'. Both are pointing to the exact same issue: the getEvaluationContext method is not being used and should be removed."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Client 'all-clients' check grants permission on the wrong resource - evaluation proceeds on type-level resource which may have different scopes than expected"
+      },
+      {
+        "candidate": "Inconsistency between hasPermission overloads - one looks up type resource differently than the other"
+      },
+      {
+        "candidate": "Per-client permission lookup does not honor the all-clients permission when a client resource exists - users with broad grants lose access to clients that have individual permissions"
+      },
+      {
+        "candidate": "Unsupported V2 methods throw UnsupportedOperationException on reachable code paths - ClientRemovedEvent listener calls setPermissionsEnabled which throws in V2, breaking client deletion"
+      },
+      {
+        "candidate": "Duplicated evaluation logic across hasPermission overloads and hasGrantedPermission"
+      },
+      {
+        "candidate": "Stray whitespace change and indentation noise in diff"
+      },
+      {
+        "candidate": "Tests use JUnit 4 fail import in JUnit 5 test - pattern works only by accident since AssertionError is not caught by catch(Exception)"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Inconsistent feature flag bug causing orphaned permissions. The AdminPermissions event listener, responsible for cleaning up permissions upon role, client, or group removal, is incorrectly guarded by the ADMIN_FINE_GRAINED_AUTHZ (V1) feature flag. This is inconsistent with other methods in the class that use ADMIN_FINE_GRAINED_AUTHZ_V2. Consequently, if ADMIN_FINE_GRAINED_AUTHZ_V2 is enabled but V1 is not, the permission cleanup logic will not execute, leading to orphaned permission data. Cleanup should occur regardless of which fine-grained authorization version is enabled.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "In hasPermission(ClientModel client, String scope), the resource lookup uses findByName(server, client.getId(), server.getId()), but AdminPermissionsSchema.getOrCreateResource creates per-client resources with the owner set to resourceServer.getClientId(), so this lookup will never find those resources and will always fall back to the 'all-clients' resource, effectively ignoring client-specific permissions.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "In getClientsWithPermission(String scope), iterating resourceStore.findByType(server, AdminPermissionsSchema.CLIENTS_RESOURCE_TYPE) and returning resource.getName() will only ever consider the type-level 'Clients' resource (per-client resources have no type) and return its name, while AvailableRoleMappingResource#getRoleIdsWithPermissions expects actual client IDs to pass to realm.getClientById, which can lead to incorrect behavior or a null client and subsequent failures.",
+        "severity": "High",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 9,
+    "total_golden": 5,
+    "tp": 2,
+    "fp": 7,
+    "fn": 3,
+    "errors_count": 0,
+    "precision": 0.2222222222222222,
+    "recall": 0.4,
+    "tool": "diff2ai",
+    "repo_name": "keycloak/keycloak",
+    "pr_url": "https://github.com/keycloak/keycloak/pull/36880"
+  },
+  "judgeUsage": {
+    "calls": 47,
+    "inputTokens": 14269,
+    "outputTokens": 5526,
+    "costUsd": 0.209495
+  }
+}

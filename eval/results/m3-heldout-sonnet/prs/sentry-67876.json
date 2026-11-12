@@ -1,0 +1,150 @@
+{
+  "id": "sentry-67876",
+  "goldenUrl": "https://github.com/getsentry/sentry/pull/67876",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Authorization URL built without URL-encoding parameters",
+      "affected": [
+        "src/sentry/integrations/github/integration.py:404-409"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Unguarded metadata access and failure-prone network calls can raise 500s",
+      "affected": [
+        "src/sentry/integrations/github/integration.py:423-436",
+        "src/sentry/integrations/github/integration.py:501-505"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Security",
+      "title": "State comparison is not constant-time and the OAuth flow ignores the code-missing case",
+      "affected": [
+        "src/sentry/integrations/github/integration.py:401-413"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Installation-not-found now yields a generic error and the existing-integration path is inconsistent",
+      "affected": [
+        "src/sentry/integrations/github/integration.py:481-482",
+        "src/sentry/integrations/github/integration.py:493-498"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Tests hardcode state signature and rely on call indices",
+      "affected": [
+        "tests/sentry/integrations/github/test_integration.py:235-257"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqbaT1387cH6KmAQBiK",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 9430,
+      "outputTokens": 1392,
+      "ms": 10603
+    }
+  ],
+  "costUsd": 0.03278,
+  "durationMs": 11872,
+  "promptSha256": "63034a1b2c7fda37daff465783940375cdf68a5b73b3c667fda2e561cc81e7e1",
+  "promptChars": 24395,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Authorization URL built without URL-encoding parameters\n\nAffected:\n- src/sentry/integrations/github/integration.py:404-409\n\nExplanation:\n`redirect_uri` and `state` are interpolated into the query string raw. The redirect URI contains `:` and `/`, and a customer-domain or other host could produce characters needing encoding. Unencoded values can produce malformed or ambiguous URLs, and GitHub may reject the redirect_uri match. Use `urlencode`.\n\nProposed fix:\n~~~python\nfrom urllib.parse import urlencode\nqs = urlencode({\"client_id\": github_client_id, \"state\": state, \"redirect_uri\": redirect_uri})\nreturn self.redirect(f\"{ghip.get_oauth_authorize_url()}?{qs}\")\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: Unguarded metadata access and failure-prone network calls can raise 500s\n\nAffected:\n- src/sentry/integrations/github/integration.py:423-436\n- src/sentry/integrations/github/integration.py:501-505\n\nExplanation:\n`safe_urlopen` is called outside the try block, so network errors raise unhandled exceptions. `get_user_info` can raise on API failure, and it is not guarded either. `integration.metadata[\"sender\"][\"login\"]` raises KeyError or TypeError for integrations lacking sender metadata. That includes integrations created before the webhook populated it, or where the installation webhook has not yet arrived. Existing users therefore get a 500 instead of a handled error.\n\nProposed fix:\n~~~python\nsender = (integration.metadata or {}).get(\"sender\", {}).get(\"login\")\nif sender is None or pipeline.fetch_state(\"github_authenticated_user\") != sender:\n    return error(request, self.active_organization)\n~~~\nAlso move `safe_urlopen` and `get_user_info` inside try/except.\n\n## 3) Severity: MEDIUM | Type: Security\nTitle: State comparison is not constant-time and the OAuth flow ignores the code-missing case\n\nAffected:\n- src/sentry/integrations/github/integration.py:401-413\n\nExplanation:\nThe OAuth step is entered for any request with a `state` param, and the `installation_id` from the GET is bound before state validation. An attacker-supplied `installation_id` is therefore stored in pipeline state before the check passes. The plain `!=` comparison of the signature should use `constant_time_compare`. A missing `code` sends `None` to GitHub rather than failing early.\n\nProposed fix:\n~~~python\nfrom django.utils.crypto import constant_time_compare\nif not constant_time_compare(request.GET.get(\"state\", \"\"), pipeline.signature): ...\n# bind installation_id only after validation; require code\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: Installation-not-found now yields a generic error and the existing-integration path is inconsistent\n\nAffected:\n- src/sentry/integrations/github/integration.py:481-482\n- src/sentry/integrations/github/integration.py:493-498\n\nExplanation:\nWhen the Integration does not exist, the pipeline proceeds with no user verification. That is probably intended, because the user is verified later at build time, but this is not enforced here. Inactive integrations now give a generic \"Invalid installation request\" error instead of the previous specific messaging, and the test for \"installation could not be found\" was changed to match.\n\nProposed fix:\nVerify the authenticated user against the installation in `build_integration`, and keep a specific error message for inactive integrations.\n\n## 5) Severity: LOW | Type: Test\nTitle: Tests hardcode state signature and rely on call indices\n\nAffected:\n- tests/sentry/integrations/github/test_integration.py:235-257\n\nExplanation:\nThe tests hardcode the pipeline signature hash and use `responses.calls[2]`. Both break whenever the pipeline or call ordering changes. Read the signature from the redirect URL and look up calls by URL.\n\nProposed fix:\n~~~python\nstate = dict(parse_qsl(redirect.query))[\"state\"]\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The code attempts to access integration.metadata[sender][login] without checking for the existence of the sender key. This causes a KeyError for integrations where the sender metadata was not set during creation",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "integration.metadata[\"sender\"][\"login\"] raises KeyError or TypeError for integrations lacking sender metadata, causing 500 errors for existing users",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - accessing integration.metadata['sender']['login'] without checking if the 'sender' key exists, which causes errors (KeyError/TypeError) for integrations where sender metadata was not set. Both comments point to the same bug: missing validation before accessing nested dictionary keys in integration metadata."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Authorization URL built without URL-encoding parameters - redirect_uri and state are interpolated into the query string raw, which can produce malformed or ambiguous URLs that GitHub may reject"
+      },
+      {
+        "candidate": "safe_urlopen is called outside the try block, so network errors raise unhandled exceptions"
+      },
+      {
+        "candidate": "get_user_info can raise on API failure and is not guarded"
+      },
+      {
+        "candidate": "State comparison uses plain != instead of constant_time_compare, which is not secure"
+      },
+      {
+        "candidate": "OAuth flow binds installation_id from GET before state validation, allowing attacker-supplied installation_id to be stored in pipeline state"
+      },
+      {
+        "candidate": "Missing code parameter sends None to GitHub rather than failing early"
+      },
+      {
+        "candidate": "When Integration does not exist, the pipeline proceeds with no user verification"
+      },
+      {
+        "candidate": "Inactive integrations now give a generic error instead of specific messaging"
+      },
+      {
+        "candidate": "Tests hardcode the pipeline signature hash which breaks when pipeline changes"
+      },
+      {
+        "candidate": "Tests use responses.calls[2] index which breaks when call ordering changes"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Null reference if github_authenticated_user state is missing",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "OAuth state uses pipeline.signature (static) instead of a per-request random value",
+        "severity": "Medium",
+        "category": "security"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 11,
+    "total_golden": 3,
+    "tp": 1,
+    "fp": 10,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.09090909090909091,
+    "recall": 0.3333333333333333,
+    "tool": "diff2ai",
+    "repo_name": "getsentry/sentry",
+    "pr_url": "https://github.com/getsentry/sentry/pull/67876"
+  },
+  "judgeUsage": {
+    "calls": 40,
+    "inputTokens": 8315,
+    "outputTokens": 3531,
+    "costUsd": 0.12985000000000002
+  }
+}

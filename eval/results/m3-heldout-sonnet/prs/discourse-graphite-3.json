@@ -1,0 +1,138 @@
+{
+  "id": "discourse-graphite-3",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Blocked-email stats are updated non-atomically and on every validation, not just signup",
+      "affected": [
+        "app/models/blocked_email.rb:11-19",
+        "lib/validators/email_validator.rb:13-15"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Email lookup is case-sensitive, so blocks are trivially bypassed",
+      "affected": [
+        "app/models/blocked_email.rb:11-12",
+        "db/migrate/20130724201552_create_blocked_emails.rb:4-10"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Shared mutable `rejectedEmails` array across controller instances",
+      "affected": [
+        "app/assets/javascripts/discourse/controllers/create_account_controller.js:17"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Security",
+      "title": "Signup failure response echoes user attributes and full error hash",
+      "affected": [
+        "app/controllers/users_controller.rb:197-199"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Validator ignores blank values and uses a generic `EmailValidator` name",
+      "affected": [
+        "lib/validators/email_validator.rb:1-16"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqdcdGhx1ecHLugurun",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 6063,
+      "outputTokens": 1216,
+      "ms": 9977
+    }
+  ],
+  "costUsd": 0.024286,
+  "durationMs": 11249,
+  "promptSha256": "a3b413d4d5286e6033c149ac546b2172bd6f0b533d441e007b8ff3032fb53268",
+  "promptChars": 14219,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Blocked-email stats are updated non-atomically and on every validation, not just signup\n\nAffected:\n- app/models/blocked_email.rb:11-19\n- lib/validators/email_validator.rb:13-15\n\nExplanation:\n`should_block?` does a read-modify-write (`match_count += 1; save`). Concurrent requests lose increments. It also writes to the database from inside a validation. Validation runs for any `valid?` call, including `email_changed?` on user updates and the client's repeated checks. This means a \"query\" method has side effects, and counts are inflated on repeated validations. The `save` result is also ignored. Use an atomic update (`update_counters` or SQL `match_count = match_count + 1`). Better still, record the stat only when the signup is actually rejected.\n\nProposed fix:\n~~~ruby\ndef self.should_block?(email)\n  record = where(email: email).first\n  if record\n    where(id: record.id).update_all([\"match_count = match_count + 1, last_match_at = ?\", Time.zone.now])\n  end\n  record && record.action_type == actions[:block]\nend\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Email lookup is case-sensitive, so blocks are trivially bypassed\n\nAffected:\n- app/models/blocked_email.rb:11-12\n- db/migrate/20130724201552_create_blocked_emails.rb:4-10\n\nExplanation:\n`where(email: email)` is an exact match, and the unique index is case-sensitive. `Bad@Spam.com` bypasses a block on `bad@spam.com`. Normalize the email (downcase) on save and on lookup.\n\nProposed fix:\n~~~ruby\nbefore_validation { self.email = email.to_s.downcase }\nrecord = where(email: email.to_s.downcase).first\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Shared mutable `rejectedEmails` array across controller instances\n\nAffected:\n- app/assets/javascripts/discourse/controllers/create_account_controller.js:17\n\nExplanation:\n`Em.A([])` in `extend` is a prototype-level property shared by all instances. State persists across instances and is never reset. Initialize it in `init` instead.\n\nProposed fix:\n~~~js\ninit: function() {\n  this._super();\n  this.set('rejectedEmails', Em.A([]));\n},\n~~~\n\n## 4) Severity: LOW | Type: Security\nTitle: Signup failure response echoes user attributes and full error hash\n\nAffected:\n- app/controllers/users_controller.rb:197-199\n\nExplanation:\n`user.attributes.slice(...)` returns the submitted values. The block status is also revealed to the client. The `values` key is only needed for the email, and exposing more than that is unnecessary. This also enables probing which emails are blocked. Return only what the client needs.\n\nProposed fix:\n~~~ruby\nvalues: { email: user.email }\n~~~\n\n## 5) Severity: LOW | Type: Bug\nTitle: Validator ignores blank values and uses a generic `EmailValidator` name\n\nAffected:\n- lib/validators/email_validator.rb:1-16\n\nExplanation:\n`validate_each` runs a DB query and a regex match even when the value is nil. Blank emails are handled by the presence validation, but `nil =~ regexp` and `where(email: nil)` are still wasted work. Naming the class `EmailValidator` may also collide with gems that define the same constant. Add `return if value.blank?`.\n\nProposed fix:\n~~~ruby\nreturn if value.blank?\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "BlockedEmail.should_block_email? method has side effects during a read operation - it updates statistics even when just checking if an email should be blocked. This could cause race conditions in concurrent environments and makes the method name misleading.",
+        "severity": "Medium",
+        "category": "concurrency",
+        "matched_candidate": "Stats are written to database from inside a validation which runs on any valid? call, not just signup, inflating counts",
+        "confidence": 0.9,
+        "reasoning": "Both comments identify the same core issue: the should_block_email? method (which is used in validation) has side effects of writing stats to the database. The golden comment frames it as 'side effects during a read operation' causing race conditions and misleading naming, while the candidate frames it as 'stats written from inside validation' that runs on any valid? call, inflating counts. Both are pointing to the same fundamental problem - a query/validation method inappropriately modifying database state."
+      },
+      {
+        "golden_comment": "The case-sensitive email lookup in `BlockedEmail.should_block?` creates a bypass risk, allowing 'User@Example.com' to bypass a block on 'user@example.com'. This can lead to unauthorized access to blocked users.",
+        "severity": "Critical",
+        "category": "security",
+        "matched_candidate": "Email lookup for blocking is case-sensitive, allowing blocks to be bypassed with different casing (e.g., Bad@Spam.com bypasses bad@spam.com)",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the case-sensitive email lookup in the blocking mechanism allows users to bypass blocks by using different letter casing. Both comments point to the same security vulnerability where 'User@Example.com' or 'Bad@Spam.com' can bypass a block on 'user@example.com' or 'bad@spam.com' respectively."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "The save result is ignored when updating blocked-email stats"
+      },
+      {
+        "candidate": "Shared mutable rejectedEmails array across controller instances due to Em.A([]) being a prototype-level property, causing state to persist across instances"
+      },
+      {
+        "candidate": "Signup failure response echoes user attributes and full error hash, revealing more than necessary and enabling probing of which emails are blocked"
+      },
+      {
+        "candidate": "Validator runs DB query and regex match even when email value is nil/blank, wasting resources"
+      },
+      {
+        "candidate": "EmailValidator class name may collide with gems that define the same constant"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The regex pattern @(#{domains}) in email_in_restriction_setting? method only matches domain suffixes, not full domains with proper boundary anchoring. An attacker can register evil.example.com to bypass a whitelist entry for example.com.",
+        "severity": "Medium",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 8,
+    "total_golden": 3,
+    "tp": 2,
+    "fp": 5,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.25,
+    "recall": 0.6666666666666666,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/discourse-graphite",
+    "pr_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3"
+  },
+  "judgeUsage": {
+    "calls": 31,
+    "inputTokens": 7290,
+    "outputTokens": 2720,
+    "costUsd": 0.10444999999999999
+  }
+}

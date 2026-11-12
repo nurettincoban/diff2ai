@@ -1,0 +1,121 @@
+{
+  "id": "discourse-graphite-5",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/5",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Header `.title` float removed and `.contents` made flex, which may break the layout",
+      "affected": [
+        "app/assets/stylesheets/common/base/header.scss:13-40"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Invalid or incorrect legacy prefix values in the `align-items` mixin",
+      "affected": [
+        "app/assets/stylesheets/common/foundation/mixins.scss:117-123"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Small-action spacing changed, and the flex layout may regress",
+      "affected": [
+        "app/assets/stylesheets/common/base/topic-post.scss:263-303"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 3,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqeRkTiufRxUi4hFfhP",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 2924,
+      "outputTokens": 1153,
+      "ms": 9214
+    }
+  ],
+  "costUsd": 0.017378,
+  "durationMs": 10313,
+  "promptSha256": "f994a4d27ef3bf6268afae061ac286bcf244e35a78522c73efe74ae8151a9199",
+  "promptChars": 6504,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Header `.title` float removed and `.contents` made flex, which may break the layout\n\nAffected:\n- app/assets/stylesheets/common/base/header.scss:13-40\n\nExplanation:\nThe `.title` rule with `float: left` was removed, and `.contents` is now a flex container. The `.panel` float was also replaced with `margin-left: auto` and `order: 3`. Floats have no effect on flex items, so this part is harmless. The risk is that other rules for `.title`, such as the logo or `.valign-helper`, may depend on the old block/float behaviour, and I cannot see them in the diff. The `order` values are also inconsistent. `.panel` gets 3 and `.extra-info-wrapper` gets 2, but the title has no explicit order and so defaults to 0. This works only by accident, and the ordering is fragile if `.extra-info-wrapper` is not inside `.contents`. `.extra-info-wrapper` also keeps `float: left` for its `.badge-wrapper` children, which is unrelated to this change. Verify the header visually and give all siblings explicit orders.\n\nProposed fix:\n~~~scss\n.title { @include order(1); }\n.extra-info-wrapper { @include order(2); }\n.panel { @include order(3); margin-left: auto; }\n~~~\n\n## 2) Severity: LOW | Type: Bug\nTitle: Invalid or incorrect legacy prefix values in the `align-items` mixin\n\nAffected:\n- app/assets/stylesheets/common/foundation/mixins.scss:117-123\n\nExplanation:\n`-webkit-box-align` takes the values `start`, `end`, `center`, `baseline` and `stretch`, so it does not accept `flex-start` or `flex-end`. `-ms-flex-align` uses `start` and `end` in the same way. Passing `flex-start` produces invalid declarations that browsers ignore. `-ms-align-items` is not a real property. `-moz-box-align` is missing. The indentation is inconsistent, and line 120 has trailing whitespace. The current calls (`center` and `baseline`) work. The mixin is unsafe for other values, and the bogus property is dead code.\n\nProposed fix:\n~~~scss\n@mixin align-items($alignment) {\n  -webkit-box-align: $alignment;\n  -moz-box-align: $alignment;\n  -ms-flex-align: $alignment;\n  -webkit-align-items: $alignment;\n  align-items: $alignment;\n}\n~~~\n\n## 3) Severity: LOW | Type: Bug\nTitle: Small-action spacing changed, and the flex layout may regress\n\nAffected:\n- app/assets/stylesheets/common/base/topic-post.scss:263-303\n\nExplanation:\n`.small-action` becomes a flex container. The `.small-action-desc` padding changes from `0.5em 0 0.5em 4em` to `0 1.5%`, and the margins and paddings on the inner `p` elements are removed. Percentage padding is relative to the container width, so spacing now varies with the viewport. Long descriptions or embedded content may also wrap or overflow, because flex items default to `min-width: auto`. Check that `.small-action-desc` has `flex: 1` or `min-width: 0` if it needs to shrink.\n\nProposed fix:\n~~~scss\n.small-action-desc { flex: 1; min-width: 0; }\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "-ms-align-items never existed in any version of IE/Edge; the correct legacy property is -ms-flex-align.",
+        "severity": "Low",
+        "category": "bug",
+        "matched_candidate": "-ms-align-items is not a real property (dead code)",
+        "confidence": 0.95,
+        "reasoning": "Both comments identify the same issue: that '-ms-align-items' is not a valid/real CSS property. The golden comment provides more detail about what the correct property should be (-ms-flex-align), while the candidate simply notes it's 'not a real property (dead code)'. They are pointing to the same underlying problem - the use of a non-existent vendor-prefixed property."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Header .title float removed and .contents made flex, which may break the layout - other rules for .title may depend on old block/float behaviour"
+      },
+      {
+        "candidate": "Order values are inconsistent - .panel gets 3, .extra-info-wrapper gets 2, but title has no explicit order (defaults to 0), making ordering fragile"
+      },
+      {
+        "candidate": "Invalid legacy prefix values in align-items mixin - -webkit-box-align and -ms-flex-align don't accept flex-start or flex-end values"
+      },
+      {
+        "candidate": "-moz-box-align is missing from the align-items mixin"
+      },
+      {
+        "candidate": "Inconsistent indentation and trailing whitespace on line 120 in the mixin"
+      },
+      {
+        "candidate": ".small-action-desc padding changed to percentage values (0 1.5%), causing spacing to vary with viewport width"
+      },
+      {
+        "candidate": "Flex items in .small-action may wrap or overflow because they default to min-width: auto - .small-action-desc may need flex: 1 or min-width: 0"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Mixing float: left with flexbox causes layout issues. Further this PR removes the float-based right alignment for .d-header .panel, which may cause the login panel in the non-Ember/noscript header (where .panel is nested inside .row and not a flex item) to stack under the title instead of remaining right-aligned.",
+        "severity": "Low",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "-webkit-box-ordinal-group and -moz-box-ordinal-group require values starting from 1, not 0. If $val is 0, this will cause incorrect rendering in older browsers, leading to layout issues.",
+        "severity": "Medium",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 8,
+    "total_golden": 3,
+    "tp": 1,
+    "fp": 7,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.125,
+    "recall": 0.3333333333333333,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/discourse-graphite",
+    "pr_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/5"
+  },
+  "judgeUsage": {
+    "calls": 26,
+    "inputTokens": 7384,
+    "outputTokens": 2980,
+    "costUsd": 0.11141999999999999
+  }
+}

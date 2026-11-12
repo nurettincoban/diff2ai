@@ -1,0 +1,149 @@
+{
+  "id": "sentry-95633",
+  "goldenUrl": "https://github.com/getsentry/sentry/pull/95633",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Failed processing still marks offset complete, so it is committed and the message is lost",
+      "affected": [
+        "src/sentry/remote_subscriptions/consumers/queue_consumer.py:135-156",
+        "src/sentry/remote_subscriptions/consumers/queue_consumer.py:317-325"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "`queue.ShutDown` requires Python 3.13, and `get()` is not woken on shutdown in a safe way",
+      "affected": [
+        "src/sentry/remote_subscriptions/consumers/queue_consumer.py:131-143",
+        "src/sentry/remote_subscriptions/consumers/queue_consumer.py:238"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Unbounded queues give no backpressure, and offset tracking scales poorly",
+      "affected": [
+        "src/sentry/remote_subscriptions/consumers/queue_consumer.py:185",
+        "src/sentry/remote_subscriptions/consumers/queue_consumer.py:89"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Partition revocation and rebalance are not handled; the pool is shared across strategy instances",
+      "affected": [
+        "src/sentry/remote_subscriptions/consumers/result_consumer.py:131-137",
+        "src/sentry/remote_subscriptions/consumers/queue_consumer.py:335-342"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Commit loop races with `close`, and the commit thread can run before the pool is ready",
+      "affected": [
+        "src/sentry/remote_subscriptions/consumers/queue_consumer.py:273-291"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyqdfnn2EAm9jdHcQNkp",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 25764,
+      "outputTokens": 1688,
+      "ms": 12575
+    }
+  ],
+  "costUsd": 0.068408,
+  "durationMs": 13822,
+  "promptSha256": "864848efe0b434350d8c8ce213f879018a24d5522b32fad26e09ec3c8e111f5c",
+  "promptChars": 65863,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Failed processing still marks offset complete, so it is committed and the message is lost\n\nAffected:\n- src/sentry/remote_subscriptions/consumers/queue_consumer.py:135-156\n- src/sentry/remote_subscriptions/consumers/queue_consumer.py:317-325\n\nExplanation:\nThe worker's `finally` calls `complete_offset` even when `result_processor` raised. The submit error path does the same for decode failures. A failed message is therefore treated as done and its offset is committed, which silently drops the message. This contradicts the class docstring (\"Only commits offsets after successful processing\"). It may be acceptable for uptime results, but the claim is wrong and the data loss is unflagged. The test `test_thread_queue_parallel_error_handling` asserts that nothing is committed, yet nothing in the tracker would prevent a commit after the second message completes. That test looks flaky or wrong. Decide on explicit semantics (drop vs. retry) and align the docs and tests with them.\n\nProposed fix:\n~~~python\n# Document drop-on-error semantics, or only complete on success.\n# Fix the docstring and the test expectations accordingly.\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: `queue.ShutDown` requires Python 3.13, and `get()` is not woken on shutdown in a safe way\n\nAffected:\n- src/sentry/remote_subscriptions/consumers/queue_consumer.py:131-143\n- src/sentry/remote_subscriptions/consumers/queue_consumer.py:238\n\nExplanation:\n`queue.ShutDown` and `Queue.shutdown()` exist only in Python 3.13+. On older runtimes this raises AttributeError: the `except queue.ShutDown` clause fails on the first exception, and `q.shutdown` fails at close. The AttributeError at close is swallowed by `except Exception`, so workers block forever on `get()` and `join` times out. If `shutdown()` raises in `run`, `work_item` is also unbound when `finally` runs. The `shutdown` flag is only checked after `get()` returns, so it does not help. Use a sentinel item for shutdown instead.\n\nProposed fix:\n~~~python\n# put a None sentinel per queue on shutdown; worker breaks when item is None\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Unbounded queues give no backpressure, and offset tracking scales poorly\n\nAffected:\n- src/sentry/remote_subscriptions/consumers/queue_consumer.py:185\n- src/sentry/remote_subscriptions/consumers/queue_consumer.py:89\n\nExplanation:\n`queue.Queue()` is unbounded, so `submit` never blocks. The docstring claims natural backpressure, but there is none. A slow worker lets memory grow without limit. `get_committable_offsets` also iterates over every offset in a range while holding the lock. If a gap exists, such as a skipped offset in compacted or transactional topics, commits stall forever because the loop breaks on a missing offset.\n\nProposed fix:\n~~~python\nqueue.Queue(maxsize=N)  # and raise MessageRejected in submit when full\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: Partition revocation and rebalance are not handled; the pool is shared across strategy instances\n\nAffected:\n- src/sentry/remote_subscriptions/consumers/result_consumer.py:131-137\n- src/sentry/remote_subscriptions/consumers/queue_consumer.py:335-342\n\nExplanation:\nThe factory owns a single `queue_pool`, but each `create_with_partitions` builds a new strategy. Closing a strategy on rebalance calls `queue_pool.shutdown()`, which kills the shared workers. Later strategies then enqueue into dead queues and nothing is processed. Offsets for revoked partitions also remain in the tracker and get committed after reassignment. Separately, `hash(str)` is randomized per process. That is fine for per-process ordering, but ordering across restarts or partitions is not preserved.\n\nProposed fix:\n~~~python\n# Make strategy.close() not shut down the shared pool (factory.shutdown does),\n# and clear tracker state for revoked partitions.\n~~~\n\n## 5) Severity: LOW | Type: Bug\nTitle: Commit loop races with `close`, and the commit thread can run before the pool is ready\n\nAffected:\n- src/sentry/remote_subscriptions/consumers/queue_consumer.py:273-291\n\nExplanation:\n`_commit_loop` waits before it computes commits, so it can commit after shutdown is signalled. No final commit happens on close, so completed work is re-consumed. `_get_partition_lock` also has a benign check-then-set race. It is safe only because `setdefault` is atomic.\n\nProposed fix:\n~~~python\n# do a final get_committable_offsets + commit in close() after joining workers\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [],
+    "false_positives": [
+      {
+        "candidate": "Failed processing still marks offset complete and commits it, causing silent message loss despite docstring claiming only successful processing commits offsets"
+      },
+      {
+        "candidate": "Test test_thread_queue_parallel_error_handling asserts nothing is committed but tracker would not prevent commit after second message completes - test is flaky or wrong"
+      },
+      {
+        "candidate": "queue.ShutDown and Queue.shutdown() only exist in Python 3.13+, causing AttributeError on older runtimes"
+      },
+      {
+        "candidate": "On older Python versions, workers block forever on get() and join times out because shutdown exception handling fails"
+      },
+      {
+        "candidate": "If shutdown() raises in run, work_item is unbound when finally runs"
+      },
+      {
+        "candidate": "Shutdown flag is only checked after get() returns so it does not help wake blocked workers"
+      },
+      {
+        "candidate": "Unbounded queues provide no backpressure despite docstring claiming natural backpressure, allowing unlimited memory growth with slow workers"
+      },
+      {
+        "candidate": "get_committable_offsets iterates over every offset in range while holding lock, and commits stall forever if a gap exists from skipped offsets in compacted or transactional topics"
+      },
+      {
+        "candidate": "Factory owns single queue_pool but each create_with_partitions builds new strategy - closing strategy on rebalance kills shared workers, causing later strategies to enqueue into dead queues"
+      },
+      {
+        "candidate": "Offsets for revoked partitions remain in tracker and get committed after reassignment"
+      },
+      {
+        "candidate": "Commit loop waits before computing commits so it can commit after shutdown is signalled, and no final commit happens on close causing completed work to be re-consumed"
+      },
+      {
+        "candidate": "_get_partition_lock has check-then-set race that is only safe because setdefault is atomic"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The magic number 50 for max_wait is used repeatedly throughout the tests. Consider extracting this as a named constant to improve maintainability.",
+        "severity": "Low",
+        "category": "style"
+      },
+      {
+        "golden_comment": "The test test_thread_queue_parallel_error_handling has a docstring that doesn't match the test implementation.",
+        "severity": "Low",
+        "category": "doc_defect"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 12,
+    "total_golden": 2,
+    "tp": 0,
+    "fp": 12,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0,
+    "recall": 0,
+    "tool": "diff2ai",
+    "repo_name": "getsentry/sentry",
+    "pr_url": "https://github.com/getsentry/sentry/pull/95633"
+  },
+  "judgeUsage": {
+    "calls": 30,
+    "inputTokens": 7108,
+    "outputTokens": 2704,
+    "costUsd": 0.10314
+  }
+}

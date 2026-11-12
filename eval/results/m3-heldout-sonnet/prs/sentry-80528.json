@@ -1,0 +1,90 @@
+{
+  "id": "sentry-80528",
+  "goldenUrl": "https://github.com/getsentry/sentry/pull/80528",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Moving functions out of mark_failed.py may break existing importers and tests",
+      "affected": [
+        "src/sentry/monitors/logic/mark_failed.py:76-79",
+        "src/sentry/monitors/logic/incidents.py:14-104"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Copied config is computed but never used in the monitor context",
+      "affected": [
+        "src/sentry/monitors/logic/incident_occurrence.py:159-171"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 2,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqcT7zmnkRFtQXf7SiJ",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 10505,
+      "outputTokens": 754,
+      "ms": 5686
+    }
+  ],
+  "costUsd": 0.02855,
+  "durationMs": 6914,
+  "promptSha256": "2f4e3e78a72a4f13c6b827d9d4e5859e416633200f35ade6f5840eef35d58ef4",
+  "promptChars": 26256,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Moving functions out of mark_failed.py may break existing importers and tests\n\nAffected:\n- src/sentry/monitors/logic/mark_failed.py:76-79\n- src/sentry/monitors/logic/incidents.py:14-104\n\nExplanation:\n`mark_failed_threshold`, `create_issue_platform_occurrence`, `get_failure_reason`, `get_monitor_environment_context`, `SimpleCheckIn`, `HUMAN_FAILURE_STATUS_MAP` and `SINGULAR_HUMAN_FAILURE_MAP` were removed from `mark_failed.py`, and several were renamed. `mark_failed_threshold` became `try_incident_threshold`, and `create_issue_platform_occurrence` became `create_incident_occurrence`. The diff does not show other callers, so I cannot confirm the risk. Existing tests, such as tests/sentry/monitors/logic/test_mark_failed.py, or other modules may still import the old names from `sentry.monitors.logic.mark_failed`, or patch them there. If they do, they will fail with ImportError, or mock patches will silently target the wrong module. Mocks of `produce_occurrence_to_kafka` and similar are also affected by the move. Grep for all usages and update them, or keep backwards-compatible re-exports.\n\nProposed fix:\n~~~python\n# grep -r \"mark_failed_threshold\\|create_issue_platform_occurrence\\|get_failure_reason\\|get_monitor_environment_context\" src tests\n# update the imports and mock.patch targets to the new modules\n~~~\n\n## 2) Severity: LOW | Type: Bug\nTitle: Copied config is computed but never used in the monitor context\n\nAffected:\n- src/sentry/monitors/logic/incident_occurrence.py:159-171\n\nExplanation:\n`config` is copied and its `schedule_type` is replaced with the display string, but the returned dict uses `monitor_environment.monitor.config` instead. The human-readable schedule type is therefore dropped. This bug existed before the move and was carried over unchanged. Return `config` instead.\n\nProposed fix:\n~~~python\n\"config\": config,\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The function modifies the config variable to include display values but then returns the original monitor.config instead of the modified version.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "Copied config is computed but never used in the monitor context - config is copied and its schedule_type is replaced with the display string, but the returned dict uses monitor_environment.monitor.config instead, dropping the human-readable schedule type",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: a config variable is modified (to include display values/human-readable schedule type) but then the code returns monitor.config instead of the modified config variable, meaning the modifications are lost/dropped."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Moving functions out of mark_failed.py may break existing importers and tests - mark_failed_threshold, create_issue_platform_occurrence, get_failure_reason, get_monitor_environment_context, SimpleCheckIn, HUMAN_FAILURE_STATUS_MAP and SINGULAR_HUMAN_FAILURE_MAP were removed and some renamed, which could cause ImportError or silently broken mock patches in existing tests and modules"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The code fetches MonitorCheckIn objects by ID when the required data already exists in previous_checkins. This creates an unnecessary database query.",
+        "severity": "Low",
+        "category": "perf"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 2,
+    "total_golden": 2,
+    "tp": 1,
+    "fp": 1,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.5,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "getsentry/sentry",
+    "pr_url": "https://github.com/getsentry/sentry/pull/80528"
+  },
+  "judgeUsage": {
+    "calls": 10,
+    "inputTokens": 2248,
+    "outputTokens": 522,
+    "costUsd": 0.02429
+  }
+}

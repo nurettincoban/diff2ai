@@ -1,0 +1,199 @@
+{
+  "id": "cal.com-14740",
+  "goldenUrl": "https://github.com/calcom/cal.com/pull/14740",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "type": "Security",
+      "title": "Authorization check is wrong: attendees and non-owner admins can modify bookings",
+      "affected": [
+        "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:46-56"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Wrong credentials and user used for the calendar update",
+      "affected": [
+        "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:158-165"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Guest dedup and blacklist checks are case-sensitive, and duplicates within the input are not removed",
+      "affected": [
+        "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:70-78"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Email logic sends the wrong template to guests and compares emails case-sensitively; the full guest list is passed instead of the filtered one",
+      "affected": [
+        "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:168",
+        "packages/emails/email-manager.ts:539-547"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Client-side validation rejects valid input and the error handler can show a wrong message",
+      "affected": [
+        "apps/web/components/dialog/AddGuestsDialog.tsx:26-58",
+        "apps/web/components/dialog/AddGuestsDialog.tsx:42-45"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "MultiEmail imports from the \"@calcom/ui\" barrel inside the ui package, and the \"Remove email\" tooltip is not localized",
+      "affected": [
+        "packages/ui/form/MultiEmail.tsx:1-2",
+        "packages/ui/form/MultiEmail.tsx:46"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 6,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqeqvG1Z2q586VcTWy6",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 15860,
+      "outputTokens": 1895,
+      "ms": 14371
+    }
+  ],
+  "costUsd": 0.05067,
+  "durationMs": 15492,
+  "promptSha256": "c88701e1adefb10fcbb5526ea3a9c59dbd062b648619091e2c5f61e8ca341612",
+  "promptChars": 35366,
+  "response": "## 1) Severity: CRITICAL | Type: Security\nTitle: Authorization check is wrong: attendees and non-owner admins can modify bookings\n\nAffected:\n- packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:46-56\n\nExplanation:\n`isTeamAdminOrOwner` uses `&&`, so a user must be both admin and owner. That wrongly denies plain admins and is inconsistent with the name. The `isAttendee` check lets any attendee add arbitrary guests to the organizer's booking. The attendee match is by email, and `user.email` may be unverified or secondary. The booking is then updated with the organizer's calendar credentials, and emails are sent to arbitrary addresses, so this can be used for spam. Also, when `teamId` is missing the code calls `isTeamAdmin(user.id, 0)`, which is a pointless query. Use `||`, skip the team check when there is no team, and decide deliberately whether attendees should be allowed.\n\nProposed fix:\n~~~ts\nconst teamId = booking.eventType?.teamId;\nconst isTeamAdminOrOwner = teamId\n  ? (await isTeamAdmin(user.id, teamId)) || (await isTeamOwner(user.id, teamId))\n  : false;\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: Wrong credentials and user used for the calendar update\n\nAffected:\n- packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:158-165\n\nExplanation:\n`getUsersCredentials(ctx.user)` and `new EventManager({...user})` use the acting user's credentials, not the booking organizer's. When an admin or attendee adds guests, the calendar event is updated with the wrong credentials, or not at all. The booking already includes `booking.user.credentials`, so use the organizer's. Also, `updateCalendarAttendees` is not wrapped in try/catch, so a calendar failure after the DB write returns an error even though the guests were already saved.\n\nProposed fix:\n~~~ts\nconst eventManager = new EventManager({ ...booking.user!, credentials: booking.user!.credentials });\ntry { await eventManager.updateCalendarAttendees(evt, booking); } catch (e) { /* log */ }\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Guest dedup and blacklist checks are case-sensitive, and duplicates within the input are not removed\n\nAffected:\n- packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:70-78\n\nExplanation:\nThe blacklist is lowercased, but the guest is compared as-is, so `Foo@X.com` bypasses it. Comparison against existing attendees is also case-sensitive. Duplicates within the input are only checked on the client, so the server can insert duplicate attendees. Normalize guests to lowercase and dedupe them on the server.\n\nProposed fix:\n~~~ts\nconst normalized = [...new Set(guests.map((g) => g.toLowerCase()))];\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: Email logic sends the wrong template to guests and compares emails case-sensitively; the full guest list is passed instead of the filtered one\n\nAffected:\n- packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:168\n- packages/emails/email-manager.ts:539-547\n\nExplanation:\n`sendAddGuestsEmails(evt, guests)` receives the raw input, including guests that were filtered out as blacklisted or already present. Existing attendees whose emails are in that list receive the \"scheduled\" email again, and blacklisted guests are not in `attendees`. Pass `uniqueGuests` instead. Also, errors are swallowed with a `console.log` that drops the error object.\n\nProposed fix:\n~~~ts\nawait sendAddGuestsEmails(evt, uniqueGuests);\n~~~\n\n## 5) Severity: MEDIUM | Type: Bug\nTitle: Client-side validation rejects valid input and the error handler can show a wrong message\n\nAffected:\n- apps/web/components/dialog/AddGuestsDialog.tsx:26-58\n- apps/web/components/dialog/AddGuestsDialog.tsx:42-45\n\nExplanation:\nThe initial state is `[\"\"]`. If the user leaves an empty field, validation fails, and the error never clears after the input is corrected or the dialog is cancelled and reopened. The `isInvalidEmail` flag is not reset on success. `onError` builds the message as `${code}: ${t(message)}`, which is always truthy, so the `unable_to_add_guests` fallback is dead code. The schema is also recreated on every render.\n\nProposed fix:\nMove the schema to module scope, filter out empty strings before validating, reset `isInvalidEmail` on success, and use `err.message ? t(err.message) : t(\"unable_to_add_guests\")`.\n\n## 6) Severity: LOW | Type: Maintainability\nTitle: MultiEmail imports from the \"@calcom/ui\" barrel inside the ui package, and the \"Remove email\" tooltip is not localized\n\nAffected:\n- packages/ui/form/MultiEmail.tsx:1-2\n- packages/ui/form/MultiEmail.tsx:46\n\nExplanation:\nImporting from the package's own index risks circular imports. The `Tooltip` content is a hardcoded English string. The list uses `key={index}`, which causes wrong input state when items are removed.\n\nProposed fix:\nUse relative imports and `t(\"remove_email\")`.\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The addGuests.handler.ts blacklist check uses blacklistedGuestEmails.includes(guest) after lowercasing the blacklist but not the input guest emails, allowing attackers to bypass BLACKLISTED_GUEST_EMAILS restrictions by submitting emails with uppercase characters.",
+        "severity": "High",
+        "category": "security",
+        "matched_candidate": "Guest blacklist comparison is case-sensitive, allowing bypasses like Foo@X.com",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same underlying problem as the golden comment - that the blacklist comparison is case-sensitive, which allows bypasses using uppercase characters in emails. The golden comment specifically explains that the blacklist is lowercased but input emails are not, and the candidate correctly identifies this as a case-sensitivity issue that allows bypasses like 'Foo@X.com'. Both point to the same security vulnerability."
+      },
+      {
+        "golden_comment": "The logic for checking team admin/owner permissions is incorrect. This condition uses AND (&&) which requires both isTeamAdmin AND isTeamOwner to be true, but it should use OR (||) since a user needs to be either an admin OR an owner to have permission.",
+        "severity": "Critical",
+        "category": "bug",
+        "matched_candidate": "Authorization check uses && instead of ||, requiring user to be both admin and owner, wrongly denying plain admins",
+        "confidence": 1,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment: the authorization check incorrectly uses && (AND) instead of || (OR), which requires a user to be both admin AND owner instead of either admin OR owner. Both comments point to the same logical operator bug that would wrongly deny access to plain admins."
+      },
+      {
+        "golden_comment": "The sendAddGuestsEmails function in email-manager.ts passes the full calendarEvent.attendees array when determining which attendees receive AttendeeScheduledEmail vs AttendeeAddGuestsEmail, but checks if newGuests.includes(attendee.email) where newGuests is the input guests array.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Existing attendees whose emails are in the guest list receive the scheduled email again",
+        "confidence": 0.7,
+        "reasoning": "The candidate issue states that 'Existing attendees whose emails are in the guest list receive the scheduled email again.' The golden comment describes a bug where the sendAddGuestsEmails function passes the full calendarEvent.attendees array and checks if newGuests.includes(attendee.email), which would cause issues with email distribution. The candidate is identifying a related but different aspect - it's talking about existing attendees receiving duplicate scheduled emails, while the golden comment is about the logic flaw in how attendees are categorized for AttendeeScheduledEmail vs AttendeeAddGuestsEmail. These are related to the same function and email logic, but the candidate focuses on duplicate emails to existing attendees, while the golden focuses on the incorrect array being passed and the flawed includes check logic. They're pointing to overlapping concerns in the same code area but from slightly different angles."
+      },
+      {
+        "golden_comment": "uniqueGuests filters out existing attendees and blacklisted emails but does not deduplicate duplicates within the input; createMany can insert duplicate attendee rows if the client submits repeated emails.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Duplicates within input are only checked on client, allowing server to insert duplicate attendees",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same problem as the golden comment - that duplicate checking only happens on the client side, allowing the server to insert duplicate attendees. The golden comment specifically mentions that 'uniqueGuests' doesn't deduplicate duplicates within the input and 'createMany can insert duplicate attendee rows if the client submits repeated emails.' The candidate captures this exact issue: duplicates within the input are only checked client-side, allowing server-side duplicate insertion."
+      },
+      {
+        "golden_comment": "Starting with an array containing an empty string may cause validation issues. Consider starting with an empty array [] and handling the empty state in the MultiEmail component instead.",
+        "severity": "Low",
+        "category": "bug",
+        "matched_candidate": "Client-side validation initial state is [\"\"], causing validation to fail on empty field",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same problem as the golden comment - that the initial state is [\"\"] (an array containing an empty string) which causes validation issues. Both comments point to the same underlying bug: starting with [\"\"] instead of an empty array [] leads to validation problems."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "isAttendee check allows any attendee to add arbitrary guests to the organizer's booking"
+      },
+      {
+        "candidate": "Attendee match by email is insecure since user.email may be unverified or secondary"
+      },
+      {
+        "candidate": "Booking update with organizer's calendar credentials and emails to arbitrary addresses can be used for spam"
+      },
+      {
+        "candidate": "When teamId is missing, code calls isTeamAdmin(user.id, 0) which is a pointless query"
+      },
+      {
+        "candidate": "getUsersCredentials and EventManager use acting user's credentials instead of booking organizer's credentials"
+      },
+      {
+        "candidate": "updateCalendarAttendees is not wrapped in try/catch, so calendar failure after DB write returns error even though guests were saved"
+      },
+      {
+        "candidate": "sendAddGuestsEmails receives raw input including filtered out guests (blacklisted or already present)"
+      },
+      {
+        "candidate": "Error logging uses console.log that drops the error object"
+      },
+      {
+        "candidate": "isInvalidEmail flag is not reset on success or when dialog is cancelled and reopened"
+      },
+      {
+        "candidate": "onError message building is always truthy, making unable_to_add_guests fallback dead code"
+      },
+      {
+        "candidate": "Schema is recreated on every render"
+      },
+      {
+        "candidate": "MultiEmail imports from @calcom/ui barrel inside the ui package, risking circular imports"
+      },
+      {
+        "candidate": "Remove email tooltip content is hardcoded English string instead of localized"
+      },
+      {
+        "candidate": "List uses key={index} which causes wrong input state when items are removed"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The `sendAddGuestsEmails` function does not check the `disableStandardEmails` flags in the `EventType` metadata, which may result in sending emails to hosts/attendees even when standard emails are disabled for the event type.",
+        "severity": "Medium",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 20,
+    "total_golden": 6,
+    "tp": 5,
+    "fp": 14,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.25,
+    "recall": 0.8333333333333334,
+    "tool": "diff2ai",
+    "repo_name": "calcom/cal.com",
+    "pr_url": "https://github.com/calcom/cal.com/pull/14740"
+  },
+  "judgeUsage": {
+    "calls": 122,
+    "inputTokens": 29974,
+    "outputTokens": 12359,
+    "costUsd": 0.4588450000000001
+  }
+}

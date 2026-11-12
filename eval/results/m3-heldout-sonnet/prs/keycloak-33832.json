@@ -1,0 +1,126 @@
+{
+  "id": "keycloak-33832",
+  "goldenUrl": "https://github.com/keycloak/keycloak/pull/33832",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "ASN.1 decoder length accounting breaks with long-form lengths and does not validate bounds",
+      "affected": [
+        "authz/client/src/main/java/org/keycloak/authorization/client/util/crypto/ASN1Decoder.java:49-63",
+        "authz/client/src/main/java/org/keycloak/authorization/client/util/crypto/ASN1Decoder.java:76-83",
+        "authz/client/src/main/java/org/keycloak/authorization/client/util/crypto/ASN1Decoder.java:160-163"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Adding abstract `order()` to the public CryptoProvider interface breaks external implementations, and the new provider is selected silently",
+      "affected": [
+        "common/src/main/java/org/keycloak/common/crypto/CryptoProvider.java:39-44",
+        "common/src/main/java/org/keycloak/common/crypto/CryptoIntegration.java:54-72"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Leftover dead code and misleading name in AuthzClientCryptoProvider",
+      "affected": [
+        "authz/client/src/main/java/org/keycloak/authorization/client/util/crypto/AuthzClientCryptoProvider.java:60-67",
+        "authz/client/src/main/java/org/keycloak/authorization/client/util/crypto/AuthzClientCryptoProvider.java:114-115"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 3,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqcT8zKkGdsuwgaibpb",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 16749,
+      "outputTokens": 1251,
+      "ms": 8859
+    }
+  ],
+  "costUsd": 0.046008,
+  "durationMs": 10122,
+  "promptSha256": "0e199b12dcc40437b93e60882af62b034de91a0ce3f2b36915a425caaecab350",
+  "promptChars": 38651,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: ASN.1 decoder length accounting breaks with long-form lengths and does not validate bounds\n\nAffected:\n- authz/client/src/main/java/org/keycloak/authorization/client/util/crypto/ASN1Decoder.java:49-63\n- authz/client/src/main/java/org/keycloak/authorization/client/util/crypto/ASN1Decoder.java:76-83\n- authz/client/src/main/java/org/keycloak/authorization/client/util/crypto/ASN1Decoder.java:160-163\n\nExplanation:\n`readSequence` loops while `length > 0`. `readNext` can return `-1` for an indefinite length, which makes `new byte[length]` throw a NegativeArraySizeException (an unchecked exception) on malformed input. If an inner element claims more bytes than remain, the decoder throws a generic EOF IOException, so this part is acceptable. However, `readLength` rejects any long-form length `>= limit`. A DER signature fed to the decoder is bounded by the sequence length, so the check is acceptable. A zero-length element would make `length` never decrease, but `readNext` always returns at least 2 bytes, so there is no infinite loop. The real problem is the indefinite length: `readNext` computes `length = -1 + reset()` and then calls `read(length)`. This can produce a negative or wrong size and an unchecked exception. Untrusted signature input should only ever fail with an IOException.\n\nProposed fix:\n~~~java\nint length = readLength();\nif (length < 0) throw new IOException(\"Indefinite length not supported\");\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Adding abstract `order()` to the public CryptoProvider interface breaks external implementations, and the new provider is selected silently\n\nAffected:\n- common/src/main/java/org/keycloak/common/crypto/CryptoProvider.java:39-44\n- common/src/main/java/org/keycloak/common/crypto/CryptoIntegration.java:54-72\n\nExplanation:\n`order()` is a new abstract method with no default. Any third-party CryptoProvider will fail to compile or throw AbstractMethodError. Giving it a default value, such as 100, is safer. The duplicate-provider check was also removed entirely. Conflicting providers with equal order (for example default and fips on the classpath together) now get resolved arbitrarily instead of failing fast. The \"ignored providers\" message is logged only at debug level, so a misconfiguration is hard to notice. Consider failing, or at least warning, when the top two providers have equal order.\n\nProposed fix:\n~~~java\ndefault int order() { return 100; }\n~~~\n\n## 3) Severity: LOW | Type: Maintainability\nTitle: Leftover dead code and misleading name in AuthzClientCryptoProvider\n\nAffected:\n- authz/client/src/main/java/org/keycloak/authorization/client/util/crypto/AuthzClientCryptoProvider.java:60-67\n- authz/client/src/main/java/org/keycloak/authorization/client/util/crypto/AuthzClientCryptoProvider.java:114-115\n\nExplanation:\nLines 114-115 encode the values and discard the results, which is pointless work. `getBouncyCastleProvider` returns the default keystore's JDK provider, not BouncyCastle, which is misleading to callers. `getKeyStore` uses `format.name()` where other providers use `toString()`, which could yield a different type string.\n\nProposed fix:\nRemove the two discarded `ASN1Encoder` calls. Document or rename the `getBouncyCastleProvider` behavior, and use `format.toString()` in `getKeyStore`.\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "Returns wrong provider (default keystore instead of BouncyCastle)",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "getBouncyCastleProvider method name is misleading as it returns the default keystore's JDK provider, not BouncyCastle",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - that the getBouncyCastleProvider method returns the wrong provider (the default keystore's JDK provider instead of BouncyCastle). Both comments point to the same bug where the method name suggests it returns BouncyCastle but actually returns a different provider."
+      },
+      {
+        "golden_comment": "Dead code exists where ASN1Encoder instances are created and written to, but their results are immediately discarded. The actual encoding is performed by new ASN1Encoder instances created in the subsequent return statement, rendering the earlier operations useless.",
+        "severity": "Low",
+        "category": "perf",
+        "matched_candidate": "Lines 114-115 in AuthzClientCryptoProvider encode values and discard results, which is dead/pointless code",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same problem as the golden comment - dead code where ASN1Encoder instances are created and values are encoded but the results are discarded. The candidate specifically mentions lines 114-115 in AuthzClientCryptoProvider where values are encoded and results discarded, which matches the golden comment's description of ASN1Encoder instances being created and written to but their results being immediately discarded."
+      },
+      {
+        "golden_comment": "When length starts at -1 from indefinite-length encoding, the arithmetic 'length = length - bytes.length' will behave unexpectedly, potentially leading to incorrect processing of encoded data.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "ASN.1 decoder readNext returns -1 for indefinite length, causing NegativeArraySizeException when creating byte array on malformed input - should throw IOException instead",
+        "confidence": 0.85,
+        "reasoning": "Both comments identify the same underlying issue: when length is -1 (from indefinite-length encoding), it causes problems in subsequent processing. The golden comment focuses on the arithmetic 'length = length - bytes.length' behaving unexpectedly, while the candidate focuses on the NegativeArraySizeException when creating a byte array. Both are consequences of the same root cause - the -1 value from indefinite length encoding not being handled properly. They're pointing to the same fundamental bug about improper handling of the -1 length value."
+      },
+      {
+        "golden_comment": "Abstract order() method on CryptoProvider may break backward compatibility with existing implementations",
+        "severity": "Low",
+        "category": "speculative",
+        "matched_candidate": "Adding abstract order() method to public CryptoProvider interface breaks external implementations that don't implement it - should have default value",
+        "confidence": 0.95,
+        "reasoning": "Both comments identify the same issue: adding an abstract order() method to the CryptoProvider interface/class will break backward compatibility with existing external implementations that don't implement this new method. The candidate suggests adding a default value as a solution, while the golden comment just identifies the problem, but they're pointing to the exact same backward compatibility concern."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Duplicate-provider check was removed, so conflicting providers with equal order are resolved arbitrarily instead of failing fast"
+      },
+      {
+        "candidate": "Ignored providers message is logged only at debug level, making misconfiguration hard to notice - should fail or warn when top two providers have equal order"
+      },
+      {
+        "candidate": "getKeyStore uses format.name() where other providers use toString(), which could yield different type strings"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 7,
+    "total_golden": 4,
+    "tp": 4,
+    "fp": 3,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.5714285714285714,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "keycloak/keycloak",
+    "pr_url": "https://github.com/keycloak/keycloak/pull/33832"
+  },
+  "judgeUsage": {
+    "calls": 30,
+    "inputTokens": 7617,
+    "outputTokens": 3100,
+    "costUsd": 0.115585
+  }
+}

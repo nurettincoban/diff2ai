@@ -1,0 +1,148 @@
+{
+  "id": "grafana-103633",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/103633",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Permission cache is no longer read in getUserPermissions and getAnonymousPermissions, and the callers that still use them lose caching",
+      "affected": [
+        "pkg/services/authz/rbac/service.go:377-380",
+        "pkg/services/authz/rbac/service.go:421-424"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Denial cache can serve stale denials after permissions are granted",
+      "affected": [
+        "pkg/services/authz/rbac/service.go:116-121",
+        "pkg/services/authz/rbac/service.go:153-155"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "The denial cache key is ambiguous and omits fields that affect the result",
+      "affected": [
+        "pkg/services/authz/rbac/cache.go:30-32"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Cache-usage and request metrics are inconsistent, and the user-identifier lookup is repeated on every call",
+      "affected": [
+        "pkg/services/authz/rbac/service.go:123-137",
+        "pkg/services/authz/rbac/service.go:342-368"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "NoopCache is exported from the authz package for single use",
+      "affected": [
+        "pkg/services/authz/rbac.go:239-251"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqbaVj1MErVqMG1mzxS",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 10076,
+      "outputTokens": 1414,
+      "ms": 11476
+    }
+  ],
+  "costUsd": 0.034292,
+  "durationMs": 12748,
+  "promptSha256": "dd2089a281d879750d52f8501e3091826e916f3b0942346fdfb0d553ff2375ea",
+  "promptChars": 20617,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Permission cache is no longer read in getUserPermissions and getAnonymousPermissions, and the callers that still use them lose caching\n\nAffected:\n- pkg/services/authz/rbac/service.go:377-380\n- pkg/services/authz/rbac/service.go:421-424\n\nExplanation:\nThe cache lookups were removed from getUserPermissions and getAnonymousPermissions. Check and List now do the lookup themselves through getCachedIdentityPermissions. Any other caller of getIdentityPermissions (for example BatchCheck, if it exists) now goes to the DB on every call. That is a performance regression and a behavior change. The diff does not show the other callers, so I cannot confirm this. Also, the existing test \"should return permissions from cache if available\" was deleted instead of being moved, which leaves that path untested.\n\nProposed fix:\n~~~go\n// Keep cache lookup inside getIdentityPermissions, or verify that every caller\n// goes through getCachedIdentityPermissions first.\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Denial cache can serve stale denials after permissions are granted\n\nAffected:\n- pkg/services/authz/rbac/service.go:116-121\n- pkg/services/authz/rbac/service.go:153-155\n\nExplanation:\nA denial is cached per (user, action, name, parent) for shortCacheTTL, and nothing invalidates it. If a permission is granted, or the user's role or team changes, within that window, the denial still wins. The DB fallback is never reached. This also creates a larger set of cache entries, one per resource name, which an attacker could use to inflate the cache by probing many names. The staleness is probably acceptable for a short TTL, but it should be documented and the TTL kept short.\n\nProposed fix:\n~~~go\n// Document the staleness window and bound the TTL.\n// Invalidate the denial entries when permissions change, if possible.\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: The denial cache key is ambiguous and omits fields that affect the result\n\nAffected:\n- pkg/services/authz/rbac/cache.go:30-32\n\nExplanation:\nThe key is built by joining its parts with \"_\". User UIDs, names and folders can contain underscores, so different tuples can map to the same key. The key also uses the same \".perm_\" prefix as userPermCacheKey. Check's result also depends on other request fields, such as the verb (mapped to the action), the resource/group and the identity type. A collision could produce a wrong denial. Use a distinct prefix and an unambiguous separator.\n\nProposed fix:\n~~~go\nreturn namespace + \".perm_denial_\" + userUID + \"|\" + action + \"|\" + name + \"|\" + parent\n~~~\n\n## 4) Severity: LOW | Type: Bug\nTitle: Cache-usage and request metrics are inconsistent, and the user-identifier lookup is repeated on every call\n\nAffected:\n- pkg/services/authz/rbac/service.go:123-137\n- pkg/services/authz/rbac/service.go:342-368\n\nExplanation:\nWhen the cached permissions deny, the code falls through and increments permissionCacheUsage \"false\". A cache error from GetUserIdentifiers is also treated as a miss. getCachedIdentityPermissions then calls GetUserIdentifiers, and getIdentityPermissions calls it again. The extra lookups are cheap when the identifier is cached, but a DB error is hit twice. The denial-cache hit also increments permissionCacheUsage \"true\" even though no permission cache was consulted.\n\nProposed fix:\n~~~go\n// Resolve the identifiers once and pass them down.\n// Count a denial-cache hit separately from permission-cache hits.\n~~~\n\n## 5) Severity: LOW | Type: Maintainability\nTitle: NoopCache is exported from the authz package for single use\n\nAffected:\n- pkg/services/authz/rbac.go:239-251\n\nExplanation:\nThe exported `NoopCache` widens the package API. It should be unexported, or reuse an existing no-op cache if one is available.\n\nProposed fix:\n~~~go\ntype noopCache struct{}\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The cache key construction in `userPermDenialCacheKey` uses simple string concatenation with underscores, which can lead to ambiguous keys and collision risks when any component contains underscores or is empty. This could result in incorrect denial cache hits, affecting user permissions.",
+        "severity": "Medium",
+        "category": "data",
+        "matched_candidate": "The denial cache key is ambiguous because it joins parts with underscore, but user UIDs, names and folders can contain underscores, causing different tuples to map to the same key",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the cache key construction using underscore concatenation is ambiguous because components (user UIDs, names, folders) can contain underscores, leading to different tuples mapping to the same key. This is the same collision risk concern mentioned in the golden comment."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Permission cache is no longer read in getUserPermissions and getAnonymousPermissions, causing callers that still use them to lose caching and hit the DB on every call - a performance regression"
+      },
+      {
+        "candidate": "The test 'should return permissions from cache if available' was deleted instead of being moved, leaving the cache path untested"
+      },
+      {
+        "candidate": "Denial cache can serve stale denials after permissions are granted because nothing invalidates cached denials when permissions, roles, or team memberships change within the shortCacheTTL window"
+      },
+      {
+        "candidate": "Denial cache creates one entry per resource name, which an attacker could exploit to inflate the cache by probing many names"
+      },
+      {
+        "candidate": "When cached permissions deny, the code falls through and incorrectly increments permissionCacheUsage 'false'"
+      },
+      {
+        "candidate": "A cache error from GetUserIdentifiers is treated as a miss rather than being handled distinctly"
+      },
+      {
+        "candidate": "GetUserIdentifiers is called twice - once in getCachedIdentityPermissions and again in getIdentityPermissions - causing redundant lookups and potential double DB errors"
+      },
+      {
+        "candidate": "Denial-cache hit increments permissionCacheUsage 'true' even though no permission cache was consulted"
+      },
+      {
+        "candidate": "NoopCache is exported from the authz package but only used once, unnecessarily widening the package API"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The Check operation exhibits asymmetric cache trust logic: cached permission grants are trusted and returned immediately, but cached denials from the same permission cache are ignored, leading to a fresh database lookup. This allows stale cached grants to provide access to revoked resources, posing a security risk. ",
+        "severity": "High",
+        "category": "security"
+      },
+      {
+        "golden_comment": "The test comment says the cached permissions 'allow access', but the map stores false for dashboards:uid:dash1, so checkPermission will still treat this scope as not allowed.",
+        "severity": "Low",
+        "category": "doc_defect"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 12,
+    "total_golden": 3,
+    "tp": 1,
+    "fp": 9,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.08333333333333333,
+    "recall": 0.3333333333333333,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/103633"
+  },
+  "judgeUsage": {
+    "calls": 40,
+    "inputTokens": 10543,
+    "outputTokens": 4374,
+    "costUsd": 0.16206500000000004
+  }
+}

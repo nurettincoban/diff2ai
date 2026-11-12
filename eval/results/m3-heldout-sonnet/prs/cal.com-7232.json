@@ -1,0 +1,167 @@
+{
+  "id": "cal.com-7232",
+  "goldenUrl": "https://github.com/calcom/cal.com/pull/7232",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Cancelled-reminder cron deletes DB rows but leaves the SendGrid batch ID uncancelled for unscheduled reminders, and one failure aborts the whole batch",
+      "affected": [
+        "packages/features/ee/workflows/api/scheduleEmailReminders.ts:43-77"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Non-immediate email cancel leaves reminders that may be sent, and rows with a past scheduledDate never get cancelled or deleted",
+      "affected": [
+        "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts:197-235",
+        "packages/features/bookings/lib/handleCancelBooking.ts:484-492"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Fire-and-forget async deletes in loops, and the immediate path leaves DB rows",
+      "affected": [
+        "packages/trpc/server/routers/viewer/workflows.tsx:213-217",
+        "packages/trpc/server/routers/viewer/workflows.tsx:575-579",
+        "packages/features/bookings/lib/handleCancelBooking.ts:486-492",
+        "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts:213-223"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Maintainability",
+      "title": "Unrelated commented-out code was reindented, and the UI was changed",
+      "affected": [
+        "packages/trpc/server/routers/viewer/workflows.tsx:901-962",
+        "packages/features/ee/workflows/components/WorkflowStepContainer.tsx:390-461"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Value imports of types and a missing type-only import",
+      "affected": [
+        "packages/features/bookings/lib/handleNewBooking.ts:1-10",
+        "packages/trpc/server/routers/viewer/workflows.tsx:1-10",
+        "packages/features/ee/workflows/api/scheduleEmailReminders.ts:10"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqggeCZvaK3GKcuqWqm",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 13731,
+      "outputTokens": 2027,
+      "ms": 16358
+    }
+  ],
+  "costUsd": 0.047732,
+  "durationMs": 17465,
+  "promptSha256": "3c1978159d9995241a7ef7f5bab487f994dbfc470d7aac0351fe84d83423320c",
+  "promptChars": 33888,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Cancelled-reminder cron deletes DB rows but leaves the SendGrid batch ID uncancelled for unscheduled reminders, and one failure aborts the whole batch\n\nAffected:\n- packages/features/ee/workflows/api/scheduleEmailReminders.ts:43-77\n\nExplanation:\nThe cron job awaits `client.request` inside a loop, and the Prisma deletes are only built as promises and awaited at the end. If one SendGrid call throws, the catch block exits the whole loop. The remaining cancelled reminders are not processed and the error is only logged. Reminders whose cancel call already succeeded are never deleted, because their delete promises are never awaited. Prisma queries are lazy, so un-awaited promises never execute. On the next run those reminders are cancelled again, which is wasteful and can fail.\n\nThe query also has no `referenceId: { not: null }` filter. A reminder with a null `referenceId` sends `batch_id: null` to SendGrid. It would be better to wrap each reminder in its own try/catch and delete the row right after its successful cancel.\n\nProposed fix:\n~~~ts\nfor (const reminder of remindersToCancel) {\n  if (!reminder.referenceId) continue;\n  try {\n    await client.request({ url: \"/v3/user/scheduled_sends\", method: \"POST\", body: { batch_id: reminder.referenceId, status: \"cancel\" } });\n    await prisma.workflowReminder.delete({ where: { id: reminder.id } });\n  } catch (error) {\n    console.log(`Error cancelling scheduled Email: ${error}`);\n  }\n}\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: Non-immediate email cancel leaves reminders that may be sent, and rows with a past scheduledDate never get cancelled or deleted\n\nAffected:\n- packages/features/ee/workflows/lib/reminders/emailReminderManager.ts:197-235\n- packages/features/bookings/lib/handleCancelBooking.ts:484-492\n\nExplanation:\nFor a cancelled booking, the reminder is only flagged `cancelled: true`. The actual SendGrid cancel happens later in the cron, and only for reminders scheduled within the next hour. If the cron runs late or misses its window, the email is sent anyway. The `scheduled` filter was also dropped. Unscheduled reminders that have a `referenceId` but are not yet in SendGrid are marked cancelled and later passed to SendGrid with a stale or invalid batch ID.\n\nThe previous `DELETE /scheduled_sends/{id}` call was also removed. Cancelled batch IDs are no longer cleaned up on the SendGrid side.\n\nSeparately, the booking's reminder rows may still be removed by cascade when the booking is deleted. The cancelled flag is then lost, and so is the ability to cancel the email later.\n\nProposed fix: cancel via the API immediately when `referenceId` exists, as the `immediateDelete` path does. Ensure the cron also handles reminders whose `scheduledDate` is in the past but whose send has not occurred. Alternatively, keep the rows with the booking.\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Fire-and-forget async deletes in loops, and the immediate path leaves DB rows\n\nAffected:\n- packages/trpc/server/routers/viewer/workflows.tsx:213-217\n- packages/trpc/server/routers/viewer/workflows.tsx:575-579\n- packages/features/bookings/lib/handleCancelBooking.ts:486-492\n- packages/features/ee/workflows/lib/reminders/emailReminderManager.ts:213-223\n\nExplanation:\nThe async delete helpers are called without `await`. In serverless handlers the work may be cut off after the response is sent. Errors are swallowed, so the database and the provider can end up inconsistent.\n\nWith `immediateDelete`, the email path returns after cancelling at SendGrid without deleting the `WorkflowReminder` row. The SMS path does delete the row. The email reminder row therefore remains and will be reprocessed. In the workflow-delete flow it is removed only by cascade, but for rescheduled bookings it lingers.\n\nProposed fix: delete the DB row in the immediate path too, and `await Promise.all(...)` the helper calls.\n\n## 4) Severity: MEDIUM | Type: Maintainability\nTitle: Unrelated commented-out code was reindented, and the UI was changed\n\nAffected:\n- packages/trpc/server/routers/viewer/workflows.tsx:901-962\n- packages/features/ee/workflows/components/WorkflowStepContainer.tsx:390-461\n\nExplanation:\nWhitespace inside a commented-out block was stripped, which adds noise to the diff and shows a formatter mangling code. The block is also malformed (`/*) {`). Additionally, `isSenderIdNeeded` was dropped from the condition in `WorkflowStepContainer.tsx`. This looks like a regression, because the sender ID UI no longer renders under this wrapper. Check that this was intentional.\n\nProposed fix: revert the unrelated formatting changes. Restore the sender ID rendering if it was removed unintentionally.\n\n## 5) Severity: LOW | Type: Bug\nTitle: Value imports of types and a missing type-only import\n\nAffected:\n- packages/features/bookings/lib/handleNewBooking.ts:1-10\n- packages/trpc/server/routers/viewer/workflows.tsx:1-10\n- packages/features/ee/workflows/api/scheduleEmailReminders.ts:10\n\nExplanation:\nTypes such as `App`, `Credential`, `Prisma` and `PrismaPromise` are now imported as values, where `import type` was used before. This risks bundling issues. `WorkflowReminder` is also imported from `@calcom/prisma/client` as a value, but it is only a type.\n\nProposed fix: use `import type` for the type-only symbols.\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "Asynchronous functions deleteScheduledEmailReminder and deleteScheduledSMSReminder are called without await inside forEach loops. This occurs during booking rescheduling/cancellation, and workflow/workflow step deletion/updates. Consequently, scheduled workflow reminders may not be reliably cancelled, potentially leaving them active.",
+        "severity": "Medium",
+        "category": "concurrency",
+        "matched_candidate": "Async delete helpers are called without await, risking work being cut off in serverless handlers after response is sent",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same core problem as the golden comment: async delete helpers (deleteScheduledEmailReminder and deleteScheduledSMSReminder) are called without await. The candidate mentions the risk of 'work being cut off in serverless handlers after response is sent', which is essentially the same consequence as the golden comment's concern about 'scheduled workflow reminders may not be reliably cancelled, potentially leaving them active.' Both identify the missing await on async delete functions as the underlying issue."
+      },
+      {
+        "golden_comment": "When immediateDelete is true, the deleteScheduledEmailReminder function cancels the SendGrid email but fails to delete the corresponding WorkflowReminder record from the database. This creates orphaned database entries and is inconsistent with the immediateDelete: false path, which marks the record as cancelled. The SendGrid DELETE API call is also omitted in this path.",
+        "severity": "High",
+        "category": "data",
+        "matched_candidate": "With immediateDelete, the email path returns after cancelling at SendGrid without deleting the WorkflowReminder row, while SMS path does delete the row",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same core problem: when immediateDelete is true, the email path cancels at SendGrid but doesn't delete the WorkflowReminder row from the database. The candidate also notes the inconsistency by comparing it to the SMS path which does delete the row. This is essentially the same issue as the golden comment, which points out that the database record isn't deleted/handled properly when immediateDelete is true, creating orphaned entries."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Cancelled-reminder cron deletes DB rows but leaves the SendGrid batch ID uncancelled for unscheduled reminders"
+      },
+      {
+        "candidate": "One SendGrid failure in the cron loop aborts the whole batch, leaving remaining cancelled reminders unprocessed"
+      },
+      {
+        "candidate": "Query has no referenceId: { not: null } filter, causing reminders with null referenceId to send batch_id: null to SendGrid"
+      },
+      {
+        "candidate": "Non-immediate email cancel only flags reminders as cancelled: true, but actual SendGrid cancel only happens for reminders scheduled within the next hour"
+      },
+      {
+        "candidate": "If the cron runs late or misses its window, the cancelled email is sent anyway"
+      },
+      {
+        "candidate": "The scheduled filter was dropped, causing unscheduled reminders with referenceId but not yet in SendGrid to be marked cancelled and passed to SendGrid with stale or invalid batch ID"
+      },
+      {
+        "candidate": "Previous DELETE /scheduled_sends/{id} call was removed, so cancelled batch IDs are no longer cleaned up on the SendGrid side"
+      },
+      {
+        "candidate": "Booking's reminder rows may be removed by cascade when booking is deleted, losing the cancelled flag and ability to cancel the email later"
+      },
+      {
+        "candidate": "Unrelated commented-out code was reindented, adding noise to the diff"
+      },
+      {
+        "candidate": "Commented-out block is malformed (/*) {"
+      },
+      {
+        "candidate": "isSenderIdNeeded was dropped from the condition in WorkflowStepContainer.tsx, potentially causing sender ID UI to not render"
+      },
+      {
+        "candidate": "Types such as App, Credential, Prisma and PrismaPromise are now imported as values instead of using import type, risking bundling issues"
+      },
+      {
+        "candidate": "WorkflowReminder is imported from @calcom/prisma/client as a value but is only used as a type"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The 'cancelled' field is nullable, which can lead to existing records having null values instead of a default of false. This can cause incorrect behavior in the application when checking the cancellation status of reminders.",
+        "severity": "Medium",
+        "category": "data"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 16,
+    "total_golden": 3,
+    "tp": 2,
+    "fp": 13,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.125,
+    "recall": 0.6666666666666666,
+    "tool": "diff2ai",
+    "repo_name": "calcom/cal.com",
+    "pr_url": "https://github.com/calcom/cal.com/pull/7232"
+  },
+  "judgeUsage": {
+    "calls": 57,
+    "inputTokens": 14074,
+    "outputTokens": 6006,
+    "costUsd": 0.22052
+  }
+}

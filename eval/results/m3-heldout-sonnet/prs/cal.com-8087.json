@@ -1,0 +1,116 @@
+{
+  "id": "cal.com-8087",
+  "goldenUrl": "https://github.com/calcom/cal.com/pull/8087",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "`getCalendarCredentials` stores un-awaited calendar promises; sync consumers break",
+      "affected": [
+        "packages/core/CalendarManager.ts:28-30"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "`forEach(async ...)` makes deletions fire-and-forget with unhandled rejections",
+      "affected": [
+        "packages/app-store/vital/lib/reschedule.ts:125-131",
+        "packages/app-store/wipemycalother/lib/reschedule.ts:125-131",
+        "packages/trpc/server/routers/viewer/bookings.tsx:553-558",
+        "packages/features/bookings/lib/handleCancelBooking.ts:460-461"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Eager dynamic imports at module load defeat lazy loading and risk unhandled rejections",
+      "affected": [
+        "packages/app-store/index.ts:1-31"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Performance",
+      "title": "Sequential awaits in the video adapter loop and the cancel loop",
+      "affected": [
+        "packages/core/videoClient.ts:24-33",
+        "packages/features/bookings/lib/handleCancelBooking.ts:480-483"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyqhx3CDoEoZ1Qnx9aqt",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 10651,
+      "outputTokens": 1214,
+      "ms": 8665
+    }
+  ],
+  "costUsd": 0.033442,
+  "durationMs": 9869,
+  "promptSha256": "926d610752ce2a714297a368efa06ecd9b732e8ca622e6f27e4de8b3d2cf949a",
+  "promptChars": 25294,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: `getCalendarCredentials` stores un-awaited calendar promises; sync consumers break\n\nAffected:\n- packages/core/CalendarManager.ts:28-30\n\nExplanation:\n`getCalendar` now returns a Promise, but `getCalendarCredentials` still calls it synchronously, so each `calendar` field is a Promise. `getConnectedCalendars` awaits it, but any other consumer of `getCalendarCredentials` (outside this diff) that treats `calendar` as a `Calendar` will get a Promise and fail at runtime. TypeScript may not catch this if the types are inferred loosely. Callers must be checked and the type made explicit, or the calendar resolved inside this function.\n\nProposed fix:\n~~~ts\n// make the field type explicit and audit all callers of getCalendarCredentials\n// or resolve before returning:\nconst calendar = await getCalendar(credential);\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: `forEach(async ...)` makes deletions fire-and-forget with unhandled rejections\n\nAffected:\n- packages/app-store/vital/lib/reschedule.ts:125-131\n- packages/app-store/wipemycalother/lib/reschedule.ts:125-131\n- packages/trpc/server/routers/viewer/bookings.tsx:553-558\n- packages/features/bookings/lib/handleCancelBooking.ts:460-461\n\nExplanation:\n`getCalendar` is now async, and `await` was added inside `forEach` callbacks. `forEach` does not await the callbacks, so the surrounding `try/catch` can no longer catch errors from them, which become unhandled rejections. The handler may also return, and in serverless the process may freeze, before the calendar deletions finish. The calendar deletes were synchronous fire-and-forget before, but the `getCalendar` await now delays them, which makes this worse. Collect the promises and `await Promise.all` them, or use `for...of`.\n\nProposed fix:\n~~~ts\nawait Promise.all(bookingRefsFiltered.map(async (bookingRef) => { ... }));\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Eager dynamic imports at module load defeat lazy loading and risk unhandled rejections\n\nAffected:\n- packages/app-store/index.ts:1-31\n\nExplanation:\n`import(\"./x\")` is evaluated immediately when the object literal is created, so every app is still loaded at startup, and the load is now concurrent. This does not deliver the intended lazy loading. If any single import rejects, it becomes an unhandled rejection at module load, even if nobody awaits that entry. Use thunks (`() => import(...)`) and change the call sites to match, so apps load only when needed.\n\nProposed fix:\n~~~ts\nconst appStore = { applecalendar: () => import(\"./applecalendar\"), ... };\n// usage: await appStore[key]?.()\n~~~\n\n## 4) Severity: LOW | Type: Performance\nTitle: Sequential awaits in the video adapter loop and the cancel loop\n\nAffected:\n- packages/core/videoClient.ts:24-33\n- packages/features/bookings/lib/handleCancelBooking.ts:480-483\n\nExplanation:\nEach credential awaits its import one at a time. This is minor once the modules are cached, but it adds latency on first load. Use `Promise.all` to resolve them concurrently.\n\nProposed fix:\n~~~ts\nconst calendars = await Promise.all(calendarCredentials.map(getCalendar));\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "Consider adding try-catch around the await to handle import failures gracefully",
+        "severity": "Low",
+        "category": "speculative",
+        "matched_candidate": "Eager dynamic imports at module load defeat lazy loading because import() is evaluated immediately when the object literal is created, loading all apps at startup concurrently and risking unhandled rejections if any import fails",
+        "confidence": 0.85,
+        "reasoning": "The golden comment asks for try-catch around await to handle import failures gracefully. The candidate issue mentions 'risking unhandled rejections if any import fails' which identifies the same underlying concern - that import failures are not being handled gracefully. Both are pointing to the same error handling issue with dynamic imports, though the candidate also discusses additional concerns about lazy loading being defeated."
+      },
+      {
+        "golden_comment": "The code uses forEach with async callbacks, which causes asynchronous operations (e.g., calendar/video event deletions, payment refunds) to run concurrently without being awaited. This 'fire-and-forget' behavior leads to unhandled promise rejections, race conditions, and incomplete cleanup, as surrounding try-catch blocks cannot properly handle errors from these unawaited promises. Replace forEach with for...of loops or Promise.all() with map() to ensure proper sequential execution and error handling.",
+        "severity": "Critical",
+        "category": "concurrency",
+        "matched_candidate": "forEach(async ...) makes deletions fire-and-forget with unhandled rejections because forEach does not await callbacks, so try/catch cannot catch errors and serverless processes may freeze before calendar deletions finish",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: using forEach with async callbacks causes 'fire-and-forget' behavior where promises are not awaited, leading to unhandled rejections and try/catch blocks being unable to catch errors. The candidate also mentions the specific context of calendar deletions and notes that serverless processes may freeze before operations complete. This is the same underlying issue about improper async handling in forEach loops."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "getCalendarCredentials stores un-awaited calendar promises because getCalendar now returns a Promise but is called synchronously, causing consumers that treat calendar as a Calendar object to fail at runtime"
+      },
+      {
+        "candidate": "Sequential awaits in the video adapter loop and cancel loop add latency on first load because each credential awaits its import one at a time instead of using Promise.all for concurrent resolution"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 4,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 2,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.5,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "calcom/cal.com",
+    "pr_url": "https://github.com/calcom/cal.com/pull/8087"
+  },
+  "judgeUsage": {
+    "calls": 10,
+    "inputTokens": 3587,
+    "outputTokens": 1138,
+    "costUsd": 0.046385
+  }
+}

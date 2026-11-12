@@ -1,0 +1,165 @@
+{
+  "id": "grafana-90045",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/90045",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Update stops merging the storage-updated object into the legacy write and uses the unwrapped objInfo",
+      "affected": [
+        "pkg/apiserver/rest/dualwriter_mode3.go:134-141"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Legacy goroutines inherit the request context, so they are cancelled when the request ends",
+      "affected": [
+        "pkg/apiserver/rest/dualwriter_mode3.go:50-57",
+        "pkg/apiserver/rest/dualwriter_mode3.go:108-114",
+        "pkg/apiserver/rest/dualwriter_mode3.go:161-167"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Wrong metrics recorded for several failure and success paths",
+      "affected": [
+        "pkg/apiserver/rest/dualwriter_mode3.go:45",
+        "pkg/apiserver/rest/dualwriter_mode3.go:106",
+        "pkg/apiserver/rest/dualwriter_mode3.go:129",
+        "pkg/apiserver/rest/dualwriter_mode3.go:166"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Delete stores the unannotated logger in the context, and the Delete goroutine's legacy errors are never logged",
+      "affected": [
+        "pkg/apiserver/rest/dualwriter_mode3.go:97",
+        "pkg/apiserver/rest/dualwriter_mode3.go:108-114"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Possible nil pointer dereference on options",
+      "affected": [
+        "pkg/apiserver/rest/dualwriter_mode3.go:38",
+        "pkg/apiserver/rest/dualwriter_mode3.go:65",
+        "pkg/apiserver/rest/dualwriter_mode3.go:81"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Tests are weak and rely on a shared registry",
+      "affected": [
+        "pkg/apiserver/rest/dualwriter_mode3_test.go:63",
+        "pkg/apiserver/rest/dualwriter_mode3_test.go:343"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 6,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyqfdf6UYoNPyUvogpbN",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 20087,
+      "outputTokens": 1720,
+      "ms": 13358
+    }
+  ],
+  "costUsd": 0.057374,
+  "durationMs": 14468,
+  "promptSha256": "df6fe35e581b67db2c21d66b42e3ad06108ca5d767d16e2b6638e5f89b97465e",
+  "promptChars": 38633,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Update stops merging the storage-updated object into the legacy write and uses the unwrapped objInfo\n\nAffected:\n- pkg/apiserver/rest/dualwriter_mode3.go:134-141\n\nExplanation:\nThe old code wrapped the object in `updateWrapper` so legacy received the same object that storage produced. The new code passes the original `objInfo` to `Legacy.Update`. Legacy therefore recomputes the update against its own old object. The two stores can diverge, for example when the update is driven by generation or resourceVersion. The goroutine also reuses `objInfo` and the request-scoped `ctx`. If that context is cancelled once the request returns, the legacy write is cancelled with it. Detach with `context.WithoutCancel` and pass `&updateWrapper{upstream: objInfo, updated: res}`.\n\nProposed fix:\n~~~go\ngo func() {\n    ctx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), 10*time.Second, errors.New(\"legacy update timeout\"))\n    defer cancel()\n    _, _, err := d.Legacy.Update(ctx, name, &updateWrapper{upstream: objInfo, updated: res}, createValidation, updateValidation, forceAllowCreate, options)\n    d.recordLegacyDuration(err != nil, mode3Str, options.Kind, method, startLegacy)\n}()\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: Legacy goroutines inherit the request context, so they are cancelled when the request ends\n\nAffected:\n- pkg/apiserver/rest/dualwriter_mode3.go:50-57\n- pkg/apiserver/rest/dualwriter_mode3.go:108-114\n- pkg/apiserver/rest/dualwriter_mode3.go:161-167\n\nExplanation:\nThe async legacy writes derive their context from the request `ctx`. That context is cancelled as soon as the handler returns, so legacy writes can be aborted intermittently and legacy storage silently falls out of sync. Use `context.WithoutCancel(ctx)` as the parent of the timeout context.\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Wrong metrics recorded for several failure and success paths\n\nAffected:\n- pkg/apiserver/rest/dualwriter_mode3.go:45\n- pkg/apiserver/rest/dualwriter_mode3.go:106\n- pkg/apiserver/rest/dualwriter_mode3.go:129\n- pkg/apiserver/rest/dualwriter_mode3.go:166\n\nExplanation:\n- A storage failure in Create and Update is recorded with `recordLegacyDuration`.\n- Delete success passes `name` instead of `options.Kind`, which produces a high-cardinality label.\n- The DeleteCollection legacy goroutine calls `recordStorageDuration` instead of `recordLegacyDuration`.\n\nUse the correct recorder and label in each case.\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: Delete stores the unannotated logger in the context, and the Delete goroutine's legacy errors are never logged\n\nAffected:\n- pkg/apiserver/rest/dualwriter_mode3.go:97\n- pkg/apiserver/rest/dualwriter_mode3.go:108-114\n\nExplanation:\n`klog.NewContext(ctx, d.Log)` drops the `log` variable that carries name, kind and method, so the call-specific fields are lost. Errors from the legacy goroutines in all write methods are only recorded as metrics and never logged. This makes legacy divergence hard to diagnose. Use `log` in the context and log the legacy errors.\n\n## 5) Severity: MEDIUM | Type: Bug\nTitle: Possible nil pointer dereference on options\n\nAffected:\n- pkg/apiserver/rest/dualwriter_mode3.go:38\n- pkg/apiserver/rest/dualwriter_mode3.go:65\n- pkg/apiserver/rest/dualwriter_mode3.go:81\n\nExplanation:\n`options.Kind` is dereferenced without a nil check in Create, Get, List and the other methods. Callers may pass nil options, which would panic. Get previously ignored `options` entirely and passed a fresh `GetOptions{}`. Guard against nil.\n\n## 6) Severity: LOW | Type: Test\nTitle: Tests are weak and rely on a shared registry\n\nAffected:\n- pkg/apiserver/rest/dualwriter_mode3_test.go:63\n- pkg/apiserver/rest/dualwriter_mode3_test.go:343\n\nExplanation:\n- The tests use a package-level `p` registry across many `NewDualWriter` calls, which can cause duplicate metric registration. Other tests create a fresh `prometheus.NewRegistry()`.\n- The legacy goroutines are not awaited, so the legacy mock calls are never asserted.\n- The create error case does not set up a storage mock; it sets up the legacy mock only.\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The context is being created with d.Log instead of the log variable that was initialized with additional context values (name, kind, method). This means those values won't be propagated to the logging context.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Delete stores the unannotated logger in the context using klog.NewContext(ctx, d.Log) which drops the log variable that carries name, kind and method fields",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment: the code uses d.Log instead of the log variable when creating the context, which means the additional context values (name, kind, method) that were added to the log variable won't be propagated. Both comments point to the same bug where the enriched logger is not being used."
+      },
+      {
+        "golden_comment": "In DualWriterMode3's DeleteCollection method, when a storage operation fails, recordStorageDuration is incorrectly called with recordLegacyDuration instead.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "DeleteCollection legacy goroutine calls recordStorageDuration instead of recordLegacyDuration",
+        "confidence": 0.95,
+        "reasoning": "The golden comment states that when a storage operation fails, recordStorageDuration is incorrectly called with recordLegacyDuration. The candidate issue states that the legacy goroutine calls recordStorageDuration instead of recordLegacyDuration. Both are identifying the same underlying bug - a mix-up between recordStorageDuration and recordLegacyDuration in the DeleteCollection method of DualWriterMode3. The candidate correctly identifies that the legacy operation is using the wrong recording function (recordStorageDuration instead of recordLegacyDuration)."
+      },
+      {
+        "golden_comment": "Inconsistency: using name instead of options.Kind for metrics recording differs from other methods.",
+        "severity": "Medium",
+        "category": "api",
+        "matched_candidate": "Delete success passes name instead of options.Kind, which produces a high-cardinality label in metrics",
+        "confidence": 0.95,
+        "reasoning": "Both comments identify the same issue: the code uses 'name' instead of 'options.Kind' for metrics recording. The golden comment frames it as an inconsistency with other methods, while the candidate frames it as a high-cardinality label problem. Both are pointing to the exact same code problem - using 'name' where 'options.Kind' should be used in the metrics recording."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Update stops merging the storage-updated object into the legacy write and uses the unwrapped objInfo - the new code passes the original objInfo to Legacy.Update instead of the updateWrapper, causing the two stores to diverge when updates are driven by generation or resourceVersion"
+      },
+      {
+        "candidate": "Legacy goroutines inherit the request context, so they are cancelled when the request ends - async legacy writes derive their context from the request ctx which is cancelled when the handler returns, causing legacy writes to be aborted intermittently"
+      },
+      {
+        "candidate": "A storage failure in Create and Update is recorded with recordLegacyDuration instead of the correct recorder"
+      },
+      {
+        "candidate": "Errors from the legacy goroutines in all write methods are only recorded as metrics and never logged, making legacy divergence hard to diagnose"
+      },
+      {
+        "candidate": "Possible nil pointer dereference on options - options.Kind is dereferenced without a nil check in Create, Get, List and other methods, and callers may pass nil options"
+      },
+      {
+        "candidate": "Tests use a package-level p registry across many NewDualWriter calls which can cause duplicate metric registration"
+      },
+      {
+        "candidate": "Legacy goroutines are not awaited in tests so the legacy mock calls are never asserted"
+      },
+      {
+        "candidate": "The create error case test does not set up a storage mock, it sets up the legacy mock only"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 11,
+    "total_golden": 3,
+    "tp": 3,
+    "fp": 8,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.2727272727272727,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/90045"
+  },
+  "judgeUsage": {
+    "calls": 35,
+    "inputTokens": 9225,
+    "outputTokens": 4071,
+    "costUsd": 0.14790000000000003
+  }
+}

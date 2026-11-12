@@ -1,0 +1,127 @@
+{
+  "id": "cal.com-8330",
+  "goldenUrl": "https://github.com/calcom/cal.com/pull/8330",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Working-hours check compares start to itself and inverts the logic",
+      "affected": [
+        "packages/trpc/server/routers/viewer/slots.ts:137-151"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Date override comparison uses object identity and a questionable offset sign",
+      "affected": [
+        "packages/trpc/server/routers/viewer/slots.ts:105-131"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Override offset logic in getSlots is wrong when the offset crosses a day boundary",
+      "affected": [
+        "packages/lib/slots.ts:211-225"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 3,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqifwbrnuBYFf9T6dZA",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 5623,
+      "outputTokens": 1201,
+      "ms": 10454
+    }
+  ],
+  "costUsd": 0.023256,
+  "durationMs": 11526,
+  "promptSha256": "9c482b20b2e42dcd5821ca66970711738252dc393a86e4d8b4a78f553a6680cd",
+  "promptChars": 12926,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Working-hours check compares start to itself and inverts the logic\n\nAffected:\n- packages/trpc/server/routers/viewer/slots.ts:137-151\n\nExplanation:\n`end` is computed from `slotStartTime` (a copy-paste error), so it never accounts for the event length. The `find` callback returns true when the slot is outside a single working-hour entry, and that makes the slot unavailable. A user with several working-hour entries on one day, for example 9-12 and 14-17, would have every slot rejected because each slot falls outside at least one of the entries. Working hours are also stored in the organizer's timezone, but the slot is compared in UTC with no conversion. This is wrong for any non-UTC organizer and can wrongly drop valid slots. The fix is to check that the slot lies inside at least one working-hour entry (`some`), using slot end = start + eventLength and converting to the organizer timezone.\n\nProposed fix:\n~~~ts\nconst local = time.tz(organizerTimeZone);\nconst start = local.hour()*60 + local.minute();\nconst end = start + eventLength;\nconst inWorking = workingHours.some(w => w.days.includes(local.day()) && start >= w.startTime && end <= w.endTime);\nif (workingHours.length && !inWorking) return false;\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Date override comparison uses object identity and a questionable offset sign\n\nAffected:\n- packages/trpc/server/routers/viewer/slots.ts:105-131\n\nExplanation:\nLine 114 compares two dayjs objects with `===`, which is always false, so the intended \"zero-length override means unavailable\" case is dead code. `dayjs.tz(date.start, tz).utcOffset() * -1` adds the negated offset, and the sign is inconsistent with the conversion in slots.ts, which uses invitee minus organizer offset. `dayjs.tz(date, tz)` also reinterprets the date's wall time in that zone rather than converting it. The `find` is used only for its side effects. The check also runs only against the slot start date, so overrides crossing midnight are mishandled. Because `dateOverrideExist` is set on any matching date, the function returns true early and skips the busy-time check below. A slot inside an override is therefore treated as available even when the host has a conflicting booking.\n\nProposed fix:\n~~~ts\n// use .isSame()/valueOf() for comparisons, convert with dayjs(date).tz(tz)\n// and do not return true early; fall through to the busy check\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Override offset logic in getSlots is wrong when the offset crosses a day boundary\n\nAffected:\n- packages/lib/slots.ts:211-225\n\nExplanation:\nThe override start and end times are shifted by the offset between the invitee and organizer timezones, then reduced to minutes of the UTC day. A shift across midnight wraps the hour and can make `endTime < startTime`, or can place the override on the wrong day. `override.start.toString()` is also passed through `dayjs` for no reason and can be parsed in the local timezone. `override.timeZone` may be undefined, and `.tz(undefined)` then silently uses the local zone. The shifted value is computed twice per field.\n\nProposed fix:\n~~~ts\nconst s = dayjs(override.start).utc().add(offset, \"minute\");\nconst e = dayjs(override.end).utc().add(offset, \"minute\");\n// guard timeZone fallback and handle day wrap\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "Incorrect end time calculation using slotStartTime instead of slotEndTime",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Working-hours check computes end from slotStartTime (copy-paste error) instead of accounting for event length",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - that the end time calculation incorrectly uses slotStartTime instead of slotEndTime. The candidate even provides additional context by calling it a 'copy-paste error' and mentioning it's related to working-hours check, but it's fundamentally pointing to the same bug."
+      },
+      {
+        "golden_comment": "Using === for dayjs object comparison will always return false as it compares object references, not values. Use .isSame() method instead: dayjs(date.start).add(utcOffset, 'minutes').isSame(dayjs(date.end).add(utcOffset, minutes))",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Date override comparison uses object identity (===) on dayjs objects which is always false, making zero-length override unavailable case dead code",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: using === to compare dayjs objects compares object references (identity) rather than values, which will always return false. Both comments point out this is a bug that makes the comparison logic dead code. The candidate correctly identifies this as the same underlying issue, just with slightly different wording."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Working-hours find callback returns true when slot is outside a single working-hour entry, causing slots to be rejected when user has multiple working-hour entries on one day"
+      },
+      {
+        "candidate": "Working hours are stored in organizer's timezone but slot is compared in UTC with no conversion, wrongly dropping valid slots for non-UTC organizers"
+      },
+      {
+        "candidate": "Date override offset sign is inconsistent - uses negated offset while slots.ts uses invitee minus organizer offset"
+      },
+      {
+        "candidate": "dayjs.tz(date, tz) reinterprets date's wall time in that zone rather than converting it"
+      },
+      {
+        "candidate": "Date override check only runs against slot start date, mishandling overrides crossing midnight"
+      },
+      {
+        "candidate": "dateOverrideExist causes early return true, skipping busy-time check and treating slots inside overrides as available even with conflicting bookings"
+      },
+      {
+        "candidate": "Override offset logic in getSlots wraps incorrectly when offset crosses day boundary, making endTime < startTime or placing override on wrong day"
+      },
+      {
+        "candidate": "override.start.toString() is unnecessarily passed through dayjs and can be parsed in local timezone"
+      },
+      {
+        "candidate": "override.timeZone may be undefined and .tz(undefined) silently uses local zone"
+      },
+      {
+        "candidate": "Override shifted value is computed twice per field"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 12,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 10,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.16666666666666666,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "calcom/cal.com",
+    "pr_url": "https://github.com/calcom/cal.com/pull/8330"
+  },
+  "judgeUsage": {
+    "calls": 26,
+    "inputTokens": 7207,
+    "outputTokens": 2777,
+    "costUsd": 0.10545999999999998
+  }
+}
