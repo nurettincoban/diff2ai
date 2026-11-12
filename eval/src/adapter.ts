@@ -1,4 +1,10 @@
-import { parseAffected, parseFindings, reportsNoIssues } from '../../src/formatters/findings.js';
+import {
+  atOrAbove,
+  parseAffected,
+  parseFindings,
+  parseSeverity,
+  reportsNoIssues,
+} from '../../src/formatters/findings.js';
 import type { Finding } from '../../src/formatters/findings.js';
 import { formatInlineComment } from '../../src/integrations/format.js';
 import type {
@@ -27,20 +33,24 @@ export function classifyOutput(markdown: string): Classified {
 
 // One GitHub-style review comment per finding, with the body `diff2ai post`
 // would put on the PR. Findings that failed the local diff verification are
-// left out, as `post` does by default.
-export function toReviewComments(findings: Finding[], createdAt: string): ReviewComment[] {
-  return findings
-    .filter((f) => !f.verificationFailed)
-    .map((f) => {
-      const loc = f.affected.map((a) => parseAffected(a)).find((r) => r !== null) ?? null;
-      return {
-        path: loc ? loc.path.replace(/\\/g, '/') : null,
-        // GitHub's `line` is the last line of a multi-line comment range
-        line: loc?.end ?? loc?.start ?? null,
-        body: formatInlineComment(f),
-        created_at: createdAt,
-      };
-    });
+// left out, as `post` does by default; `minSeverity` mirrors `post --min-severity`.
+export function toReviewComments(
+  findings: Finding[],
+  createdAt: string,
+  minSeverity?: string,
+): ReviewComment[] {
+  const verified = findings.filter((f) => !f.verificationFailed);
+  const kept = minSeverity ? atOrAbove(verified, parseSeverity(minSeverity)) : verified;
+  return kept.map((f) => {
+    const loc = f.affected.map((a) => parseAffected(a)).find((r) => r !== null) ?? null;
+    return {
+      path: loc ? loc.path.replace(/\\/g, '/') : null,
+      // GitHub's `line` is the last line of a multi-line comment range
+      line: loc?.end ?? loc?.start ?? null,
+      body: formatInlineComment(f),
+      created_at: createdAt,
+    };
+  });
 }
 
 export function findingSummaries(findings: Finding[]): PrRecord['findings'] {

@@ -2,7 +2,7 @@ import type { ManifestPr } from './types.js';
 
 // Small seeded PRNG (mulberry32) so the split is reproducible from the seed
 // alone, on any platform.
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;

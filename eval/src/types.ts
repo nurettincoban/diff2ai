@@ -88,6 +88,7 @@ export type PrRecord = {
   }[];
   postedComments: number; // findings sent to the judge (verified only)
   unverifiedFindings: number;
+  belowMinSeverity?: number; // verified findings dropped by post.minSeverity
   usage: Usage[]; // one entry per model call
   costUsd: number;
   durationMs: number;
@@ -125,12 +126,15 @@ export type EvalConfig = {
     reviewArgs: string[];
   };
   judge: { model: string; baseUrl: string; apiKeyEnv: string };
+  // Mirrors `diff2ai post` options applied before findings reach the judge
+  post?: { minSeverity?: string };
   split: { seed: number; devPerSource: number };
   pricingUsdPerMTok: Record<string, Price>;
   // Assumptions behind the pre-run estimate. `low` / `high` name the cheap and
   // the expensive end of the range.
   estimate: {
     basis: string; // where the numbers come from
+    reviewerCallsPerPr?: number; // model calls per review relative to a single pass (default 1)
     promptCharsPerToken: { low: number; high: number };
     reviewerOutputTokens: { low: number; high: number };
     candidatesPerPr: { low: number; high: number };

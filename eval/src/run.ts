@@ -1,5 +1,5 @@
 // npm run eval -- --subset <ids> | --split dev|heldout | --all
-//                 [--estimate] [--approve-usd <n>] [--mock] [--run-id <name>] [--config <file>]
+//                 [--estimate] [--approve-usd <n> | --approve-estimate] [--mock] [--run-id <name>] [--config <file>]
 import fs from 'node:fs';
 import path from 'node:path';
 import { gitClient } from '../../src/git/repo.js';
@@ -29,6 +29,7 @@ type Args = {
   estimate: boolean;
   mock: boolean;
   approveUsd?: number;
+  approveEstimate: boolean; // approve the upper end of the printed estimate
   runId: string;
   config: string;
 };
@@ -52,6 +53,7 @@ function parseArgs(argv: string[]): Args {
     all: argv.includes('--all'),
     estimate: argv.includes('--estimate'),
     mock: argv.includes('--mock'),
+    approveEstimate: argv.includes('--approve-estimate'),
     approveUsd: approve === undefined ? undefined : Number(approve),
     runId: value('--run-id') ?? stamp,
     config: value('--config') ?? 'eval/config/baseline.json',
@@ -95,9 +97,11 @@ async function main(): Promise<void> {
   const estimate = estimateRun(
     config,
     prs.map((pr) => ({ chars: rendered.get(pr.id)?.chars ?? 0, goldenCount: pr.goldenCount })),
+    config.estimate.reviewerCallsPerPr ?? 1,
   );
   console.log(renderEstimate(estimate, config));
   if (args.estimate) return;
+  if (args.approveEstimate) args.approveUsd = Math.ceil(estimate.totalUsd.high * 100) / 100;
 
   const apiKey = args.mock ? 'mock' : (process.env[config.judge.apiKeyEnv] ?? '');
   if (!args.mock) {

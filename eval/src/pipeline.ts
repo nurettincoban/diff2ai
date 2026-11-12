@@ -123,7 +123,12 @@ export async function reviewPr(pr: ManifestPr, ctx: RunContext): Promise<Reviewe
   }
   const response = fs.readFileSync(reviewFile, 'utf-8');
   const { status, findings } = classifyOutput(response);
-  const comments = toReviewComments(findings, new Date().toISOString());
+  const comments = toReviewComments(
+    findings,
+    new Date().toISOString(),
+    ctx.config.post?.minSeverity,
+  );
+  const unverified = findings.filter((f) => f.verificationFailed).length;
   return done(
     {
       ...spent,
@@ -136,7 +141,8 @@ export async function reviewPr(pr: ManifestPr, ctx: RunContext): Promise<Reviewe
           : undefined,
       findings: findingSummaries(findings),
       postedComments: comments.length,
-      unverifiedFindings: findings.length - comments.length,
+      unverifiedFindings: unverified,
+      belowMinSeverity: findings.length - unverified - comments.length,
     },
     comments,
   );

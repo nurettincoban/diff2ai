@@ -30,7 +30,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "eval": "tsx eval/src/run.ts",
-    "eval:manifest": "tsx eval/src/build-manifest.ts"
+    "eval:manifest": "tsx eval/src/build-manifest.ts",
+    "eval:compare": "tsx eval/src/compare.ts"
   },
   "repository": {
     "type": "git",

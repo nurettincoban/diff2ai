@@ -102,6 +102,7 @@ export function configHash(config: EvalConfig): string {
       benchmark: config.benchmark,
       tool: config.tool,
       reviewer: config.reviewer,
+      post: config.post,
       judge: config.judge,
       aidiff: fs.readFileSync(paths.aidiffTemplate, 'utf-8'),
       template: fs.readFileSync(paths.defaultTemplate, 'utf-8'),
