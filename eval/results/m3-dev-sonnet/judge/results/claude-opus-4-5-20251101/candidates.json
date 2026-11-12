@@ -1,0 +1,408 @@
+{
+  "https://github.com/calcom/cal.com/pull/14943": {
+    "diff2ai": [
+      {
+        "text": "Delete query's retryCount condition is not scoped to SMS reminders - the OR makes the second branch match reminders of every method (EMAIL, WHATSAPP, etc.), so the SMS cron job could delete non-SMS reminders",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Retry threshold is inconsistent and drops reminders after only two attempts - gt: 1 deletes a reminder once retryCount reaches 2, so a reminder gets only two failed attempts before removal",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The retry-count update inside the catch block can throw and abort the whole loop - prisma.workflowReminder.update runs inside catch without its own try/catch, causing remaining reminders to not be processed if the DB call fails",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Duplicated retry-increment logic uses read-then-write instead of an atomic increment - overlapping cron runs could overwrite each other's counts, should use Prisma's atomic increment",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/22532": {
+    "diff2ai": [
+      {
+        "text": "Empty `updateMany` with `{}` does not bump `updatedAt` timestamp, and it touches all calendars under the credential including ones that were not refreshed, causing an extra DB write on every webhook-driven cache refresh",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Cache `updatedAt` is not refreshed on upsert - existing rows show migration time as last update, and raw SQL upserts won't update `updatedAt` because `@updatedAt` is only applied by Prisma Client",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Cache deletion authorization check only covers personal credentials (userId: user.id), excluding team and delegation credentials even though the dropdown shows delete option for them",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Cache deletion handler throws generic `Error` instead of `TRPCError` with proper code like `NOT_FOUND` or `FORBIDDEN`, resulting in 500 errors",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Cache deletion uses direct Prisma calls instead of the repository pattern that the commit message claims to have adopted",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Timestamp is formatted with hardcoded 'en-US' locale, ignoring user's locale and timezone preferences",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "`delegationCredentialId || null` coercion can hide a type mismatch",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test script uses `sed -i ''` which fails on GNU/Linux sed (macOS-only)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test script's `ENV_FILE=\"../.env\"` depends on current working directory",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test script reuses existing tmole session by reading a log that may not exist",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unrelated tooling changes (test script and dev:cron change) are bundled into the feature PR",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/2": {
+    "diff2ai": [
+      {
+        "text": "GET request changes subscription state, enabling CSRF and email-scanner triggering - the unsubscribe action modifies notification level on GET which can be triggered by email scanners, prefetchers, and cross-site img tags without user intent",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Nil dereference when no TopicUser row exists - TopicUser.find_by returns nil if user has never visited the topic, causing NoMethodError on notification_level access",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "TopicUser.save! bypasses TopicUser.change which handles MessageBus notification updates and side effects",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unauthenticated users and missing topics are not handled - current_user.id is dereferenced without verifying ensure_logged_in covers the unsubscribe action",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "unsubscribe_url may be missing in other mailers (digest and similar) that pass add_unsubscribe_link: true but don't provide the URL, causing I18n::MissingInterpolationArgument or broken links",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "post.topic.unsubscribe_url is a relative URL from Topic#url, so it is not absolute in emails",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unescaped triple-stash rendering of title via {{{stopNotificiationsText}}} renders unescaped HTML, relying on assumption that fancyTitle is sanitized server-side",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Controller property name is misspelled as 'stopNotificiationsText' instead of 'stopNotificationsText'",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4": {
+    "diff2ai": [
+      {
+        "text": "Imported raw HTML is stored and rendered without sanitization, allowing stored XSS attacks through feed content or remote pages",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Referer check is spoofable and the referer is injected into inline JS without proper JS-string escaping, allowing script injection",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "SSRF vulnerability via open-uri on user-influenced URLs - accepts file paths and pipe commands, lacks scheme validation and timeouts",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Embed view crashes when topic has no posts due to nil @topic_view, and invalid ERB syntax 'end if' with no condition causes SyntaxError",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "contents << mutates the argument string which raises on frozen strings and mutates caller's string unexpectedly",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Feed items with blank content crash the poller - i.content.scrub raises NoMethodError when content is nil, and one failing item aborts the whole poll",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Origin check in embed.js uses substring match (indexOf) which accepts any origin that is a substring of the URL including empty string",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Retrieval throttle has race condition - setnx followed by expire is not atomic, crash between calls leaves key that never expires",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "absolutize_urls does not handle protocol-relative //host links correctly and appends port to frozen/interpolated string",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/106778": {
+    "diff2ai": [
+      {
+        "text": "Rule list view no longer shows creating/deleting states - newly created rules are invisible until Prometheus catches up, and the operation prop of GrafanaRuleListItem is never set by any caller",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Edit link for Grafana rules loses the returnTo parameter, causing navigation back from rule view to not return user to the list",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Ability checks are OR-combined across ruler and prom sources which can grant stale or wrong access - the more permissive result wins when both ruler and prom rules exist",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Grafana prom ability hook reports a rule without a folder as supported and loaded - when rule is undefined, useIsGrafanaPromRuleEditable returns loading: false, causing MaybeSupported to become AlwaysSupported",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Federated rules are no longer detected - isFederated is hardcoded to false instead of using isFederatedRuleGroup(rule.group), allowing data-source federated rules to be edited or deleted in UI",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Fragile test assertions - test asserts exactly 4 menu items which breaks whenever a menu item is added",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/94942": {
+    "diff2ai": [
+      {
+        "text": "enableSqlExpressions always returns false due to inverted logic - `enabled := !IsEnabledGlobally(...)` causes the function to return false regardless of flag state, making the feature flag ineffective",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Potential nil dereference if h.features is nil when calling the features check in enableSqlExpressions",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Stub DB methods TablesList and Execute return generic 'not implemented' error, but other construction paths like NewSQLCommand are not gated, leaving SQL command reachable",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Error message 'sqlExpressions is not implemented' is misleading since the feature is disabled, not unimplemented",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Error handling doesn't use project's errutil conventions, causing callers to be unable to classify the error properly (likely returns HTTP 500 instead of 4xx)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/keycloak/keycloak/pull/37634": {
+    "diff2ai": [
+      {
+        "text": "Test matcher checks wrong substring indexes (uses 3-5 instead of 4-6) and has inverted condition, causing correct IDs to be rejected and incorrect ones accepted",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Null check validates wrong variable - checks grantType instead of rawTokenId, so null rawTokenId is never rejected",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Token ID encoding can throw 500 error when grant type is null or unsupported, affecting implicit/hybrid flows, permission grants, and token-exchange variants",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "getShouldUseLightweightToken calls session.getContext().getClient() which may be null in some flows",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Shortcut collision detection happens after maps are overwritten - duplicates should be detected explicitly on put using putIfAbsent",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1": {
+    "diff2ai": [
+      {
+        "text": "Compile error: UsernameForm calls isConditionalPasskeysEnabled() with no arguments, but the signature was changed to require a UserModel parameter",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Passkeys no longer set up on the initial login form when no user is set - isConditionalPasskeysEnabled(user) returns false when user is null, breaking the main login page passkey functionality",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Missing @Override annotation on shouldShowWebAuthnAuthenticators method in WebAuthnConditionalUIAuthenticator, which could miss signature mismatches",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test try/catch pattern is convoluted - findElement throws NoSuchElementException and the nullValue() assertion is never reached; should use Assert.assertThrows or findElements(...).isEmpty() instead",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/77754": {
+    "diff2ai": [
+      {
+        "text": "Default `queued` timestamp is evaluated once at import time, so every `AssignmentSource` that doesn't pass `queued` gets the same stale timestamp, making the field meaningless",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The `queued` datetime field breaks JSON serialization when the task is queued because `asdict` returns a `datetime` and Celery's JSON serializer may not handle it",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "`sync_assignee_outbound` passes the new `assignment_source` kwarg to installations that don't accept it, causing TypeError in existing integration implementations that don't declare `**kwargs` or this parameter",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The abstract signature of `sync_assignee_outbound` was not updated to include the new parameter",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "`sync_status_outbound` gains the parameter only in the abstract signature but subclasses may not accept it",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "`from_dict` doesn't validate field types - `cls(**input_dict)` accepts any value types like a string `integration_id`, causing `should_sync` comparison to silently never match and loop protection to fail",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/80168": {
+    "diff2ai": [
+      {
+        "text": "Abstract hook build_occurrence_and_event_data added to StatefulDetectorHandler breaks MetricAlertDetectorHandler instantiation because it leaves the new hook and existing abstract methods unimplemented, causing TypeError when instantiated",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Duplicate group-key detection was removed and the new dict can silently overwrite results when a handler's evaluate_group_key_value returns a result whose group_key differs from the iterated key",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "PriorityLevel conversion may raise ValueError for DetectorPriorityLevel values with no PriorityLevel counterpart if the enums diverge, aborting evaluation for the whole packet",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  }
+}

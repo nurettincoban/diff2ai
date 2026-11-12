@@ -1,0 +1,127 @@
+{
+  "id": "keycloak-37634",
+  "goldenUrl": "https://github.com/keycloak/keycloak/pull/37634",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Test matcher checks wrong substring and has inverted condition",
+      "affected": [
+        "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/AssertEvents.java:476-492"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Null check on wrong variable for rawTokenId",
+      "affected": [
+        "services/src/main/java/org/keycloak/protocol/oidc/encode/AccessTokenContext.java:73"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Token ID encoding can throw and break token issuance for unmapped or null grant types",
+      "affected": [
+        "services/src/main/java/org/keycloak/protocol/oidc/TokenManager.java:1052-1054",
+        "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java:101-118"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Shortcut collision is detected only after maps are overwritten",
+      "affected": [
+        "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderFactory.java:70-85"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgypizyDX6P8HQYpHV7yv",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 28970,
+      "outputTokens": 1201,
+      "ms": 8550
+    }
+  ],
+  "costUsd": 0.06995,
+  "durationMs": 9861,
+  "promptSha256": "79a19bd9669921a259cdf66b899877688eef487a792933969d3b9df56808ac97",
+  "promptChars": 64320,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Test matcher checks wrong substring and has inverted condition\n\nAffected:\n- testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/AssertEvents.java:476-492\n\nExplanation:\nThe grant shortcut sits at indexes 4-6 (`substring(4, 6)`), but the matcher uses `substring(3, 5)`. It also returns false when the substring equals the expected shortcut. The condition is inverted, so correct IDs are rejected and incorrect ones accepted. Because the offsets are also wrong, the test can never validate the grant correctly.\n\nProposed fix:\n~~~java\nif (items[0].length() != 6 || !items[0].substring(4, 6).equals(expectedGrantShortcut)) return false;\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Null check on wrong variable for rawTokenId\n\nAffected:\n- services/src/main/java/org/keycloak/protocol/oidc/encode/AccessTokenContext.java:73\n\nExplanation:\n`Objects.requireNonNull(grantType, \"Null rawTokenId not allowed\")` checks grantType a second time, so a null rawTokenId is never rejected.\n\nProposed fix:\n~~~java\nObjects.requireNonNull(rawTokenId, \"Null rawTokenId not allowed\");\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Token ID encoding can throw and break token issuance for unmapped or null grant types\n\nAffected:\n- services/src/main/java/org/keycloak/protocol/oidc/TokenManager.java:1052-1054\n- services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java:101-118\n\nExplanation:\n`initToken` always encodes the token ID. The `GRANT_TYPE` attribute is set only on some paths. Other flows that call `createClientAccessToken`, such as the implicit or hybrid flow, the permission grant, and the token-exchange variants, get \"na\". That value happens to be registered. But `context.getGrantType()` can be a form param that is null, or an unsupported value, in which case `requireNonNull` or `encodeTokenId` throws and the request fails with a 500. Also, `getShouldUseLightweightToken` calls `session.getContext().getClient()`, which may be null in some flows.\n\nProposed fix:\n~~~java\n// Fall back to UNKNOWN grant when the attribute is missing or has no registered shortcut.\n// Guard against a null client in getShouldUseLightweightToken.\n~~~\n\n## 4) Severity: LOW | Type: Maintainability\nTitle: Shortcut collision is detected only after maps are overwritten\n\nAffected:\n- services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderFactory.java:70-85\n\nExplanation:\nDuplicate shortcuts are put into the maps without checking. The later entry overwrites the earlier one, and only the map sizes are compared afterwards. This also fails when the shortcut \"na\" collides. The error message is vague, and the lazy-refresh paths do no validation at all. Detect duplicates explicitly on put.\n\nProposed fix:\n~~~java\nif (grantsByShortcuts.putIfAbsent(shortcut, name) != null) throw new IllegalStateException(\"Duplicate shortcut \" + shortcut);\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "In AccessTokenContext constructor, the fourth Objects.requireNonNull validates grantType twice instead of validating rawTokenId, allowing null rawTokenId values to pass validation.",
+        "severity": "Critical",
+        "category": "bug",
+        "matched_candidate": "Null check validates wrong variable - checks grantType instead of rawTokenId, so null rawTokenId is never rejected",
+        "confidence": 0.99,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the null check validates grantType instead of rawTokenId, meaning null rawTokenId values are never properly validated/rejected. Both comments point to the same bug in the AccessTokenContext constructor where the fourth Objects.requireNonNull call validates the wrong variable."
+      },
+      {
+        "golden_comment": "In isAccessTokenId, the substring for the grant shortcut and the equality check look inverted: the grant shortcut occupies indices 4–5 (substring(4,6)), and a match should return true (combined with UUID check), not false.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "Test matcher checks wrong substring indexes (uses 3-5 instead of 4-6) and has inverted condition, causing correct IDs to be rejected and incorrect ones accepted",
+        "confidence": 0.9,
+        "reasoning": "The candidate issue identifies the same core problems as the golden comment: (1) wrong substring indexes being used (candidate says 3-5 instead of 4-6, golden says the correct range should be 4-6), and (2) an inverted condition causing incorrect behavior. Both are pointing to the same bug in the isAccessTokenId function where the substring extraction and the boolean return logic are inverted/incorrect."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Token ID encoding can throw 500 error when grant type is null or unsupported, affecting implicit/hybrid flows, permission grants, and token-exchange variants"
+      },
+      {
+        "candidate": "getShouldUseLightweightToken calls session.getContext().getClient() which may be null in some flows"
+      },
+      {
+        "candidate": "Shortcut collision detection happens after maps are overwritten - duplicates should be detected explicitly on put using putIfAbsent"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Javadoc mentions \"usually like 3-letters shortcut\" but some implementations use 2-letter shortcuts (\"ac\", \"cc\", \"rt\", \"te\", \"pc\", \"ci\", \"ro\"). Consider updating documentation to reflect actual usage pattern.",
+        "severity": "Low",
+        "category": "doc_defect"
+      },
+      {
+        "golden_comment": " Catching generic RuntimeException is too broad. The implementation throws IllegalArgumentException specifically - catch that instead for more precise testing.",
+        "severity": "Low",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 5,
+    "total_golden": 4,
+    "tp": 2,
+    "fp": 3,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.4,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "keycloak/keycloak",
+    "pr_url": "https://github.com/keycloak/keycloak/pull/37634"
+  },
+  "judgeUsage": {
+    "calls": 22,
+    "inputTokens": 6087,
+    "outputTokens": 2130,
+    "costUsd": 0.08368500000000001
+  }
+}

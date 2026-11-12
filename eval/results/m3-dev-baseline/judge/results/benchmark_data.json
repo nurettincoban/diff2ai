@@ -1,0 +1,713 @@
+{
+  "https://github.com/calcom/cal.com/pull/14943": {
+    "pr_title": "SMS workflow reminder retry count tracking",
+    "original_url": null,
+    "source_repo": "cal.com",
+    "golden_comments": [
+      {
+        "comment": "Using retryCount: reminder.retryCount + 1 reads a possibly stale value and can lose increments under concurrency; consider an atomic increment via Prisma (increment: 1) to avoid race conditions (also applies to the similar update in the catch block).",
+        "severity": "High",
+        "category": "concurrency"
+      },
+      {
+        "comment": "The deletion logic in scheduleSMSReminders.ts incorrectly deletes non-SMS workflow reminders (e.g., Email, WhatsApp) that have retryCount > 1. This occurs because the retryCount condition within the OR clause for deletion lacks a method: WorkflowMethods.SMS filter, causing it to apply to all reminder types instead of only SMS reminders, which is the intended scope of this function.",
+        "severity": "High",
+        "category": "bug"
+      }
+    ],
+    "golden_source_file": "cal_dot_com.json",
+    "az_comment": null,
+    "reviews": [
+      {
+        "tool": "diff2ai",
+        "repo_name": "calcom/cal.com",
+        "pr_url": "https://github.com/calcom/cal.com/pull/14943",
+        "review_comments": [
+          {
+            "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+            "line": 45,
+            "body": "**\ud83d\udfe7 HIGH** \u00b7 Bug \u2014 **Scope the retry-count purge to SMS reminders**\n\nThe second `OR` branch (`retryCount > 1`) does not filter on `method`. This SMS cron job will therefore delete any `WorkflowReminder` with `retryCount > 1`, whatever its method (EMAIL, WHATSAPP, \u2026).\n\n`retryCount` is a general column on the shared `WorkflowReminder` table. If any other scheduler starts incrementing it (or already does), this job will silently delete that scheduler's reminders.\n\nThe branch also ignores `scheduled` state. It could remove reminders that were later scheduled successfully, along with their `referenceId`, which breaks later cancellation of the provider-side message.\n\n**Proposed fix:**\n\n~~~ts\nawait prisma.workflowReminder.deleteMany({\n  where: {\n    method: WorkflowMethods.SMS,\n    OR: [\n      { scheduledDate: { lte: dayjs().toISOString() } },\n      { retryCount: { gt: 1 }, scheduled: false },\n    ],\n  },\n});\n~~~",
+            "created_at": "2026-11-12T22:26:17.866Z"
+          },
+          {
+            "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+            "line": 198,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Reliability \u2014 **Guard the retry-count update inside the catch block**\n\n`prisma.workflowReminder.update` is now awaited inside the `catch`. If that update throws, the exception escapes the per-reminder try/catch. Possible causes include:\n- a transient DB error (the original failure may itself have been DB-related),\n- the record being deleted concurrently, which gives `RecordNotFound`.\n\nWhen that happens, the whole loop is aborted, every remaining reminder is skipped for this run, and the handler ends with an unhandled error. Before this change, a single failure was only logged and processing continued.\n\n**Proposed fix:**\n\n~~~ts\n} catch (error) {\n  console.log(`Error scheduling SMS with error ${error}`);\n  try {\n    await prisma.workflowReminder.update({\n      where: { id: reminder.id },\n      data: { retryCount: { increment: 1 } },\n    });\n  } catch (updateError) {\n    console.log(`Failed to increment retryCount for reminder ${reminder.id}: ${updateError}`);\n  }\n}\n~~~",
+            "created_at": "2026-11-12T22:26:17.866Z"
+          },
+          {
+            "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+            "line": 186,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Bug \u2014 **Use an atomic increment instead of read-modify-write**\n\nThe code writes `reminder.retryCount + 1`, using the value read at the start of the job. If cron invocations overlap, or the same reminder is processed twice, increments get lost. A failing reminder could then be retried more times than intended.\n\nPrisma's `{ increment: 1 }` is atomic and also removes the need for the extra `select`/cast.\n\n**Proposed fix:**\n\n~~~ts\ndata: { retryCount: { increment: 1 } },\n~~~",
+            "created_at": "2026-11-12T22:26:17.866Z"
+          },
+          {
+            "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+            "line": 43,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Performance \u2014 **Unindexed `retryCount` predicate in an `OR` delete on every cron run**\n\n`OR` with an unindexed `retryCount > 1` predicate prevents the planner from using only the existing indexes. The result is likely a sequential scan of the entire `WorkflowReminder` table on every cron invocation, and that table grows with every booking.\n\nFix options:\n- Scope the delete by `method` and `scheduled` (see issue 1).\n- Run the retry purge as a separate, narrower `deleteMany`.\n- Add an index, e.g. `@@index([method, retryCount])`, if the query stays.\n\n**Proposed fix:**\n\n~~~prisma\n@@index([method, scheduled, retryCount])\n~~~",
+            "created_at": "2026-11-12T22:26:17.866Z"
+          },
+          {
+            "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+            "line": 42,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Maintainability \u2014 **Reminders are silently dropped after retries are exhausted**\n\nAfter two failed attempts, the reminder row is simply deleted on the next run. Nothing is logged and nothing marks it as failed, so the attendee never gets the SMS and there is no trace of why.\n\nThe threshold `1` is also a magic number, and with `gt: 1` the reminder gets only 2 attempts, which may not match the intent.\n\nThe fix: extract a named constant such as `MAX_SMS_RETRIES`, and log or flag reminders before purging them.\n\n**Proposed fix:**\n\n~~~ts\nconst MAX_SMS_RETRY_COUNT = 2;\n// ...\n{ method: WorkflowMethods.SMS, scheduled: false, retryCount: { gte: MAX_SMS_RETRY_COUNT } }\n~~~",
+            "created_at": "2026-11-12T22:26:17.866Z"
+          }
+        ]
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/22532": {
+    "pr_title": "feat: add calendar cache status and actions (#22532)",
+    "original_url": null,
+    "source_repo": "cal.com",
+    "golden_comments": [
+      {
+        "comment": "The updateManyByCredentialId call uses an empty data object, which prevents Prisma's @updatedAt decorator from updating the updatedAt timestamp. This results in inaccurate cache status tracking, as the timestamp isn't updated when the cache is refreshed. To fix this, explicitly set the updatedAt field.",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "comment": "logic: macOS-specific sed syntax with empty string after -i flag will fail on Linux systems",
+        "severity": "Low",
+        "category": "bug"
+      },
+      {
+        "comment": "Throwing a generic Error for authentication failures results in a 500 response in tRPC. Instead, it should return a structured TRPCError with an appropriate code, such as FORBIDDEN, to accurately reflect the error type.",
+        "severity": "High",
+        "category": "api"
+      },
+      {
+        "comment": "Date is formatted with hardcoded 'en-US' locale instead of using the user's locale from useLocale, which can lead to incorrect date representation for users in different locales.",
+        "severity": "Medium",
+        "category": "bug"
+      }
+    ],
+    "golden_source_file": "cal_dot_com.json",
+    "az_comment": null,
+    "reviews": [
+      {
+        "tool": "diff2ai",
+        "repo_name": "calcom/cal.com",
+        "pr_url": "https://github.com/calcom/cal.com/pull/22532",
+        "review_comments": [
+          {
+            "path": "packages/app-store/googlecalendar/lib/CalendarService.ts",
+            "line": 1024,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Stop issuing a no-op `updateMany` on every cache refresh**\n\n`updateManyByCredentialId(this.credential.id, {})` passes an empty `data` object and relies on Prisma's `@updatedAt` to bump the timestamp. Prisma only sets `@updatedAt` when it actually runs an update, and with an empty `data` it may run no update at all. If so, `SelectedCalendar.updatedAt` never changes and the stated goal is not met.\n\nThe call still adds an extra DB round-trip to every webhook-triggered cache refresh. That runs in the hot path of `fetchAvailabilityAndSetCache`, so a failure here (for example, a DB hiccup) makes the whole refresh reject after the cache was already written.\n\nThe UI added in this PR reads `CalendarCache.updatedAt` (via `cacheUpdatedAt`), not `SelectedCalendar.updatedAt`, so this write appears to have no consumer. The same goes for the new `updatedAt`/`googleChannelId` selects in `user.ts`.\n\nFix: remove the call. If the timestamp really is needed, set it explicitly and do it best-effort.\n\n**Proposed fix:**\n\n~~~ts\n// Either remove entirely, or set explicitly and don't fail the refresh:\nawait SelectedCalendarRepository.updateManyByCredentialId(this.credential.id, {\n  updatedAt: new Date(),\n}).catch((e) => log.warn(\"Failed to touch SelectedCalendar.updatedAt\", e));\n~~~",
+            "created_at": "2026-11-12T22:26:56.186Z"
+          },
+          {
+            "path": "packages/trpc/server/routers/viewer/calendars/deleteCache.handler.ts",
+            "line": 26,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Throw TRPCError instead of generic Error in deleteCache handler**\n\nA plain `Error` is surfaced by tRPC as `INTERNAL_SERVER_ERROR` (500). That hides a normal authorization or not-found outcome as a server fault, pollutes error monitoring, and may leak the message differently across environments.\n\nUse `TRPCError` with `NOT_FOUND` or `FORBIDDEN`.\n\n**Proposed fix:**\n\n~~~ts\nimport { TRPCError } from \"@trpc/server\";\n...\nif (!credential) {\n  throw new TRPCError({ code: \"NOT_FOUND\", message: \"Credential not found\" });\n}\n~~~",
+            "created_at": "2026-11-12T22:26:56.186Z"
+          },
+          {
+            "path": "packages/features/apps/components/CredentialActionsDropdown.tsx",
+            "line": 111,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Bug \u2014 **\"Delete cached data\" is offered for credentials the handler will always reject**\n\nThe cache actions show whenever `hasCache` is true, including for delegation credentials and team-owned credentials. The handler, however, only accepts credentials where `userId === user.id`. Delegation credentials are not stored as user-owned `Credential` rows, so for them the delete action always fails with an error toast. This depends on how delegation credentials are represented outside this diff, hence the lowered severity.\n\nFix: hide the delete-cache item when `delegationCredentialId` is set, or extend the handler's ownership check to cover those credentials.\n\n**Proposed fix:**\n\n~~~tsx\nconst canDeleteCache = hasCache && !delegationCredentialId;\n...\n{canDeleteCache && ( /* delete cached data item */ )}\n~~~",
+            "created_at": "2026-11-12T22:26:56.186Z"
+          },
+          {
+            "path": "packages/features/apps/components/CredentialActionsDropdown.tsx",
+            "line": 94,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Implementation \u2014 **Format the cache timestamp with the user's locale, not hard-coded \"en-US\"**\n\nThe timestamp is always formatted with `\"en-US\"` while the label around it is translated. Non-US users therefore see US date ordering (M/D/YY), which is ambiguous.\n\nUse the active i18n language from `useLocale()`.\n\n**Proposed fix:**\n\n~~~tsx\nconst { t, i18n } = useLocale();\n...\nnew Intl.DateTimeFormat(i18n.language, { dateStyle: \"short\", timeStyle: \"short\" })\n  .format(new Date(cacheUpdatedAt))\n~~~",
+            "created_at": "2026-11-12T22:26:56.186Z"
+          },
+          {
+            "path": "packages/trpc/server/routers/viewer/calendars/connectedCalendars.handler.ts",
+            "line": 29,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Implementation \u2014 **Respect the calendar-cache feature flag when fetching cache status**\n\nThe handler always instantiates the concrete `CalendarCacheRepository`. A `CalendarCacheRepositoryMock` exists for when calendar-cache is disabled, and this method was added to it, but the handler bypasses it. As a result, every `connectedCalendars` call runs a `groupBy` query even when the feature is off, and cache UI can show stale rows.\n\nFix: obtain the repository through the same flag-aware factory used elsewhere (for example, `CalendarCache.init`/`getCalendarCacheRepository` or equivalent), or check the flag first.\n\n**Proposed fix:**\n\n~~~ts\nconst cacheRepository = await getCalendarCacheRepositoryRespectingFlag(); // existing flag-aware factory\nconst cacheStatuses = credentialIds.length\n  ? await cacheRepository.getCacheStatusByCredentialIds(credentialIds)\n  : [];\n~~~",
+            "created_at": "2026-11-12T22:26:56.186Z"
+          },
+          {
+            "path": "scripts/test-gcal-webhooks.sh",
+            "line": 5,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Bug \u2014 **Make test-gcal-webhooks.sh portable and path-independent**\n\n- `sed -i ''` only works with BSD/macOS sed. On GNU sed (Linux/CI), `''` is treated as the script and the substitution fails.\n- `ENV_FILE=\"../.env\"` resolves against the caller's current directory, not the script's location. Running the script from the repo root writes to the wrong file, and may create a stray `.env` outside the repo.\n- `cleanup` always exits 0, even on failure paths (rate limit, no URL), so callers cannot detect failure.\n- When reusing an already-running tmole, the URL comes from `/tmp/tmole.log`, which may be missing or stale.\n\n**Proposed fix:**\n\n~~~bash\nSCRIPT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\nENV_FILE=\"$SCRIPT_DIR/../.env\"\ncleanup() { local code=${1:-0}; ...; exit \"$code\"; }\n# portable in-place edit\ntmp=$(mktemp) && sed -E \"s|^GOOGLE_WEBHOOK_URL=.*|GOOGLE_WEBHOOK_URL=$TUNNEL_URL|\" \"$ENV_FILE\" > \"$tmp\" && mv \"$tmp\" \"$ENV_FILE\"\n~~~",
+            "created_at": "2026-11-12T22:26:56.186Z"
+          },
+          {
+            "path": "apps/web/package.json",
+            "line": 11,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Maintainability \u2014 **Avoid `npx tsx` fetching an undeclared dependency at runtime**\n\nIf `tsx` is not declared in devDependencies, `npx tsx` downloads whatever version is latest on each fresh environment. That makes the dev tooling non-reproducible and requires network access. Inside a yarn script, `npx` is also unnecessary.\n\nFix: add `tsx` as a devDependency and call it directly.\n\n**Proposed fix:**\n\n~~~json\n\"dev:cron\": \"tsx cron-tester.ts\"\n~~~",
+            "created_at": "2026-11-12T22:26:56.186Z"
+          },
+          {
+            "path": "packages/prisma/migrations/20250715160635_add_calendar_cache_updated_at/migration.sql",
+            "line": 6,
+            "body": "**\u2b1c INFO** \u00b7 Doc \u2014 **Remove the stale warning comment in the migration**\n\nThe auto-generated header says the column is added \"without a default value\" and that this \"is not possible if the table is not empty\". The SQL actually uses `DEFAULT NOW()`. The comment is misleading to anyone auditing migrations, so remove it.\n\n**Proposed fix:**\n\n~~~sql\n-- AlterTable: add updatedAt with default to backfill existing rows\nALTER TABLE \"CalendarCache\" ADD COLUMN \"updatedAt\" TIMESTAMP(3) NOT NULL DEFAULT NOW();\n~~~",
+            "created_at": "2026-11-12T22:26:56.186Z"
+          }
+        ]
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/2": {
+    "pr_title": "FEATURE: per-topic unsubscribe option in emails",
+    "original_url": "https://github.com/discourse/discourse/commit/6669a2d94d76eea3b99b8c476d12b1eb66726b07",
+    "source_repo": "discourse-graphite",
+    "golden_comments": [
+      {
+        "comment": "logic: Potential nil pointer exception - if no TopicUser record exists, tu will be nil and calling methods on it will crash",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "comment": "Typo in property name: 'stopNotificiationsText' should be 'stopNotificationsText' (missing 'n' in 'Notifications')",
+        "severity": "Low",
+        "category": "style"
+      }
+    ],
+    "golden_source_file": "discourse.json",
+    "az_comment": null,
+    "reviews": [
+      {
+        "tool": "diff2ai",
+        "repo_name": "ai-code-review-evaluation/discourse-graphite",
+        "pr_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/2",
+        "review_comments": [
+          {
+            "path": "config/locales/server.en.yml",
+            "line": 1855,
+            "body": "**\ud83d\udfe7 HIGH** \u00b7 Bug \u2014 **Make `unsubscribe_url` optional in the shared `unsubscribe_link` string**\n\n`unsubscribe_link` now interpolates `%{unsubscribe_url}`. `MessageBuilder` uses this string for every email built with `add_unsubscribe_link: true`, in both the HTML part and, likely, the text body.\n\nThis change only passes `unsubscribe_url` from the post-notification path in `UserNotifications`. Other mailers that set `add_unsubscribe_link` (digests, for example) do not pass it. For those emails, `I18n.t` raises `I18n::MissingInterpolationArgument`, so the email fails to send.\n\nThe spec had to add `unsubscribe_url` just to keep passing, which points to the same problem. Use a separate translation key for the per-topic sentence and only append it when `unsubscribe_url` is present.\n\n**Proposed fix:**\n\n~~~ruby\n# server.en.yml\n#   unsubscribe_link: \"To unsubscribe from these emails, visit your [user preferences](%{user_preferences_url}).\"\n#   unsubscribe_link_and_topic: \"...user prefs... To stop receiving notifications about this particular topic, [click here](%{unsubscribe_url}).\"\nkey = @template_args[:unsubscribe_url].present? ? 'unsubscribe_link_and_topic' : 'unsubscribe_link'\nunsubscribe_link = PrettyText.cook(I18n.t(key, template_args)).html_safe\n~~~",
+            "created_at": "2026-11-12T22:26:29.360Z"
+          },
+          {
+            "path": "app/controllers/topics_controller.rb",
+            "line": 113,
+            "body": "**\ud83d\udfe7 HIGH** \u00b7 Bug \u2014 **Handle a missing `TopicUser` record in `unsubscribe`**\n\n`TopicUser.find_by` returns `nil` when the user has no `topic_users` row for the topic. This can happen, for example, when the user is notified through category watching or a mention without ever opening the topic.\n\nIn that case `tu.notification_level` raises `NoMethodError`, and clicking the email link returns a 500 error. Use `TopicUser.change`, or `find_or_initialize_by`, and treat a missing level as regular.\n\n**Proposed fix:**\n\n~~~ruby\ntu = TopicUser.find_by(user_id: current_user.id, topic_id: params[:topic_id])\ncurrent = tu.try(:notification_level) || TopicUser.notification_levels[:regular]\nnew_level = current > TopicUser.notification_levels[:regular] ?\n  TopicUser.notification_levels[:regular] : TopicUser.notification_levels[:muted]\nTopicUser.change(current_user.id, params[:topic_id], notification_level: new_level)\n~~~",
+            "created_at": "2026-11-12T22:26:29.360Z"
+          },
+          {
+            "path": "app/controllers/topics_controller.rb",
+            "line": 116,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Security \u2014 **Stop mutating state on a non-idempotent GET request**\n\nThe unsubscribe action changes notification state on a plain GET, and the change is not idempotent:\n- The first hit drops Watching/Tracking to Regular.\n- The second hit (page refresh, browser prefetch, or an email security scanner following links) drops Regular to Muted.\n\nThere is also no CSRF protection. Any page can embed `<img src=\"/t/x/123/unsubscribe\">` and silently mute topics for a logged-in victim.\n\nFix options:\n- Make the GET only render a confirmation page, and do the change via POST/PUT with a CSRF token.\n- Or make the action idempotent by always setting one fixed target level.\n\n**Proposed fix:**\n\n~~~ruby\n# routes: GET renders page, POST performs change\nget  \"t/:slug/:topic_id/unsubscribe\" => \"topics#show_unsubscribe\", constraints: {topic_id: /\\d+/}\npost \"t/:topic_id/unsubscribe\"       => \"topics#unsubscribe\",      constraints: {topic_id: /\\d+/}\n~~~",
+            "created_at": "2026-11-12T22:26:29.360Z"
+          },
+          {
+            "path": "app/controllers/topics_controller.rb",
+            "line": 113,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Bug \u2014 **Publish the notification-level change instead of saving the record directly**\n\n`tu.save!` bypasses `TopicUser.change`. That method publishes `notification_level_change` on MessageBus and keeps the related bookkeeping consistent.\n\nAs a result, other open tabs keep showing the old notification state. The unsubscribe page's notifications button may also be stale if it relies on that message. Use `TopicUser.change(...)` so the update flows through the existing path.\n\n**Proposed fix:**\n\n~~~ruby\nTopicUser.change(current_user.id, params[:topic_id], notification_level: new_level)\n~~~",
+            "created_at": "2026-11-12T22:26:29.360Z"
+          },
+          {
+            "path": "app/assets/javascripts/discourse/controllers/topic-unsubscribe.js.es6",
+            "line": 7,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Bug \u2014 **Align the confirmation text with the actual resulting state**\n\nThe page always says \"You will stop receiving notifications for <topic>\". However, Tracking/Watching is only lowered to Regular, and Regular users still get notified for replies and mentions. The message is misleading in that case.\n\nShow text that matches the resulting notification level, or always set the level to Muted when the text promises that notifications stop.\n\n**Proposed fix:**\n\n~~~js\nstopNotificiationsText: function() {\n  const level = this.get(\"model.details.notification_level\");\n  const key = level === 0 ? \"stop_notifications\" : \"reduced_notifications\";\n  return I18n.t(\"topic.unsubscribe.\" + key, { title: this.get(\"model.fancyTitle\") });\n}.property(\"model.fancyTitle\", \"model.details.notification_level\")\n~~~",
+            "created_at": "2026-11-12T22:26:29.360Z"
+          }
+        ]
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4": {
+    "pr_title": "Enhance embed URL handling and validation system",
+    "original_url": "https://github.com/discourse/discourse/commit/4f8aed295a29954023b2849c060ef4fb299d1b5d",
+    "source_repo": "discourse-graphite",
+    "golden_comments": [
+      {
+        "comment": "The PollFeed job calls open(SiteSetting.feed_polling_url) without validating the URL, allowing an attacker who controls the feed_polling_url site setting to make the server fetch arbitrary internal or external URLs.",
+        "severity": "Critical",
+        "category": "security"
+      },
+      {
+        "comment": "The current origin validation using indexOf is insufficient and can be bypassed. An attacker could use a malicious domain like evil-discourseUrl.com to pass this check.",
+        "severity": "Medium",
+        "category": "security"
+      },
+      {
+        "comment": "postMessage targetOrigin should be the origin (scheme+host+port), not the full referrer URL; using the full URL will cause the message to be dropped and prevent resizing.",
+        "severity": "Medium",
+        "category": "security"
+      },
+      {
+        "comment": "The code sets X-Frame-Options: ALLOWALL which completely disables clickjacking protection. The referer validation can be bypassed (referer headers are easily spoofed), and the fallback to empty string for nil referer masks validation failures.",
+        "severity": "Medium",
+        "category": "security"
+      },
+      {
+        "comment": "The TopicEmbed.import method is susceptible to a NoMethodError if the contents parameter is nil when attempting to append a string, and an XSS vulnerability due to unescaped url interpolation in the generated HTML.",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "comment": "The ERB block closes with end if, which is invalid Ruby/ERB and will raise at render; it should just be end to close the if block.",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "comment": "Calling `i.content.scrub` assumes that `i.content` is always populated. However, many RSS feeds do not provide a `content` field, leading to a potential nil pointer exception when `i.content` is nil. A fallback to `description` should be implemented to prevent crashes.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "comment": "An unescaped request header (request.referer) is interpolated into JavaScript without proper escaping, which can lead to XSS vulnerabilities if the referer contains malicious content. This issue can allow attackers to execute arbitrary scripts in the context of the application.",
+        "severity": "Critical",
+        "category": "security"
+      }
+    ],
+    "golden_source_file": "discourse.json",
+    "az_comment": null,
+    "reviews": [
+      {
+        "tool": "diff2ai",
+        "repo_name": "ai-code-review-evaluation/discourse-graphite",
+        "pr_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4",
+        "review_comments": [
+          {
+            "path": "app/models/topic_embed.rb",
+            "line": 13,
+            "body": "**\ud83d\udfe7 HIGH** \u00b7 Security \u2014 **Escape the feed URL before building the \"Imported from\" HTML**\n\n`url` comes from the RSS item link or id, or from the `embed_url` request parameter. It is interpolated unescaped into `<a href='#{url}'>#{url}</a>`. Because these posts use `cook_method = raw_html`, `cook` returns `raw` without sanitizing. The result is rendered with `raw post.cooked` in the embed view and in the forum. A URL that contains `'` or `<`, such as `http://host/x'onmouseover='alert(1)`, passes the `^https?://` check and produces stored XSS.\n\nThe article body itself is also stored and rendered as unsanitized HTML. Feed or readability content containing `<script>`, `on*` handlers, or `javascript:` links runs in the Discourse origin. Readability output is filtered, but the RSS path and `CGI.unescapeHTML` content are not.\n\nFix: HTML-escape `url` here. Run raw_html posts through a sanitizer whitelist instead of returning `raw` verbatim.\n\n**Proposed fix:**\n\n~~~ruby\nsafe = ERB::Util.html_escape(url)\ncontents << \"\\n<hr>\\n<small>#{I18n.t('embed.imported_from', link: \"<a href='#{safe}'>#{safe}</a>\")}</small>\\n\"\n# post.rb\nreturn Sanitize.clean(raw, Sanitize::Config::RELAXED) if cook_method == Post.cook_methods[:raw_html]\n~~~",
+            "created_at": "2026-11-12T22:27:24.702Z"
+          },
+          {
+            "path": "app/jobs/scheduled/poll_feed.rb",
+            "line": 29,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Security \u2014 **Avoid Kernel#open for remote fetches**\n\n`Kernel#open` with a string that starts with `|` runs a shell command, and a non-URI string is read as a local file path.\n\n- `feed_polling_url` is an admin setting, so an admin can execute commands or read files.\n- In `lib/tasks/disqus.thor`, `import_remote` is called with `t[:link]` taken from the Disqus XML export, which is attacker-influenced data.\n\nThere is also no timeout or size limit. A slow or huge response can hang the Sidekiq job.\n\nFix: use `URI.parse(url).open` (open-uri), or Net::HTTP/Excon with a timeout, after validating the scheme.\n\n**Proposed fix:**\n\n~~~ruby\nuri = URI.parse(url)\nraise Discourse::InvalidParameters unless %w[http https].include?(uri.scheme)\nbody = uri.open(read_timeout: 20).read\n~~~",
+            "created_at": "2026-11-12T22:27:24.702Z"
+          },
+          {
+            "path": "app/jobs/scheduled/poll_feed.rb",
+            "line": 35,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Handle feed items without `content`**\n\nMany RSS 2.0 feeds only provide `description` (SimpleRSS `content` comes from `content:encoded`). For such items `i.content` is nil, so `nil.scrub` raises NoMethodError. That exception aborts the whole poll, and the job does not retry (`retry: false`). `String#scrub` also requires Ruby 2.1+. Fall back to `description` and skip empty items.\n\n**Proposed fix:**\n\n~~~ruby\nraw = i.content || i.description\nnext if raw.blank?\ncontent = CGI.unescapeHTML(raw.scrub)\n~~~",
+            "created_at": "2026-11-12T22:27:24.702Z"
+          },
+          {
+            "path": "app/views/embed/best.html.erb",
+            "line": 6,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Fix `&lt;%- end if %&gt;` in ERB**\n\n`end if` is a modifier `if` with no condition on that line. Ruby will take the next generated statement (the buffer append for the header link) as the condition, or fail to compile. Either way the template behaves incorrectly. Use a plain `end`.\n\n**Proposed fix:**\n\n~~~erb\n<%- end %>\n~~~",
+            "created_at": "2026-11-12T22:27:24.702Z"
+          },
+          {
+            "path": "app/controllers/embed_controller.rb",
+            "line": 17,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Performance \u2014 **Unthrottled job enqueue on every embed request for unknown URLs**\n\nAny request with a valid Referer (which a non-browser client can spoof) and an unknown `embed_url` enqueues a `retrieve_topic` job. The `loading` page also auto-reloads every 30s for every viewer. Host validation and throttling only happen inside the job, so arbitrary `embed_url` values can flood Sidekiq.\n\nFix: validate that the `embed_url` host matches `embeddable_host` in the controller, and throttle before enqueueing.\n\n**Proposed fix:**\n\n~~~ruby\nraise Discourse::InvalidParameters.new(:embed_url) if URI(embed_url).host != SiteSetting.embeddable_host\nJobs.enqueue(:retrieve_topic, ...) if $redis.set(\"embed-enq:#{embed_url}\", 1, nx: true, ex: 60)\n~~~",
+            "created_at": "2026-11-12T22:27:24.702Z"
+          },
+          {
+            "path": "lib/topic_retriever.rb",
+            "line": 30,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Bug \u2014 **Make the throttle key set-and-expire atomic**\n\n`setnx` followed by a separate `expire` is not atomic. If the process dies between the two calls, the key never expires and that URL is never retrieved again.\n\n**Proposed fix:**\n\n~~~ruby\nreturn false if $redis.set(retrieved_key, \"1\", nx: true, ex: 60)\ntrue\n~~~",
+            "created_at": "2026-11-12T22:27:24.702Z"
+          },
+          {
+            "path": "app/models/topic_embed.rb",
+            "line": 37,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Bug \u2014 **Guard against a missing post when updating an existing embed**\n\nIf the embedded post has been hard-deleted, `embed.post` is nil and `PostRevisor.new(nil).revise!` raises. That breaks the whole feed poll. Skip the item, or recreate the post, when `post` is nil.\n\n**Proposed fix:**\n\n~~~ruby\npost = embed.post\nreturn nil if post.blank?\n~~~",
+            "created_at": "2026-11-12T22:27:24.702Z"
+          },
+          {
+            "path": "app/models/topic_embed.rb",
+            "line": 72,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Bug \u2014 **Protocol-relative URLs are mangled by absolutize_urls**\n\n`//cdn.example.com/img.png` starts with `/`, so it is rewritten to `http://host/cdn.example.com/img.png`, which breaks images and links. Exclude values that start with `//`.\n\n**Proposed fix:**\n\n~~~ruby\nif href.present? && href.start_with?('/') && !href.start_with?('//')\n~~~",
+            "created_at": "2026-11-12T22:27:24.702Z"
+          },
+          {
+            "path": "app/assets/javascripts/embed.js",
+            "line": 17,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Security \u2014 **Origin check uses substring match**\n\n`discourseUrl.indexOf(e.origin) === -1` accepts any origin that is a prefix substring of `discourseUrl`. For example, `http://forum.example.com` would match for `http://forum.example.com.au/`. Only a resize is triggered, so impact is low. Compare the exact origin instead.\n\n**Proposed fix:**\n\n~~~js\nvar a = document.createElement('a'); a.href = discourseUrl;\nif (e.origin !== a.protocol + '//' + a.host) { return; }\n~~~",
+            "created_at": "2026-11-12T22:27:24.702Z"
+          },
+          {
+            "path": "app/views/embed/best.html.erb",
+            "line": 17,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Bug \u2014 **Embed view crashes when a post's user is nil**\n\nPosts by deleted users can have a nil `user`. In that case `post.user.small_avatar_url` raises and the whole embed returns a 500. Guard the user lookup or skip those posts.\n\n**Proposed fix:**\n\n~~~erb\n<%- next unless post.user %>\n~~~",
+            "created_at": "2026-11-12T22:27:24.702Z"
+          },
+          {
+            "path": "db/migrate/20131223171005_create_top_topics.rb",
+            "line": 3,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Maintainability \u2014 **Editing an existing migration to add `force: true` risks data loss**\n\n`force: true` silently drops an existing table. Changing an already-shipped migration does not affect databases that have already run it. On any rerun or rollback scenario it would destroy data. Remove `force: true`.\n\n**Proposed fix:**\n\n~~~ruby\ncreate_table :top_topics do |t|\n~~~",
+            "created_at": "2026-11-12T22:27:24.702Z"
+          },
+          {
+            "path": "lib/tasks/disqus.thor",
+            "line": 148,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Implementation \u2014 **Disqus import dropped the category option and original created_at**\n\nThe `--category` option and `created_at: Date.parse(t[:created_at])` were removed. Imported topics now land uncategorized and carry the import timestamp. This is a silent functional regression for users of the Thor task. Pass these values through `import_remote` to `PostCreator`.\n\n**Proposed fix:**\n\n~~~ruby\n# Thor task: restore the option and forward the values\nmethod_option :category, aliases: '-c', desc: \"The category to post in\"\npost = TopicEmbed.import_remote(user, t[:link], title: t[:title], category: category_id, created_at: Date.parse(t[:created_at]))\n# TopicEmbed.import_remote / import: forward to PostCreator\nPostCreator.new(user, title: title, raw: ..., category: opts[:category], created_at: opts[:created_at], ...)\n~~~",
+            "created_at": "2026-11-12T22:27:24.702Z"
+          },
+          {
+            "path": "spec/controllers/embed_controller_spec.rb",
+            "line": 46,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Test \u2014 **Controller spec expects TopicRetriever but controller enqueues a job**\n\nThe controller calls `Jobs.enqueue(:retrieve_topic, ...)`; it never calls `TopicRetriever.new` directly. The spec only passes if jobs run inline in the test environment, which I could not confirm from this diff. Expect `Jobs.enqueue` instead.\n\n**Proposed fix:**\n\n~~~ruby\nJobs.expects(:enqueue).with(:retrieve_topic, has_entry(embed_url: embed_url))\n~~~",
+            "created_at": "2026-11-12T22:27:24.702Z"
+          }
+        ]
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/106778": {
+    "pr_title": "Notification Rule Processing Engine",
+    "original_url": null,
+    "source_repo": "grafana",
+    "golden_comments": [
+      {
+        "comment": "The rendered GrafanaRuleListItem is missing the required key prop for React list items. This can cause rendering issues when the list order changes.",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "comment": "RuleActionsButtons is invoked with only promRule, but SilenceGrafanaRuleDrawer inside RuleActionsButtons still depends on a Grafana Ruler rule being present, so for Grafana rules coming from list views the 'Silence notifications' menu entry (now driven by Grafana Prom abilities) will toggle showSilenceDrawer without ever rendering the drawer. This means clicking 'Silence notifications' for these rules has no visible effect, even when abilities indicate silencing is allowed.",
+        "severity": "High",
+        "category": "bug"
+      }
+    ],
+    "golden_source_file": "grafana.json",
+    "az_comment": null,
+    "reviews": [
+      {
+        "tool": "diff2ai",
+        "repo_name": "grafana/grafana",
+        "pr_url": "https://github.com/grafana/grafana/pull/106778",
+        "review_comments": [
+          {
+            "path": "public/app/features/alerting/unified/hooks/useAbilities.ts",
+            "line": 248,
+            "body": "**\ud83d\udfe7 HIGH** \u00b7 Bug \u2014 **Restore the federated-rule check in `useAllAlertRuleAbilities`**\n\n`useAllAlertRuleAbilities(rule: CombinedRule)` now delegates to `useAllRulerRuleAbilities`. That function hard-codes `const isFederated = false;` and has a `// TODO` for federated support.\n\nThe old implementation called `isFederatedRuleGroup(rule.group)`, so federated Mimir rule groups were treated as immutable. All existing (V1) consumers that still pass a `CombinedRule` will now get Update, Delete and Pause abilities for federated rules. This is a silent permission/UX regression, and the backend will reject those operations.\n\nFix: keep the federated check for the `CombinedRule` path. Either pass a flag or group into `useAllRulerRuleAbilities`, or compute it in the wrapper and override the affected abilities.\n\n**Proposed fix:**\n\n~~~ts\nexport function useAllAlertRuleAbilities(rule: CombinedRule): Abilities<AlertRuleAction> {\n  const groupIdentifierV2 = useMemo(() => groupIdentifier.fromCombinedRule(rule), [rule]);\n  const abilities = useAllRulerRuleAbilities(rule.rulerRule, groupIdentifierV2);\n  const isFederated = isFederatedRuleGroup(rule.group);\n  return useMemo(() => {\n    if (!isFederated) {\n      return abilities;\n    }\n    const immutable = (a: Ability): Ability => [NotSupported, a[1]];\n    return {\n      ...abilities,\n      [AlertRuleAction.Update]: immutable(abilities[AlertRuleAction.Update]),\n      [AlertRuleAction.Delete]: immutable(abilities[AlertRuleAction.Delete]),\n      // ...Pause, Restore, DeletePermanently\n    };\n  }, [abilities, isFederated]);\n}\n~~~",
+            "created_at": "2026-11-12T22:26:48.228Z"
+          },
+          {
+            "path": "public/app/features/alerting/unified/rule-list/FilterView.tsx",
+            "line": 162,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Restore the `key` prop on mapped `GrafanaRuleListItem` in `FilterView`**\n\nThe previous `<GrafanaRuleLoader key={key} .../>` had a `key`. The replacement `<GrafanaRuleListItem>` dropped it, even though it is rendered inside a list `map`.\n\nThe consequences are:\n- React key warnings.\n- Index-based reconciliation, so component state (menus, drawers, modals) can attach to the wrong rule when the filtered list changes or more rules are loaded.\n\n**Proposed fix:**\n\n~~~tsx\n<GrafanaRuleListItem\n  key={key}\n  rule={rule}\n  groupIdentifier={groupIdentifier}\n  namespaceName={ruleWithOrigin.namespaceName}\n  showLocation={true}\n/>\n~~~",
+            "created_at": "2026-11-12T22:26:48.228Z"
+          },
+          {
+            "path": "public/app/features/alerting/unified/hooks/useAbilities.ts",
+            "line": 330,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Base Pause/Restore/Export abilities on \"Grafana rule\", not only \"alerting rule\"**\n\nThe Ruler-based version gated these actions on `rulerRuleType.grafana.rule(rule)`, which is true for every Grafana-managed rule, including recording rules. The new Prom-based version uses `prometheusRuleType.grafana.alertingRule(rule)` for all of the following:\n- `ModifyExport`\n- `Pause`\n- `Restore`\n- `DeletePermanently`\n\nAs a result, Grafana-managed recording rules lose pause, restore and export from the list view. The comment on line 301 (\"All GrafanaPromRuleDTO rules are Grafana-managed\") contradicts how the variable is used.\n\nOnly Silence should be limited to alerting rules.\n\n**Proposed fix:**\n\n~~~ts\nconst isGrafanaManagedRule = prometheusRuleType.grafana.rule(rule);\nconst isAlertingRule = prometheusRuleType.grafana.alertingRule(rule);\n...\n[AlertRuleAction.Silence]: [silenceSupported, canSilenceInFolder && isAlertingRule],\n[AlertRuleAction.ModifyExport]: [isGrafanaManagedRule, exportAllowed],\n[AlertRuleAction.Pause]: [MaybeSupportedUnlessImmutable && isGrafanaManagedRule, isEditable ?? false],\n[AlertRuleAction.Restore]: [MaybeSupportedUnlessImmutable && isGrafanaManagedRule, isEditable ?? false],\n[AlertRuleAction.DeletePermanently]: [MaybeSupportedUnlessImmutable && isGrafanaManagedRule, (isRemovable && isAdmin()) ?? false],\n~~~",
+            "created_at": "2026-11-12T22:26:48.228Z"
+          },
+          {
+            "path": "public/app/features/alerting/unified/components/rule-viewer/AlertRuleMenu.tsx",
+            "line": 100,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Implementation \u2014 **Pause/Delete computed from `promRule` likely never render without `rulerRule`; the test locks this in**\n\n`canPause` and `canDelete` can now be true from the Prom-only abilities. However, the list view no longer passes `rulerRule`.\n\nThe new test grants `AlertingRuleDelete` and `AlertingRuleUpdate` but asserts exactly 4 menu items (silence, copy link, duplicate, export). That means neither Delete nor Pause appears even though the user is permitted. This suggests the menu items, or the delete-modal and pause handlers in `RuleActionsButtons.V2`, still require a `RulerRuleDTO`. The rendering code is outside this diff, so I cannot confirm it directly.\n\nNet effect: users lose Delete and Pause from the new list view without any indication. Either wire these actions to work with `promRule` (fetch the ruler rule on demand), or document the limitation explicitly. The test should assert the intended behavior rather than an exact count that hides the missing actions.\n\n**Proposed fix:**\n\n~~~ts\n// test: be explicit about expected availability\nexpect(ui.menuItems.delete().query()).toBeInTheDocument(); // or .not, with a comment explaining why\n~~~",
+            "created_at": "2026-11-12T22:26:48.228Z"
+          },
+          {
+            "path": "public/app/types/unified-alerting-dto.ts",
+            "line": 135,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Security \u2014 **Provisioned-rule immutability now depends on `provenance` being returned by the Prometheus API**\n\n`isProvisionedPromRule` reads `promRule.provenance`, which this change only adds as an optional TypeScript field. No backend change is part of this diff.\n\nIf the Grafana Prom-compatible rules endpoint does not populate `provenance`, every provisioned rule will appear mutable in the list view. Edit, Delete and Pause would then be offered for rules that must not be changed through the UI, and the \"provisioned\" badge would disappear. This depends on backend code not visible here.\n\nFix: verify that the endpoint serializes `provenance`, and add a test using a provisioned Prom rule.\n\n**Proposed fix:**\n\n~~~text\n- Confirm the backend /api/prometheus/grafana/api/v1/rules response includes `provenance`.\n- Add a GrafanaGroupLoader test with provenance: 'file' asserting no Edit button and no Delete/Pause.\n~~~",
+            "created_at": "2026-11-12T22:26:48.228Z"
+          },
+          {
+            "path": "public/app/features/alerting/unified/rule-list/GrafanaRuleListItem.tsx",
+            "line": 40,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Bug \u2014 **Restore `returnTo` on the rule view link**\n\nThe deleted implementation built the link as `createRelativeUrl(..., { returnTo: createReturnTo() })`. The new component drops `returnTo`.\n\nNavigating from the list to a rule's detail page and back now loses the list's filter and scroll context. This is a UX regression that is not mentioned in the PR's intent.\n\n**Proposed fix:**\n\n~~~tsx\nconst returnTo = createReturnTo();\n...\nhref: createRelativeUrl(`/alerting/grafana/${uid}/view`, { returnTo }),\n~~~",
+            "created_at": "2026-11-12T22:26:48.228Z"
+          },
+          {
+            "path": "public/app/features/alerting/unified/hooks/useAbilities.ts",
+            "line": 406,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Performance \u2014 **Plural ability hooks memoize on an inline array, so the memo is ineffective**\n\n`AlertRuleMenu` passes a new array literal of actions on every render. Because `useMemo(..., [abilities, actions])` depends on that array, it recomputes every time and returns a new array, so downstream consumers see new references on every render.\n\nIn addition, every list item now runs both the ruler and Prom ability computations. That includes `useFolder` and `useIsRuleEditable` for each list item. On large lists this adds work for no benefit.\n\nFix: hoist the action arrays to module-level constants, and skip the ruler hook entirely when no `rulerRule` is provided.\n\n**Proposed fix:**\n\n~~~ts\nconst MENU_ACTIONS = [\n  AlertRuleAction.Pause,\n  AlertRuleAction.Delete,\n  AlertRuleAction.Duplicate,\n  AlertRuleAction.Silence,\n  AlertRuleAction.ModifyExport,\n] as const;\n// ...\nuseRulerRuleAbilities(rulerRule, groupIdentifier, MENU_ACTIONS);\nuseGrafanaPromRuleAbilities(prometheusRuleType.grafana.rule(promRule) ? promRule : skipToken, MENU_ACTIONS);\n~~~",
+            "created_at": "2026-11-12T22:26:48.228Z"
+          }
+        ]
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/94942": {
+    "pr_title": "Advanced SQL Analytics Framework",
+    "original_url": null,
+    "source_repo": "grafana",
+    "golden_comments": [
+      {
+        "comment": "The enableSqlExpressions function has flawed logic that always returns false, effectively disabling SQL expressions unconditionally:",
+        "severity": "Critical",
+        "category": "bug"
+      },
+      {
+        "comment": "The DB methods NewInMemoryDB().RunCommands, DB.QueryFramesInto, and DB.TablesList in pkg/expr/sql/db.go return hardcoded 'not implemented' errors after removing the go-duck dependency.",
+        "severity": "High",
+        "category": "api"
+      }
+    ],
+    "golden_source_file": "grafana.json",
+    "az_comment": null,
+    "reviews": [
+      {
+        "tool": "diff2ai",
+        "repo_name": "grafana/grafana",
+        "pr_url": "https://github.com/grafana/grafana/pull/94942",
+        "review_comments": [
+          {
+            "path": "pkg/expr/reader.go",
+            "line": 200,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Maintainability \u2014 **Replace the misleading feature-flag check with an explicit \"always disabled\"**\n\n`enableSqlExpressions` returns `false` on both branches, so the `FlagSqlExpressions` check has no effect.\n\n- The local variable `enabled` holds the *negated* flag value. That makes the code read as if the flag controls the outcome when it does not.\n- It still calls `h.features.IsEnabledGlobally(...)`. If `features` can be nil, this adds a possible nil-pointer panic for no benefit (I cannot verify nil-ability from this diff).\n- Anyone who turns the flag on will still get \"not implemented\", with nothing in the code explaining why.\n\nIf the intent is to hard-disable SQL expressions until a new engine lands, say so directly and drop the dead flag lookup. If the intent is to honour the flag, the logic is wrong. Note, however, that the stub DB would then fail every query anyway.\n\n**Proposed fix:**\n\n~~~go\ncase QueryTypeSQL:\n\t// SQL expressions are temporarily disabled: the DuckDB engine was removed\n\t// and pkg/expr/sql.DB is a stub. Re-enable together with a real engine.\n\treturn eq, fmt.Errorf(\"sql expressions are currently disabled\")\n~~~",
+            "created_at": "2026-11-12T22:27:15.100Z"
+          },
+          {
+            "path": "pkg/expr/reader.go",
+            "line": 132,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Make sure the gate covers every path that builds a SQL command**\n\nThe new gate only lives in `ExpressionQueryReader.ReadQuery`. In Grafana, SQL expression nodes can also be built through the legacy pipeline (`nodes.go` \u2192 `UnmarshalSQLCommand` \u2192 `sql.TablesList`). That path does not go through this reader.\n\nOn that path, `TablesList` now always fails with a generic \"not implemented\" from the stub `DB.RunCommands`. `Execute` would also fail and log at Error level on every call. Users would get an opaque error instead of a clear \"disabled\" message.\n\nI cannot see `nodes.go`/`commands.go` in this diff, so please verify whether a feature-flag check already exists there. If it does not, add the same explicit disabled check where the SQL command is unmarshalled.\n\n**Proposed fix:**\n\n~~~go\n// in UnmarshalSQLCommand (or buildCMDNode for TypeSQL)\nreturn nil, fmt.Errorf(\"sql expressions are currently disabled\")\n~~~",
+            "created_at": "2026-11-12T22:27:15.100Z"
+          },
+          {
+            "path": "pkg/expr/sql/parser.go",
+            "line": 26,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Test \u2014 **Update or skip the existing SQL expression tests that now fail**\n\n`TablesList` and `QueryFramesInto` now always return errors. Any existing tests that exercise real parsing or execution will fail, because none are updated in this change. Examples would be `pkg/expr/sql/parser_test.go` asserting the table names, or SQLCommand/reader tests for `QueryTypeSQL`. I cannot see the test files, so please confirm.\n\nThose tests should be skipped with a reason, or changed to assert the disabled behaviour. That keeps CI green and makes it obvious they need restoring when an engine is reintroduced.\n\n**Proposed fix:**\n\n~~~go\nfunc TestParse(t *testing.T) {\n\tt.Skip(\"SQL expressions disabled: DuckDB engine removed\")\n\t...\n}\n~~~",
+            "created_at": "2026-11-12T22:27:15.100Z"
+          },
+          {
+            "path": "pkg/expr/sql/parser.go",
+            "line": 26,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Maintainability \u2014 **Avoid leaving dead DuckDB-specific code behind a stub**\n\n`TablesList` still escapes quotes by hand and builds a DuckDB-specific `json_serialize_sql` statement, then sends it to a stub that always errors. It also keeps the variable name `duckDB`.\n\nThe new `DB` type has no doc comment saying it is a placeholder. Future readers may assume it is a working in-memory engine, or reuse the string-interpolated SQL pattern with a real engine. That pattern carries injection risk if the escaping is ever relied upon.\n\nAdd a doc comment marking `DB` as a non-functional placeholder, and short-circuit `TablesList` with a clear error.\n\n**Proposed fix:**\n\n~~~go\n// DB is a placeholder; SQL expressions are disabled until an engine is chosen.\ntype DB struct{}\n\nfunc TablesList(rawSQL string) ([]string, error) {\n\treturn nil, errors.New(\"sql expressions are currently disabled\")\n}\n~~~",
+            "created_at": "2026-11-12T22:27:15.100Z"
+          }
+        ]
+      }
+    ]
+  },
+  "https://github.com/keycloak/keycloak/pull/37634": {
+    "pr_title": "Implement access token context encoding framework",
+    "original_url": null,
+    "source_repo": "keycloak",
+    "golden_comments": [
+      {
+        "comment": "In AccessTokenContext constructor, the fourth Objects.requireNonNull validates grantType twice instead of validating rawTokenId, allowing null rawTokenId values to pass validation.",
+        "severity": "Critical",
+        "category": "bug"
+      },
+      {
+        "comment": "In isAccessTokenId, the substring for the grant shortcut and the equality check look inverted: the grant shortcut occupies indices 4\u20135 (substring(4,6)), and a match should return true (combined with UUID check), not false.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "comment": "Javadoc mentions \"usually like 3-letters shortcut\" but some implementations use 2-letter shortcuts (\"ac\", \"cc\", \"rt\", \"te\", \"pc\", \"ci\", \"ro\"). Consider updating documentation to reflect actual usage pattern.",
+        "severity": "Low",
+        "category": "doc_defect"
+      },
+      {
+        "comment": " Catching generic RuntimeException is too broad. The implementation throws IllegalArgumentException specifically - catch that instead for more precise testing.",
+        "severity": "Low",
+        "category": "bug"
+      }
+    ],
+    "golden_source_file": "keycloak.json",
+    "az_comment": null,
+    "reviews": [
+      {
+        "tool": "diff2ai",
+        "repo_name": "keycloak/keycloak",
+        "pr_url": "https://github.com/keycloak/keycloak/pull/37634",
+        "review_comments": [
+          {
+            "path": "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/AssertEvents.java",
+            "line": 492,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Test \u2014 **Fix the `isAccessTokenId` matcher, which accepts almost any token ID**\n\nThe encoded prefix has three 2-character parts: session type, token type, then grant type. The grant shortcut therefore sits at indices 4\u20136, not 3\u20135. For `onrtac`, `substring(3, 5)` returns `\"ta\"`.\n\nThe condition is also inverted. It returns `false` when the shortcut *matches* the expected value.\n\nTogether, these two bugs mean the matcher passes for almost any `xxxxxx:<uuid>` value. The updated `expectCodeToToken`, `expectRefresh`, `expectDeviceCodeToToken` and `expectAuthReqIdToToken` assertions therefore never check the grant type. A wrong grant encoding would go unnoticed. The check also does not verify that the prefix is 6 characters long.\n\n**Proposed fix:**\n\n~~~java\nString[] items = item.split(\":\");\nif (items.length != 2 || items[0].length() != 6) return false;\nif (!items[0].substring(4, 6).equals(expectedGrantShortcut)) return false;\nreturn isUUID().matches(items[1]);\n~~~",
+            "created_at": "2026-11-12T22:26:32.761Z"
+          },
+          {
+            "path": "services/src/main/java/org/keycloak/protocol/oidc/encode/AccessTokenContext.java",
+            "line": 73,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Bug \u2014 **Null check validates `grantType` twice instead of `rawTokenId`**\n\nThis line has the message \"Null rawTokenId not allowed\" but checks `grantType` a second time. A null `rawTokenId` is accepted without error, so `encodeTokenId` can later produce an ID like `onrtac:null`.\n\n**Proposed fix:**\n\n~~~java\nObjects.requireNonNull(rawTokenId, \"Null rawTokenId not allowed\");\n~~~",
+            "created_at": "2026-11-12T22:26:32.761Z"
+          },
+          {
+            "path": "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderFactory.java",
+            "line": 85,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Grant shortcuts are not validated, so custom grants can produce token IDs that cannot be decoded**\n\nThe decoder requires the context prefix to be exactly 6 characters, with a 2-character grant shortcut. The `getShortcut()` Javadoc only says \"usually like 3-letters\", which invites wrong implementations. Nothing enforces the actual rules, so several failures are possible:\n\n- **Wrong length:** a custom `OAuth2GrantTypeFactory` returning a 3-letter shortcut produces token IDs that `getTokenContextFromTokenId` rejects with `IllegalArgumentException`.\n- **Colon in the shortcut:** this breaks parsing of the `:` separator.\n- **Null shortcut:** this causes an NPE in `ConcurrentHashMap.put` during `postInit`, which blocks server startup.\n- **Collision with `\"na\"`:** this is not clearly reported.\n\nThe new method is also abstract with no default. Every existing third-party grant factory will fail to compile or link (`AbstractMethodError`) until it is updated.",
+            "created_at": "2026-11-12T22:26:32.761Z"
+          },
+          {
+            "path": "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java",
+            "line": 55,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Bug \u2014 **Token type is derived from the session context client, not the token's client**\n\n`getShouldUseLightweightToken` reads `session.getContext().getClient()`. Before this change it ran only inside mappers. It now runs for every access token created through `initToken`.\n\nThat includes paths where the context client may be null, such as admin or internal token generation. I have not verified these paths against code outside the diff. In that case the call throws an NPE and token issuance fails.\n\nIn flows like token exchange, the context client can also differ from the client the token is issued to. The encoded lightweight/regular flag would then be wrong.",
+            "created_at": "2026-11-12T22:26:32.761Z"
+          },
+          {
+            "path": "server-spi-private/src/main/java/org/keycloak/protocol/oidc/grants/OAuth2GrantType.java",
+            "line": 103,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Maintainability \u2014 **Removal of the public `Context(Context)` copy constructor and a new NPE risk in the constructor**\n\n**Copy constructor removed:** the public copy constructor was deleted without deprecation. Any code that clones a `Context` will break, including extensions or other modules not shown here.\n\n**NPE in the main constructor:** it now calls `formParams.getFirst(...)` unconditionally. Any caller passing null `formParams` will get an NPE.\n\n**Stale grant type:** `grantType` is captured once and is not recomputed in `setFormParams`. It can go stale if form params are replaced.",
+            "created_at": "2026-11-12T22:26:32.761Z"
+          }
+        ]
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1": {
+    "pr_title": "Fixing Re-authentication with passkeys",
+    "original_url": "https://github.com/keycloak/keycloak/pull/41249",
+    "source_repo": "keycloak-greptile",
+    "golden_comments": [
+      {
+        "comment": "In UsernameForm.authenticate(), isConditionalPasskeysEnabled() is called without passing the required UserModel parameter.",
+        "severity": "Medium",
+        "category": "api"
+      },
+      {
+        "comment": "With isConditionalPasskeysEnabled(UserModel user) requiring user != null, authenticate(...) will not call webauthnAuth.fillContextForm(context) on the initial login page where context.getUser() is still null, so conditional passkey UI will not be set up for first-time passkey login. Consider whether this should also be enabled when no user has been selected yet so ID-less passkey authentication on the initial login form continues to work.",
+        "severity": "Medium",
+        "category": "speculative"
+      }
+    ],
+    "golden_source_file": "keycloak.json",
+    "az_comment": "reviewed commit is not in the repo",
+    "reviews": [
+      {
+        "tool": "diff2ai",
+        "repo_name": "ai-code-review-evaluation/keycloak-greptile",
+        "pr_url": "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1",
+        "review_comments": [
+          {
+            "path": "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernameForm.java",
+            "line": 47,
+            "body": "**\ud83d\udfe5 CRITICAL** \u00b7 Bug \u2014 **Fix call to `isConditionalPasskeysEnabled` so `UsernameForm` compiles**\n\n`UsernameForm` calls `isConditionalPasskeysEnabled()` with no arguments. The method added in `UsernamePasswordForm` (lines 160-162) only has the signature `isConditionalPasskeysEnabled(UserModel user)`, and no no-arg overload exists. As a result the `services` module will not compile.\n\n**Proposed fix:**\n\n~~~java\nif (context.getUser() != null && !isConditionalPasskeysEnabled(context.getUser())) {\n~~~",
+            "created_at": "2026-11-12T22:26:30.681Z"
+          },
+          {
+            "path": "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java",
+            "line": 162,
+            "body": "**\ud83d\udfe7 HIGH** \u00b7 Bug \u2014 **Stop requiring a user before showing conditional passkeys, which breaks normal passkey login**\n\n`isConditionalPasskeysEnabled` returns `false` whenever `user == null`.\n\n- Before this change, WebAuthn data was filled in exactly when no user was selected yet, which is the regular first-login case (`context.getUser() == null`).\n- After this change, `fillContextForm` is never called for an unidentified user, in either `authenticate()` or `challenge()`.\n\nSo conditional UI and the \"Sign in with passkey\" form disappear from the normal login page. Only re-authentication shows them. That reverses the intent of the change.\n\nThe tests in this PR expect `//form[@id='webauth']` on the initial login page (e.g. `PasskeysUsernamePasswordFormTest` lines 196 and 238). They would fail with this predicate.\n\nThe fix is to drop the `user != null` condition so the user does not gate the check. The intent is to show passkeys both on the initial page and during re-authentication.\n\n**Proposed fix:**\n\n~~~java\nprotected boolean isConditionalPasskeysEnabled(UserModel user) {\n    return webauthnAuth != null && webauthnAuth.isPasskeysEnabled();\n}\n~~~",
+            "created_at": "2026-11-12T22:26:30.681Z"
+          },
+          {
+            "path": "services/src/main/java/org/keycloak/authentication/authenticators/browser/WebAuthnConditionalUIAuthenticator.java",
+            "line": 67,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Security \u2014 **Ensure the passkey used during re-authentication belongs to the already-identified user**\n\nDuring re-authentication (`prompt=login`), the context user is already set. However:\n\n- `shouldShowWebAuthnAuthenticators` now always returns `false` for conditional UI.\n- `isUserIdentified` stays `false` and `allowCredentials` is not restricted.\n\nThis means any discoverable passkey can be presented. If `WebAuthnAuthenticator.action` (not visible in this diff) resolves the user from the `userHandle` without comparing it to the existing `context.getUser()`, a different user's passkey could complete the \"re-authentication\" and switch the session user.\n\nPlease verify that `action()` rejects a credential whose user differs from the pre-set user. If it does not, add that check. Severity is lowered because this depends on code outside the diff.\n\n**Proposed fix:**\n\n~~~java\n// in WebAuthnAuthenticator.action, after resolving user from userHandle\nif (context.getUser() != null && !context.getUser().getId().equals(resolvedUser.getId())) {\n    context.getEvent().error(Errors.DIFFERENT_USER_AUTHENTICATED);\n    // fail / challenge with error\n}\n~~~",
+            "created_at": "2026-11-12T22:26:30.681Z"
+          },
+          {
+            "path": "services/src/main/java/org/keycloak/authentication/authenticators/browser/WebAuthnConditionalUIAuthenticator.java",
+            "line": 67,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Maintainability \u2014 **Add `@Override` on `shouldShowWebAuthnAuthenticators` override**\n\nThis method overrides a superclass hook but is not annotated. If the base signature changes, the override would silently stop applying. Here that would re-enable showing authenticators in conditional UI.\n\n**Proposed fix:**\n\n~~~java\n@Override\nprotected boolean shouldShowWebAuthnAuthenticators(AuthenticationFlowContext context) {\n    return false;\n}\n~~~",
+            "created_at": "2026-11-12T22:26:30.681Z"
+          },
+          {
+            "path": "services/src/main/java/org/keycloak/authentication/authenticators/browser/AbstractUsernameFormAuthenticator.java",
+            "line": 58,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Maintainability \u2014 **Avoid util-to-browser package dependency by moving the constant**\n\nThe constant `USER_SET_BEFORE_USERNAME_PASSWORD_AUTH` was widened from `protected` to `public` only so that `AuthenticatorUtils` can import it. This creates a dependency from the generic `util` package back onto a concrete `browser` authenticator class. It also expands public API surface.\n\nDefine the constant in `AuthenticatorUtils` (or a constants class) and reference it from the authenticator instead.\n\n**Proposed fix:**\n\n~~~java\n// AuthenticatorUtils\npublic static final String USER_SET_BEFORE_USERNAME_PASSWORD_AUTH = \"USER_SET_BEFORE_USERNAME_PASSWORD_AUTH\";\n// AbstractUsernameFormAuthenticator\nprotected static final String USER_SET_BEFORE_USERNAME_PASSWORD_AUTH = AuthenticatorUtils.USER_SET_BEFORE_USERNAME_PASSWORD_AUTH;\n~~~",
+            "created_at": "2026-11-12T22:26:30.681Z"
+          },
+          {
+            "path": "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java",
+            "line": 296,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Test \u2014 **Use `assertThrows` instead of try/fail/catch(Exception) for absent element**\n\nThe current pattern catches any `Exception` and treats it as \"expected\". As a result, unrelated failures (e.g. a stale element or a WebDriver error) pass silently. The `assertThat(..., nullValue())` inside the try block is also dead logic, because `findElement` never returns null.\n\nThe same file already uses `Assert.assertThrows(NoSuchElementException.class, ...)` elsewhere, which is clearer and stricter.\n\nThe comment at line 304 also says passkeys are hidden \"as this user does not have passkey\". The actual reason is that passkeys are disabled for the realm, so the comment is misleading.\n\n**Proposed fix:**\n\n~~~java\nAssert.assertThrows(NoSuchElementException.class,\n        () -> driver.findElement(By.xpath(\"//form[@id='webauth']\")));\n~~~",
+            "created_at": "2026-11-12T22:26:30.681Z"
+          }
+        ]
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/77754": {
+    "pr_title": "feat(ecosystem): Implement cross-system issue synchronization",
+    "original_url": null,
+    "source_repo": "sentry",
+    "golden_comments": [
+      {
+        "comment": "The AssignmentSource dataclass uses queued: datetime = timezone.now() as a default field value, which evaluates timezone.now() once at class definition time and shares that single datetime instance across all objects.",
+        "severity": "Medium",
+        "category": "concurrency"
+      },
+      {
+        "comment": "The method name has a typo: test_from_dict_inalid_data should be test_from_dict_invalid_data.",
+        "severity": "Low",
+        "category": "style"
+      },
+      {
+        "comment": "Method name says 'empty_array' but tests empty dict - consider renaming to 'test_from_dict_empty_dict' for clarity.",
+        "severity": "Low",
+        "category": "style"
+      },
+      {
+        "comment": "to_dict() returns a datetime for queued; if this dict is passed in task kwargs (e.g., via apply_async), JSON serialization may fail depending on the serializer, which can cause enqueue errors.",
+        "severity": "Medium",
+        "category": "bug"
+      }
+    ],
+    "golden_source_file": "sentry.json",
+    "az_comment": null,
+    "reviews": [
+      {
+        "tool": "diff2ai",
+        "repo_name": "getsentry/sentry",
+        "pr_url": "https://github.com/getsentry/sentry/pull/77754",
+        "review_comments": [
+          {
+            "path": "src/sentry/integrations/services/assignment_source.py",
+            "line": 18,
+            "body": "**\ud83d\udfe7 HIGH** \u00b7 Bug \u2014 **Compute the `queued` default per instance, not once at import**\n\n`queued: datetime = timezone.now()` runs once, when the class is defined at module import. Every `AssignmentSource` created without an explicit `queued` gets the same timestamp: the process start time, not the time the assignment was queued. Any later logic that relies on `queued` (staleness checks, ordering, debugging) will be silently wrong. `test_to_dict` only checks that `queued` is not None, so it cannot catch this.\n\n**Proposed fix:**\n\n~~~python\nfrom dataclasses import asdict, dataclass, field\n\n@dataclass(frozen=True)\nclass AssignmentSource:\n    source_name: str\n    integration_id: int\n    queued: datetime = field(default_factory=timezone.now)\n~~~",
+            "created_at": "2026-11-12T22:26:18.546Z"
+          },
+          {
+            "path": "src/sentry/integrations/services/assignment_source.py",
+            "line": 28,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Make `to_dict()` output JSON-serializable for task kwargs**\n\n`asdict(self)` returns a raw `datetime` for `queued`. That dict is passed as a Celery task kwarg. The commit history says the intent is to pass JSON-safe data, but a `datetime` is not JSON-serializable. With a JSON task serializer, enqueueing either fails or relies on serializer-specific coercion.\n\nOn the consumer side, `from_dict` does `cls(**input_dict)` with no type conversion. A round-tripped `queued` would therefore arrive as a string (or another non-`datetime` type) and the object would have the wrong type.\n\nFix:\n- Serialize `queued` explicitly, for example as ISO 8601.\n- Parse it back in `from_dict`.\n- Add a test that round-trips the dict through `json.dumps`/`json.loads`.\n\n**Proposed fix:**\n\n~~~python\ndef to_dict(self) -> dict[str, Any]:\n    d = asdict(self)\n    d[\"queued\"] = self.queued.isoformat()\n    return d\n\n@classmethod\ndef from_dict(cls, input_dict: dict[str, Any]) -> AssignmentSource | None:\n    try:\n        data = dict(input_dict)\n        if isinstance(data.get(\"queued\"), str):\n            data[\"queued\"] = datetime.fromisoformat(data[\"queued\"])\n        return cls(**data)\n    except (ValueError, TypeError):\n        return None\n~~~",
+            "created_at": "2026-11-12T22:26:18.546Z"
+          },
+          {
+            "path": "src/sentry/integrations/mixins/issues.py",
+            "line": 418,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Update the `sync_assignee_outbound` signature, not `sync_status_outbound`**\n\nThe task now calls `installation.sync_assignee_outbound(..., assignment_source=parsed_assignment_source)`. However, the abstract signature that was changed is `sync_status_outbound`, and nothing in this diff passes `assignment_source` to that method. Meanwhile the abstract `sync_assignee_outbound` contract was left unchanged.\n\nAny concrete integration whose `sync_assignee_outbound` does not accept `**kwargs` or an `assignment_source` parameter will raise `TypeError` inside the task, and outbound assignee sync will break. I can't see the implementations in this diff, so please verify that each one (Jira, Jira Server, GitHub, GitLab, VSTS, example, etc.) accepts the new kwarg.\n\n**Proposed fix:**\n\n~~~python\n@abstractmethod\ndef sync_assignee_outbound(\n    self,\n    external_issue,\n    user,\n    assign=True,\n    assignment_source: AssignmentSource | None = None,\n    **kwargs,\n):\n    ...\n\n# and revert the unused assignment_source param on sync_status_outbound\n~~~",
+            "created_at": "2026-11-12T22:26:18.546Z"
+          },
+          {
+            "path": "src/sentry/integrations/services/assignment_source.py",
+            "line": 35,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Bug \u2014 **Avoid silently losing cycle protection when the source dict fails to parse**\n\nIf `assignment_source_dict` is present but malformed, `from_dict` returns `None` with no logging. `should_sync` then treats the assignment as having no source and syncs back to the originating integration. That recreates the exact sync cycle this PR is meant to break, and leaves no trace of why. Malformed input could come from a version skew between producer and consumer, or from extra keys.\n\nFix:\n- Log a warning when parsing fails.\n- Consider ignoring unknown keys so that adding fields later stays backward compatible.\n\n**Proposed fix:**\n\n~~~python\nexcept (ValueError, TypeError):\n    logger.warning(\"assignment_source.parse_failed\", extra={\"input\": input_dict})\n    return None\n~~~",
+            "created_at": "2026-11-12T22:26:18.546Z"
+          },
+          {
+            "path": "src/sentry/integrations/mixins/issues.py:66, 382",
+            "line": null,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Maintainability \u2014 **Check subclass `should_sync` overrides for the new parameter**\n\nThe task now calls `installation.should_sync(\"outbound_assignee\", parsed_assignment_source)` with a second positional argument. Any integration subclass that overrides `should_sync(self, attribute)` with the old one-argument signature will raise `TypeError`. I can't see whether such overrides exist from this diff, so please search for them.\n\n**Proposed fix:**\n\n~~~text\ngrep -rn \"def should_sync\" src/sentry/integrations\n# Update any override to: def should_sync(self, attribute, sync_source=None)\n~~~",
+            "created_at": "2026-11-12T22:26:18.546Z"
+          }
+        ]
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/80168": {
+    "pr_title": "feat(workflow_engine): Add in hook for producing occurrences from the stateful detector",
+    "original_url": null,
+    "source_repo": "sentry",
+    "golden_comments": [
+      {
+        "comment": "MetricAlertDetectorHandler inherits from StatefulDetectorHandler but only contains pass, failing to implement its required abstract methods: counter_names (property), get_dedupe_value(), get_group_key_values(), and build_occurrence_and_event_data(). This will cause a TypeError at runtime when the class is instantiated.",
+        "severity": "High",
+        "category": "api"
+      },
+      {
+        "comment": "Docstring says this returns a list of DetectorEvaluationResult, but the method now returns a dict keyed by DetectorGroupKey. Consider updating the docstring to match the new return type.",
+        "severity": "Low",
+        "category": "doc_defect"
+      },
+      {
+        "comment": "Wrong value `6` passed for `group_2` occurrence \u2014 the data packet specifies `\"group_2\": 10`. Should be `10` to accurately reflect the test scenario, which will ensure the test produces the correct occurrence data.",
+        "severity": "Medium",
+        "category": "test_gap"
+      }
+    ],
+    "golden_source_file": "sentry.json",
+    "az_comment": null,
+    "reviews": [
+      {
+        "tool": "diff2ai",
+        "repo_name": "getsentry/sentry",
+        "pr_url": "https://github.com/getsentry/sentry/pull/80168",
+        "review_comments": [
+          {
+            "path": "src/sentry/incidents/grouptype.py",
+            "line": 12,
+            "body": "**\ud83d\udfe7 HIGH** \u00b7 Bug \u2014 **MetricAlertDetectorHandler is now abstract and cannot be instantiated**\n\n`MetricAlertDetectorHandler` used to implement `evaluate` and return `[]`. It now subclasses `StatefulDetectorHandler` with only `pass`. `StatefulDetectorHandler` declares several abstract methods:\n- `get_dedupe_value` and `get_group_key_values`, which the test mock has to implement.\n- `build_occurrence_and_event_data`, which this PR adds as a new `@abc.abstractmethod`.\n\nNone of these are implemented here, so the class is still abstract. When `Detector.detector_handler` builds the handler for a metric-alert detector (`group_type.detector_handler(detector)`), Python raises `TypeError: Can't instantiate abstract class`. Before this change the call was a harmless no-op. Now any detector of this group type that reaches `process_detectors` will raise instead of being skipped.\n\nThis depends on how `detector_handler` instantiates the handler, which is outside the diff, but the abstract methods are visible in the diff. Fix it in one of two ways:\n- Implement the abstract methods with stubs.\n- Keep the previous plain `DetectorHandler` implementation until the stateful version is actually built.\n\n**Proposed fix:**\n\n~~~python\nclass MetricAlertDetectorHandler(StatefulDetectorHandler[QuerySubscriptionUpdate]):\n    counter_names: list[str] = []\n\n    def get_dedupe_value(self, data_packet: DataPacket[QuerySubscriptionUpdate]) -> int:\n        # TODO: implement\n        return 0\n\n    def get_group_key_values(\n        self, data_packet: DataPacket[QuerySubscriptionUpdate]\n    ) -> dict[DetectorGroupKey, int]:\n        # TODO: implement\n        return {}\n\n    def build_occurrence_and_event_data(\n        self, group_key: DetectorGroupKey, value: int, new_status: PriorityLevel\n    ) -> tuple[IssueOccurrence, dict[str, Any]]:\n        raise NotImplementedError\n~~~",
+            "created_at": "2026-11-12T22:26:40.010Z"
+          },
+          {
+            "path": "src/sentry/workflow_engine/processors/detector.py",
+            "line": 232,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Doc \u2014 **Update evaluate docstring to reflect dict return type**\n\n`evaluate` now returns `dict[DetectorGroupKey, DetectorEvaluationResult]`, but its docstring still says it \"returns a list of `DetectorEvaluationResult`\". Callers reading the docstring could iterate the return value directly and get keys instead of results.\n\n**Proposed fix:**\n\n~~~python\n\"\"\"\nEvaluates a given data packet and returns a dict of `DetectorEvaluationResult` keyed by group key.\n...\n\"\"\"\n~~~",
+            "created_at": "2026-11-12T22:26:40.010Z"
+          },
+          {
+            "path": "tests/sentry/workflow_engine/processors/test_detector.py",
+            "line": 192,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Test \u2014 **Tests cannot detect the wrong `value` being passed to the occurrence hook**\n\nSeveral tests build the expected occurrence with `value=6` even though the evaluated value differs: 10 for `group_2`, 100 in `test_results_on_change`, and 8 in `test_dedupe`. They still pass only because `build_mock_occurrence_and_event` ignores `value`.\n\nAs a result, nothing verifies that `evaluate_group_key_value` passes the correct `value` into `build_occurrence_and_event_data`, and a regression there would go unnoticed. The fix has two parts:\n- Include `value` in the mock output, for example in `evidence_data`.\n- Pass the actual evaluated value in each test.\n\n**Proposed fix:**\n\n~~~python\n# in build_mock_occurrence_and_event\nevidence_data={\"value\": value},\n...\n# in tests\nbuild_mock_occurrence_and_event(detector.detector_handler, \"group_2\", 10, PriorityLevel.HIGH)\n~~~",
+            "created_at": "2026-11-12T22:26:40.010Z"
+          }
+        ]
+      }
+    ]
+  }
+}

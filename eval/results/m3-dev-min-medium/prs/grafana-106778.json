@@ -1,0 +1,129 @@
+{
+  "id": "grafana-106778",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/106778",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Restore federated rule-group detection in `useAllAlertRuleAbilities`",
+      "affected": [
+        "public/app/features/alerting/unified/hooks/useAbilities.ts:222-248"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Missing React `key` on `GrafanaRuleListItem` in FilterView",
+      "affected": [
+        "public/app/features/alerting/unified/rule-list/FilterView.tsx:157-162"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Grafana recording rules lose Pause/Restore/Export/DeletePermanently abilities",
+      "affected": [
+        "public/app/features/alerting/unified/hooks/useAbilities.ts:301-330"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Rule view link no longer carries `returnTo`",
+      "affected": [
+        "public/app/features/alerting/unified/rule-list/GrafanaRuleListItem.tsx:40"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Performance",
+      "title": "Inline action arrays defeat memoization in ability hooks",
+      "affected": [
+        "public/app/features/alerting/unified/components/rule-viewer/AlertRuleMenu.tsx:57-79",
+        "public/app/features/alerting/unified/hooks/useAbilities.ts:397-406"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Menu test asserts exact item count while Delete is silently absent despite delete permission",
+      "affected": [
+        "public/app/features/alerting/unified/rule-list/GrafanaGroupLoader.test.tsx:171-208"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 3,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyprwgFanFVf6YeUytbR",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 32893,
+      "outputTokens": 4777,
+      "ms": 41428
+    }
+  ],
+  "costUsd": 0.227112,
+  "durationMs": 42707,
+  "promptSha256": "86b315252f641b6580ca6baab70f83dac0897e44760e6beef79dd0c7f2ed3e23",
+  "promptChars": 73056,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Restore federated rule-group detection in `useAllAlertRuleAbilities`\n\nAffected:\n- public/app/features/alerting/unified/hooks/useAbilities.ts:222-248\n\nExplanation:\n`useAllAlertRuleAbilities(CombinedRule)` used to set `isFederated` from `isFederatedRuleGroup(rule.group)`. It now delegates to `useAllRulerRuleAbilities`, where `isFederated` is hard-coded to `false`.\n\nThis hook still serves the legacy list and detail views for data-source (Mimir) rules. Federated rule groups are therefore no longer treated as immutable. Update, Delete and Pause are reported as supported for them, which re-enables editing and deleting rules the UI previously blocked.\n\nFix: keep the federated check in the CombinedRule path. Either pass it into the shared implementation or compute it in the wrapper and combine the results.\n\nProposed fix:\n~~~ts\nexport function useAllAlertRuleAbilities(rule: CombinedRule): Abilities<AlertRuleAction> {\n  const groupIdentifierV2 = useMemo(() => groupIdentifier.fromCombinedRule(rule), [rule]);\n  return useAllRulerRuleAbilities(rule.rulerRule, groupIdentifierV2, isFederatedRuleGroup(rule.group));\n}\n\nexport function useAllRulerRuleAbilities(\n  rule: RulerRuleDTO | undefined,\n  groupIdentifier: RuleGroupIdentifierV2,\n  isFederated = false\n) { /* use isFederated in immutableRule */ }\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Missing React `key` on `GrafanaRuleListItem` in FilterView\n\nAffected:\n- public/app/features/alerting/unified/rule-list/FilterView.tsx:157-162\n\nExplanation:\nThe old `GrafanaRuleLoader` element had `key={key}`. The new `GrafanaRuleListItem` element inside the same `.map`/`switch` has no key. Consequences:\n- React will warn about the missing key.\n- React will fall back to index-based reconciliation. As filter results stream in or change, component state can be reused across the wrong rules, for example the open More menu, silence drawer state, or delete modal state.\n\nProposed fix:\n~~~tsx\n<GrafanaRuleListItem\n  key={key}\n  rule={rule}\n  groupIdentifier={groupIdentifier}\n  namespaceName={ruleWithOrigin.namespaceName}\n  showLocation={true}\n/>\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Grafana recording rules lose Pause/Restore/Export/DeletePermanently abilities\n\nAffected:\n- public/app/features/alerting/unified/hooks/useAbilities.ts:301-330\n\nExplanation:\nIn the ruler-based version, these abilities were gated on `rulerRuleType.grafana.rule(rule)`, which is true for all Grafana-managed rules, including recording rules. The new prom-based version gates them on `prometheusRuleType.grafana.alertingRule(rule)`.\n\nThe comment says \"All GrafanaPromRuleDTO rules are Grafana-managed by definition\", but the code uses the alerting-only check. As a result, Grafana-managed recording rules in the new list view can no longer be paused, exported, restored or permanently deleted.\n\nFix: use `prometheusRuleType.grafana.rule(rule)` for these abilities. Keep the alerting-only check for Silence.\n\nProposed fix:\n~~~ts\nconst isGrafanaManagedRule = prometheusRuleType.grafana.rule(rule);\nconst isAlertingRule = prometheusRuleType.grafana.alertingRule(rule);\n...\n[AlertRuleAction.Silence]: [silenceSupported, canSilenceInFolder && isAlertingRule],\n[AlertRuleAction.ModifyExport]: [isGrafanaManagedRule, exportAllowed],\n[AlertRuleAction.Pause]: [MaybeSupportedUnlessImmutable && isGrafanaManagedRule, isEditable ?? false],\n[AlertRuleAction.Restore]: [MaybeSupportedUnlessImmutable && isGrafanaManagedRule, isEditable ?? false],\n[AlertRuleAction.DeletePermanently]: [MaybeSupportedUnlessImmutable && isGrafanaManagedRule, (isRemovable && isAdmin()) ?? false],\n~~~\n\n## 4) Severity: LOW | Type: Bug\nTitle: Rule view link no longer carries `returnTo`\n\nAffected:\n- public/app/features/alerting/unified/rule-list/GrafanaRuleListItem.tsx:40\n\nExplanation:\nThe removed implementation built the link as `createRelativeUrl('/alerting/grafana/${uid}/view', { returnTo })`. The new component drops `returnTo`.\n\nWhen users open a rule from the list and then go back from the rule view, they lose their list context (filters, position). This is a UX regression unrelated to removing the ruler calls.\n\nProposed fix:\n~~~tsx\nconst returnTo = createReturnTo();\n...\nhref: createRelativeUrl(`/alerting/grafana/${uid}/view`, { returnTo }),\n~~~\n\n## 5) Severity: LOW | Type: Performance\nTitle: Inline action arrays defeat memoization in ability hooks\n\nAffected:\n- public/app/features/alerting/unified/components/rule-viewer/AlertRuleMenu.tsx:57-79\n- public/app/features/alerting/unified/hooks/useAbilities.ts:397-406\n\nExplanation:\n`AlertRuleMenu` passes freshly created array literals as `actions` to `useRulerRuleAbilities` and `useGrafanaPromRuleAbilities`. Both hooks list `actions` in their `useMemo` deps, so the memo is invalidated on every render and returns new arrays.\n\nThe list view can render many rules, so this causes needless recomputation and allocations. Fix by hoisting the action list to a module-level constant.\n\nProposed fix:\n~~~ts\nconst MENU_ACTIONS = [\n  AlertRuleAction.Pause,\n  AlertRuleAction.Delete,\n  AlertRuleAction.Duplicate,\n  AlertRuleAction.Silence,\n  AlertRuleAction.ModifyExport,\n];\n// ...\nuseRulerRuleAbilities(rulerRule, groupIdentifier, MENU_ACTIONS);\nuseGrafanaPromRuleAbilities(prometheusRuleType.grafana.rule(promRule) ? promRule : skipToken, MENU_ACTIONS);\n~~~\n\n## 6) Severity: LOW | Type: Test\nTitle: Menu test asserts exact item count while Delete is silently absent despite delete permission\n\nAffected:\n- public/app/features/alerting/unified/rule-list/GrafanaGroupLoader.test.tsx:171-208\n\nExplanation:\nThe test grants `AlertingRuleDelete` both globally and at folder level. With that grant, `useGrafanaPromRuleAbilities` should report Delete as allowed, so `canDelete` becomes true. Yet the test asserts exactly 4 menu items and never checks Delete.\n\nIf Delete is hidden because the menu still requires a `rulerRule` (code not visible in this diff), the test is locking in an inconsistency between the computed ability and the rendered UI. Otherwise the hard-coded count is just brittle.\n\nFix: assert the presence or absence of Delete explicitly and explain why, rather than relying on `length === 4`.\n\nProposed fix:\n~~~ts\nexpect(ui.menuItems.delete().query()).not.toBeInTheDocument(); // or .get() if delete should be available\n// drop the exact-count assertion or document why delete/pause are excluded\n~~~\n",
+  "belowMinSeverity": 3,
+  "configHash": "2db5d28d38193561cb3373bb643bd7b58bdab1770ac62b9be17d232892b946e8",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The rendered GrafanaRuleListItem is missing the required key prop for React list items. This can cause rendering issues when the list order changes.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Missing React key prop on GrafanaRuleListItem in FilterView, which will cause React warnings and incorrect component state reuse across different rules when filter results change",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: a missing React key prop on GrafanaRuleListItem. Both comments point to the same component (GrafanaRuleListItem), the same issue (missing key prop), and similar consequences (rendering issues/incorrect component state when list changes). The candidate even provides additional context about where it occurs (FilterView) and the specific consequences."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "useAllAlertRuleAbilities no longer detects federated rule groups because isFederated is hard-coded to false in useAllRulerRuleAbilities, causing federated rule groups to no longer be treated as immutable and incorrectly enabling Update, Delete and Pause operations"
+      },
+      {
+        "candidate": "Grafana recording rules lose Pause/Restore/Export/DeletePermanently abilities because the code uses prometheusRuleType.grafana.alertingRule(rule) instead of prometheusRuleType.grafana.rule(rule), which excludes recording rules from these operations"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "RuleActionsButtons is invoked with only promRule, but SilenceGrafanaRuleDrawer inside RuleActionsButtons still depends on a Grafana Ruler rule being present, so for Grafana rules coming from list views the 'Silence notifications' menu entry (now driven by Grafana Prom abilities) will toggle showSilenceDrawer without ever rendering the drawer. This means clicking 'Silence notifications' for these rules has no visible effect, even when abilities indicate silencing is allowed.",
+        "severity": "High",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 3,
+    "total_golden": 2,
+    "tp": 1,
+    "fp": 2,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.3333333333333333,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/106778"
+  },
+  "judgeUsage": {
+    "calls": 8,
+    "inputTokens": 3545,
+    "outputTokens": 938,
+    "costUsd": 0.041174999999999996
+  }
+}

@@ -1,0 +1,140 @@
+{
+  "id": "discourse-graphite-2",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/2",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Handle missing TopicUser row in unsubscribe",
+      "affected": [
+        "app/controllers/topics_controller.rb:105-113"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Security",
+      "title": "State-changing action exposed via GET (CSRF / prefetch toggling)",
+      "affected": [
+        "app/controllers/topics_controller.rb:98-116",
+        "config/routes.rb:440-441"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "`unsubscribe_link` translation now requires `unsubscribe_url` for every email with an unsubscribe link",
+      "affected": [
+        "config/locales/server.en.yml:1852-1855",
+        "lib/email/message_builder.rb:67"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Direct `tu.save!` skips MessageBus publish and notification reason",
+      "affected": [
+        "app/controllers/topics_controller.rb:105-113"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Client-side unsubscribe route never unsubscribes, but says it did",
+      "affected": [
+        "app/assets/javascripts/discourse/routes/topic-unsubscribe.js.es6:4-10",
+        "app/assets/javascripts/discourse/controllers/topic-unsubscribe.js.es6:5-7"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyprwhybRjdgcJUWUPxx",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 11226,
+      "outputTokens": 3461,
+      "ms": 33573
+    }
+  ],
+  "costUsd": 0.114124,
+  "durationMs": 34845,
+  "promptSha256": "88f7f53bb16243f3113f7819b7752e7b12675116478a8365633d1a01f8b053d5",
+  "promptChars": 26192,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Handle missing TopicUser row in unsubscribe\n\nAffected:\n- app/controllers/topics_controller.rb:105-113\n\nExplanation:\n`TopicUser.find_by(...)` returns `nil` when the user has no `topic_users` row for the topic. That happens when the user gets emails because they watch the category, are mentioned, or are in a group, without ever visiting the topic. In that case `tu.notification_level` raises `NoMethodError` and the unsubscribe link from the email returns a 500 error.\n\nEven when a row exists, `notification_level` can be `nil`. Then `nil > Integer` also raises.\n\nProposed fix:\n~~~ruby\ntu = TopicUser.find_by(user_id: current_user.id, topic_id: params[:topic_id])\ncurrent = tu.try(:notification_level) || TopicUser.notification_levels[:regular]\nnew_level = current > TopicUser.notification_levels[:regular] ?\n  TopicUser.notification_levels[:regular] : TopicUser.notification_levels[:muted]\nTopicUser.change(current_user.id, params[:topic_id], notification_level: new_level)\n~~~\n\n## 2) Severity: HIGH | Type: Security\nTitle: State-changing action exposed via GET (CSRF / prefetch toggling)\n\nAffected:\n- app/controllers/topics_controller.rb:98-116\n- config/routes.rb:440-441\n\nExplanation:\n`unsubscribe` changes the user's notification level on a plain GET request with no token. This causes three problems:\n- **CSRF:** any third-party page can mute topics for a logged-in victim, e.g. with `<img src=\"/t/x/123/unsubscribe\">`.\n- **Prefetching:** email clients, link scanners and browser prefetchers will trigger it without the user meaning to.\n- **Not idempotent:** the action steps the level down on every hit. Watching becomes regular, and a reload (or a second scanner fetch) then mutes the topic.\n\nProposed fix:\n- Have the GET render a confirmation page only, and do the change via a POST/PUT protected by CSRF.\n- Or set a fixed target level so repeated hits do not escalate, and use a signed per-user token in the URL.\n\n## 3) Severity: HIGH | Type: Bug\nTitle: `unsubscribe_link` translation now requires `unsubscribe_url` for every email with an unsubscribe link\n\nAffected:\n- config/locales/server.en.yml:1852-1855\n- lib/email/message_builder.rb:67\n\nExplanation:\nThe shared `unsubscribe_link` string now interpolates `%{unsubscribe_url}`. Only the post notification path in `UserNotifications` passes that value.\n\nOther mailers that set `add_unsubscribe_link: true` (digest and other notification types) will not provide it. Examples include the text-body branch of `MessageBuilder` and `html_part`. For those emails, `I18n.t` raises `MissingInterpolationArgument` (Rails default), or a raw `%{unsubscribe_url}` ends up in the email. The spec had to add `unsubscribe_url` just to keep passing, which points to this regression.\n\nI can't see those other callers in the diff, so please check them in the repository.\n\nProposed fix:\n~~~ruby\n# keep the generic string and add the topic sentence only when available\nunsubscribe_link = I18n.t('unsubscribe_link', template_args)\nif @opts[:unsubscribe_url].present?\n  unsubscribe_link << \"\\n\\n\" << I18n.t('unsubscribe_link_topic', template_args)\nend\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: Direct `tu.save!` skips MessageBus publish and notification reason\n\nAffected:\n- app/controllers/topics_controller.rb:105-113\n\nExplanation:\nThe action saves the `TopicUser` record directly instead of going through `TopicUser.change`. As a result:\n- The `notification_level_change` MessageBus event is never published, so the user's other open tabs show a stale state.\n- `notifications_reason_id` and the related bookkeeping are not updated.\n\nProposed fix:\n~~~ruby\nTopicUser.change(current_user.id, params[:topic_id], notification_level: new_level)\n~~~\n\n## 5) Severity: MEDIUM | Type: Bug\nTitle: Client-side unsubscribe route never unsubscribes, but says it did\n\nAffected:\n- app/assets/javascripts/discourse/routes/topic-unsubscribe.js.es6:4-10\n- app/assets/javascripts/discourse/controllers/topic-unsubscribe.js.es6:5-7\n\nExplanation:\nThe Ember route loads data with `PostStream.loadTopicView`, which calls the normal topic JSON endpoint and not `/unsubscribe`. The level only changes on a full HTML page load.\n\nIf the user reaches the route through an in-app transition, nothing changes, yet the page still says \"You will stop receiving notifications\". The message is also inaccurate on a real hit: when the server only moved the user from watching to regular, they may still receive notifications (for example, mentions or replies).\n\nProposed fix:\n- Make the route's model hook call the unsubscribe endpoint (preferably via a non-GET request).\n- Word the message based on the level actually returned.\n",
+  "belowMinSeverity": 0,
+  "configHash": "2db5d28d38193561cb3373bb643bd7b58bdab1770ac62b9be17d232892b946e8",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "logic: Potential nil pointer exception - if no TopicUser record exists, tu will be nil and calling methods on it will crash",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "TopicUser.find_by returns nil when user has no topic_users row for the topic, causing NoMethodError on tu.notification_level and returning 500 error on unsubscribe",
+        "confidence": 0.98,
+        "reasoning": "Both comments identify the same issue: TopicUser.find_by can return nil when no record exists, and calling methods on the nil object (tu.notification_level or similar) will cause an error. The golden comment describes it as a 'nil pointer exception' that will 'crash', while the candidate describes it as 'NoMethodError' returning '500 error'. These are the same underlying bug - accessing methods on a potentially nil TopicUser object."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "State-changing unsubscribe action exposed via GET request without token, enabling CSRF attacks where third-party pages can mute topics for logged-in users"
+      },
+      {
+        "candidate": "Email clients, link scanners and browser prefetchers can trigger the unsubscribe action without user intent due to GET exposure"
+      },
+      {
+        "candidate": "Unsubscribe action is not idempotent - it steps the level down on every hit, so watching becomes regular and a reload then mutes the topic"
+      },
+      {
+        "candidate": "unsubscribe_link translation now requires unsubscribe_url interpolation, but other mailers using add_unsubscribe_link: true don't provide it, causing MissingInterpolationArgument or raw %{unsubscribe_url} in emails"
+      },
+      {
+        "candidate": "Direct tu.save! skips MessageBus publish, so notification_level_change event is never published and user's other open tabs show stale state"
+      },
+      {
+        "candidate": "Direct tu.save! skips notifications_reason_id and related bookkeeping that TopicUser.change would handle"
+      },
+      {
+        "candidate": "Client-side Ember unsubscribe route calls normal topic JSON endpoint instead of /unsubscribe, so in-app transitions don't actually change notification level"
+      },
+      {
+        "candidate": "Unsubscribe success message is inaccurate - says user will stop receiving notifications even when server only moved from watching to regular, where they may still receive mentions or replies"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Typo in property name: 'stopNotificiationsText' should be 'stopNotificationsText' (missing 'n' in 'Notifications')",
+        "severity": "Low",
+        "category": "style"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 10,
+    "total_golden": 2,
+    "tp": 1,
+    "fp": 8,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.1,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/discourse-graphite",
+    "pr_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/2"
+  },
+  "judgeUsage": {
+    "calls": 22,
+    "inputTokens": 6625,
+    "outputTokens": 2356,
+    "costUsd": 0.09202500000000001
+  }
+}

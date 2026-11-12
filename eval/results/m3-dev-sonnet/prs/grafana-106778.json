@@ -1,0 +1,137 @@
+{
+  "id": "grafana-106778",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/106778",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Rule list view no longer shows creating/deleting states",
+      "affected": [
+        "public/app/features/alerting/unified/rule-list/GrafanaGroupLoader.tsx:66-80"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Edit link for Grafana rules loses the returnTo parameter",
+      "affected": [
+        "public/app/features/alerting/unified/rule-list/GrafanaRuleListItem.tsx:40"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Ability checks are OR-combined across ruler and prom sources, which can grant stale or wrong access",
+      "affected": [
+        "public/app/features/alerting/unified/components/rule-viewer/AlertRuleMenu.tsx:81-100",
+        "public/app/features/alerting/unified/rule-list/components/RuleActionsButtons.V2.tsx:61"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Grafana prom ability hook reports a rule without a folder as supported and loaded",
+      "affected": [
+        "public/app/features/alerting/unified/hooks/useAbilities.ts:349-378"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Federated rules are no longer detected",
+      "affected": [
+        "public/app/features/alerting/unified/hooks/useAbilities.ts:242-245"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Fragile test assertions",
+      "affected": [
+        "public/app/features/alerting/unified/rule-list/GrafanaGroupLoader.test.tsx:206-207"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 6,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgypj11wYoCuv2R4FUcz2",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 32893,
+      "outputTokens": 1643,
+      "ms": 11771
+    }
+  ],
+  "costUsd": 0.082216,
+  "durationMs": 12969,
+  "promptSha256": "86b315252f641b6580ca6baab70f83dac0897e44760e6beef79dd0c7f2ed3e23",
+  "promptChars": 73056,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Rule list view no longer shows creating/deleting states\n\nAffected:\n- public/app/features/alerting/unified/rule-list/GrafanaGroupLoader.tsx:66-80\n\nExplanation:\nThe list now renders only the Prom rules. The ruler-only \"Creating\" items and prom-only \"Deleting\" items are gone, so a newly created rule is invisible until Prometheus catches up. Tests covering that behaviour were deleted. If this is intended because the Prom API is strongly consistent, the intent should be documented. As written, the `operation` prop of `GrafanaRuleListItem` is never set by any caller.\n\nProposed fix:\n~~~\nConfirm Prom rules are strongly consistent, or keep the operation indicators. Remove the unused `operation` prop if they are dropped.\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Edit link for Grafana rules loses the returnTo parameter\n\nAffected:\n- public/app/features/alerting/unified/rule-list/GrafanaRuleListItem.tsx:40\n\nExplanation:\nThe old code built the href with `createRelativeUrl(..., { returnTo })`. The new code drops it, so navigating back from the rule view no longer returns the user to the list. This is a regression.\n\nProposed fix:\n~~~ts\nhref: createRelativeUrl(`/alerting/grafana/${uid}/view`, { returnTo: createReturnTo() }),\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Ability checks are OR-combined across ruler and prom sources, which can grant stale or wrong access\n\nAffected:\n- public/app/features/alerting/unified/components/rule-viewer/AlertRuleMenu.tsx:81-100\n- public/app/features/alerting/unified/rule-list/components/RuleActionsButtons.V2.tsx:61\n\nExplanation:\n`useRulerRuleAbilities` is now called with `rulerRule` possibly undefined. The prom-based abilities are then OR-ed in. For Grafana rules that have both a ruler rule and a prom rule, the more permissive result wins. The Grafana prom hook ignores the folder-less ruler checks, and its `Silence` support does not look at the rule's state or at federation. Prefer selecting a single source (ruler if present, otherwise prom) instead of OR-ing them.\n\nProposed fix:\n~~~ts\nconst canPause = rulerRule ? rulerOk : grafanaOk;\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: Grafana prom ability hook reports a rule without a folder as supported and loaded\n\nAffected:\n- public/app/features/alerting/unified/hooks/useAbilities.ts:349-378\n\nExplanation:\nWhen `rule` is undefined (skipToken), `useIsGrafanaPromRuleEditable` returns `loading: false`. `MaybeSupported` then becomes `AlwaysSupported`, so Pause, Restore and Delete report as \"supported\". Only `isAlertingRule` or the permission flags (false) guard these abilities. Delete and Update stay `[Supported, false]` and rely on the permission flag. For Silence, `silenceSupported` is true, and `canSilenceInFolder` is evaluated with an undefined folderUid, which is unverified. Also, the `// duplicate` comment is stray, and `ctx` is used without being visible in the imports in the diff.\n\nProposed fix:\n~~~ts\nif (!rule) return all abilities as NotSupported\n~~~\n\n## 5) Severity: LOW | Type: Maintainability\nTitle: Federated rules are no longer detected\n\nAffected:\n- public/app/features/alerting/unified/hooks/useAbilities.ts:242-245\n\nExplanation:\n`isFederated` is hardcoded to `false` in `useAllRulerRuleAbilities`. Previously `isFederatedRuleGroup(rule.group)` was used. Data-source (Mimir) federated rules can now be edited or deleted in the UI. The deprecated `useAllAlertRuleAbilities` wrapper also loses this check. The TODO leaves a behaviour regression.\n\nProposed fix:\n~~~ts\nconst isFederated = isFederatedRuleGroup(group);\n~~~\n\n## 6) Severity: LOW | Type: Test\nTitle: Fragile test assertions\n\nAffected:\n- public/app/features/alerting/unified/rule-list/GrafanaGroupLoader.test.tsx:206-207\n\nExplanation:\nThe test asserts exactly 4 menu items. This breaks whenever a menu item is added. The test comment \"More button should still be present (for other actions like viewing)\" is also misleading.\n\nProposed fix:\n~~~ts\nAssert the presence of the specific items only.\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [],
+    "false_positives": [
+      {
+        "candidate": "Rule list view no longer shows creating/deleting states - newly created rules are invisible until Prometheus catches up, and the operation prop of GrafanaRuleListItem is never set by any caller"
+      },
+      {
+        "candidate": "Edit link for Grafana rules loses the returnTo parameter, causing navigation back from rule view to not return user to the list"
+      },
+      {
+        "candidate": "Ability checks are OR-combined across ruler and prom sources which can grant stale or wrong access - the more permissive result wins when both ruler and prom rules exist"
+      },
+      {
+        "candidate": "Grafana prom ability hook reports a rule without a folder as supported and loaded - when rule is undefined, useIsGrafanaPromRuleEditable returns loading: false, causing MaybeSupported to become AlwaysSupported"
+      },
+      {
+        "candidate": "Federated rules are no longer detected - isFederated is hardcoded to false instead of using isFederatedRuleGroup(rule.group), allowing data-source federated rules to be edited or deleted in UI"
+      },
+      {
+        "candidate": "Fragile test assertions - test asserts exactly 4 menu items which breaks whenever a menu item is added"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The rendered GrafanaRuleListItem is missing the required key prop for React list items. This can cause rendering issues when the list order changes.",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "RuleActionsButtons is invoked with only promRule, but SilenceGrafanaRuleDrawer inside RuleActionsButtons still depends on a Grafana Ruler rule being present, so for Grafana rules coming from list views the 'Silence notifications' menu entry (now driven by Grafana Prom abilities) will toggle showSilenceDrawer without ever rendering the drawer. This means clicking 'Silence notifications' for these rules has no visible effect, even when abilities indicate silencing is allowed.",
+        "severity": "High",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 6,
+    "total_golden": 2,
+    "tp": 0,
+    "fp": 6,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0,
+    "recall": 0,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/106778"
+  },
+  "judgeUsage": {
+    "calls": 14,
+    "inputTokens": 5037,
+    "outputTokens": 1708,
+    "costUsd": 0.067885
+  }
+}

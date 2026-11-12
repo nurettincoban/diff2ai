@@ -1,0 +1,108 @@
+{
+  "id": "grafana-94942",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/94942",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "enableSqlExpressions always returns false and has inverted, dead logic",
+      "affected": [
+        "pkg/expr/reader.go:194-200"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Maintainability",
+      "title": "Stub DB returns \"not implemented\" from the parsing path, and the SQL command remains reachable",
+      "affected": [
+        "pkg/expr/sql/db.go:9-26",
+        "pkg/expr/sql/parser.go:20-30",
+        "pkg/expr/sql_command.go:93-100"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Style",
+      "title": "Error message and unused variable naming are unclear",
+      "affected": [
+        "pkg/expr/reader.go:129-132"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 3,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgypjwY7ekBYcj2cekBzh",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 14563,
+      "outputTokens": 911,
+      "ms": 7607
+    }
+  ],
+  "costUsd": 0.038236,
+  "durationMs": 8620,
+  "promptSha256": "f642e75029558a9877737f5f285165671cf0efb1e84e874f890c339918b3e681",
+  "promptChars": 22477,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: enableSqlExpressions always returns false and has inverted, dead logic\n\nAffected:\n- pkg/expr/reader.go:194-200\n\nExplanation:\n`enabled := !IsEnabledGlobally(...)` is inverted. If the flag is on, `enabled` is false and the function returns false. If the flag is off, `enabled` is true and it still returns false. The function therefore always returns false and the feature flag has no effect. The existing `h.features` call also risks a nil dereference if features is nil. Even if the stub is intentional, the code is misleading and will break when the real implementation returns. Return the flag value directly, or hard-disable explicitly and clearly.\n\nProposed fix:\n~~~go\nfunc enableSqlExpressions(h *ExpressionQueryReader) bool {\n\t// DuckDB removed: SQL expressions are unavailable.\n\treturn false\n}\n~~~\n\n## 2) Severity: MEDIUM | Type: Maintainability\nTitle: Stub DB returns \"not implemented\" from the parsing path, and the SQL command remains reachable\n\nAffected:\n- pkg/expr/sql/db.go:9-26\n- pkg/expr/sql/parser.go:20-30\n- pkg/expr/sql_command.go:93-100\n\nExplanation:\n`TablesList` and `Execute` now always fail with a generic \"not implemented\" error. The reader gate blocks them only when the flag check works, and as written it blocks unconditionally. Other construction paths of `SQLCommand`, such as `NewSQLCommand`, are not gated, and any existing tests that expect DuckDB results will fail. Users also get a vague error message. Gate at command construction too, or return a clear, typed error such as \"SQL expressions are disabled\". Update or skip the affected tests.\n\nProposed fix:\n~~~go\nvar ErrSQLDisabled = errors.New(\"sql expressions are disabled\")\n// return ErrSQLDisabled from the stub methods and from NewSQLCommand\n~~~\n\n## 3) Severity: LOW | Type: Style\nTitle: Error message and unused variable naming are unclear\n\nAffected:\n- pkg/expr/reader.go:129-132\n\nExplanation:\nThe message \"sqlExpressions is not implemented\" is misleading, since the feature is only disabled. It also isn't using the project's errutil conventions, so callers cannot classify it (the HTTP status would likely be 500 instead of 4xx). Use a structured error, such as an errutil NotImplemented or BadRequest.\n\nProposed fix:\n~~~go\nreturn eq, errutil.NotImplemented(\"sse.sqlDisabled\").Errorf(\"SQL expressions are disabled\")\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The enableSqlExpressions function has flawed logic that always returns false, effectively disabling SQL expressions unconditionally:",
+        "severity": "Critical",
+        "category": "bug",
+        "matched_candidate": "enableSqlExpressions always returns false due to inverted logic - `enabled := !IsEnabledGlobally(...)` causes the function to return false regardless of flag state, making the feature flag ineffective",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - that the enableSqlExpressions function has flawed/inverted logic that always returns false, making the feature flag ineffective. Both comments point to the same bug: the function's logic causes it to always return false regardless of the actual flag state, effectively disabling SQL expressions unconditionally."
+      },
+      {
+        "golden_comment": "The DB methods NewInMemoryDB().RunCommands, DB.QueryFramesInto, and DB.TablesList in pkg/expr/sql/db.go return hardcoded 'not implemented' errors after removing the go-duck dependency.",
+        "severity": "High",
+        "category": "api",
+        "matched_candidate": "Stub DB methods TablesList and Execute return generic 'not implemented' error, but other construction paths like NewSQLCommand are not gated, leaving SQL command reachable",
+        "confidence": 0.65,
+        "reasoning": "The candidate issue identifies that stub DB methods (TablesList and Execute) return 'not implemented' errors, which partially overlaps with the golden comment about DB methods returning hardcoded 'not implemented' errors. However, the candidate focuses on TablesList and Execute, while the golden specifically mentions NewInMemoryDB().RunCommands, DB.QueryFramesInto, and DB.TablesList. The candidate mentions TablesList (matching one method) but refers to Execute instead of RunCommands/QueryFramesInto. The candidate also adds a concern about SQL command being reachable that isn't in the golden. This is a partial match - same general issue about stub methods with 'not implemented' errors, but not precisely the same methods identified."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Potential nil dereference if h.features is nil when calling the features check in enableSqlExpressions"
+      },
+      {
+        "candidate": "Error message 'sqlExpressions is not implemented' is misleading since the feature is disabled, not unimplemented"
+      },
+      {
+        "candidate": "Error handling doesn't use project's errutil conventions, causing callers to be unable to classify the error properly (likely returns HTTP 500 instead of 4xx)"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 5,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 3,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.4,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/94942"
+  },
+  "judgeUsage": {
+    "calls": 12,
+    "inputTokens": 3694,
+    "outputTokens": 1484,
+    "costUsd": 0.05557
+  }
+}

@@ -1,0 +1,372 @@
+{
+  "https://github.com/calcom/cal.com/pull/14943": {
+    "diff2ai": [
+      {
+        "text": "The retry-count purge query's second OR branch (retryCount > 1) has no method filter, causing the SMS cron job to delete any WorkflowReminder with retryCount > 1 including EMAIL and WHATSAPP reminders, not just SMS ones",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The prisma.workflowReminder.update call inside the catch block has no error handling - if it throws, the exception escapes the per-reminder loop, stops the handler, skips all remaining reminders, and loses the original error that was supposed to be logged",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/22532": {
+    "diff2ai": [
+      {
+        "text": "updateManyByCredentialId with empty data object relies on Prisma's @updatedAt being applied implicitly, which is not guaranteed behavior and may result in a no-op where SelectedCalendar.updatedAt never changes",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The updatedAt value being set is never read by the UI since the dropdown shows CalendarCache.updatedAt through cacheUpdatedAt, making this an unconditional DB write on every Google webhook or cache refresh with no visible benefit",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "SelectedCalendarRepository may not be imported in the file, and for delegation credentials this.credential.id may not match the credentialId stored on the rows",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "updateManyByCredentialId uses SelectedCalendarUpdateInput type but prisma.selectedCalendar.updateMany expects SelectedCalendarUpdateManyMutationInput or UncheckedUpdateManyInput - the current type includes relation operations that updateMany does not accept, causing TypeScript errors or runtime failures",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "deleteCache throws a generic Error which reaches tRPC as INTERNAL_SERVER_ERROR (500) instead of proper NOT_FOUND or FORBIDDEN codes",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "UI mismatch where dropdown shows 'Delete cached data' for any Google credential with cache including delegation-credential calendars, but handler only accepts credentials where userId === user.id, causing delegation and team credentials to always fail with error toast",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "deleteCache handler bypasses CalendarCacheRepository even though deleteManyByCredential already exists, breaking the repository pattern used elsewhere in the PR",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/2": {
+    "diff2ai": [
+      {
+        "text": "TopicUser.find_by returns nil when user has no topic_users row for the topic, causing NoMethodError on tu.notification_level and returning 500 error on unsubscribe",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "notification_level can be nil even when TopicUser row exists, causing nil > Integer comparison to raise an error",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "State-changing unsubscribe action exposed via GET request without token, enabling CSRF attacks where third-party pages can mute topics for logged-in users",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Email clients, link scanners and browser prefetchers can trigger the unsubscribe action without user intent due to GET exposure",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unsubscribe action is not idempotent - it steps the level down on every hit, so watching becomes regular and a reload then mutes the topic",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "unsubscribe_link translation now requires unsubscribe_url interpolation, but other mailers using add_unsubscribe_link: true don't provide it, causing MissingInterpolationArgument or raw %{unsubscribe_url} in emails",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Direct tu.save! skips MessageBus publish, so notification_level_change event is never published and user's other open tabs show stale state",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Direct tu.save! skips notifications_reason_id and related bookkeeping that TopicUser.change would handle",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Client-side Ember unsubscribe route calls normal topic JSON endpoint instead of /unsubscribe, so in-app transitions don't actually change notification level",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unsubscribe success message is inaccurate - says user will stop receiving notifications even when server only moved from watching to regular, where they may still receive mentions or replies",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4": {
+    "diff2ai": [
+      {
+        "text": "Rendering imported and edited post HTML without sanitization allows stored XSS - Post#cook returns raw unchanged for raw_html posts, PollFeed passes RSS content to TopicEmbed.import without sanitization, CGI.unescapeHTML converts entity-escaped text into live markup, and URL is interpolated unescaped into href attribute",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "cook_method stays raw_html on later revisions allowing anyone who can edit such posts to save arbitrary HTML and script through the normal editor",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Kernel#open called on URLs allows command injection (strings starting with | run shell commands) and local file read (plain paths read local files) - import_remote is public and doesn't validate input",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "topic_embed.rb never requires open-uri so it only works if poll_feed.rb loaded first, otherwise open(url) tries to read a local file",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Remote fetches lack global throttling - throttle is keyed per URL so varying path or query bypasses it, allowing unlimited outbound fetches, feed parses and topic creation from unauthenticated requests with spoofed Referer header",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Loading page reloads every 30 seconds causing each open tab to enqueue another job",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "RSS 2.0 items with description but no content cause NoMethodError on nil when calling i.content.scrub, aborting the whole poll",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Missing or nil title produces invalid topics since validations are skipped",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "TopicEmbed.import mutates caller's string with contents << which raises on frozen strings",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Race condition on create - two concurrent imports of same URL both see no embed, one raises ActiveRecord::RecordNotUnique after topic already created",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "If embedded post was deleted, embed.post is nil and PostRevisor.new(nil) crashes",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "content_sha1 is updated even when revise! returns false",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Malformed end if in ERB template - <%- end if %> treats next compiled statement as condition of trailing if, only works by accident",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/106778": {
+    "diff2ai": [
+      {
+        "text": "useAllAlertRuleAbilities no longer detects federated rule groups because isFederated is hard-coded to false in useAllRulerRuleAbilities, causing federated rule groups to no longer be treated as immutable and incorrectly enabling Update, Delete and Pause operations",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Missing React key prop on GrafanaRuleListItem in FilterView, which will cause React warnings and incorrect component state reuse across different rules when filter results change",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Grafana recording rules lose Pause/Restore/Export/DeletePermanently abilities because the code uses prometheusRuleType.grafana.alertingRule(rule) instead of prometheusRuleType.grafana.rule(rule), which excludes recording rules from these operations",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/94942": {
+    "diff2ai": [
+      {
+        "text": "enableSqlExpressions function always returns false regardless of feature flag - both branches return false and the 'enabled' variable is assigned the negation of the flag, making the feature-flag lookup have no effect",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Existing tests that rely on DuckDB-backed TablesList and QueryFramesInto will fail because RunCommands and QueryFramesInto now return 'not implemented' - tests in pkg/expr/sql/parser_test.go, pkg/expr/sql_command_test.go, and reader tests for QueryTypeSQL need to be removed, skipped, or rewritten",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/keycloak/keycloak/pull/37634": {
+    "diff2ai": [
+      {
+        "text": "The isAccessTokenId matcher uses wrong index substring(3, 5) instead of substring(4, 6) to extract the grant shortcut from the encoded prefix",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The isAccessTokenId matcher has an inverted condition that returns false when the shortcut equals the expected value instead of when it does not match",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The isAccessTokenId matcher does not guard the prefix length before calling substring",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Grant shortcut length is not enforced - custom grants can produce token ids that cannot be decoded since decoder requires exactly 6 chars but javadoc says shortcuts are 'usually like 3-letters'",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "No validation of shortcut length and allowed characters (no ':') in postInit and lazy-refresh paths when factories are registered",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "New abstract getShortcut() method breaks existing custom grant type factories at startup with AbstractMethodError since it has no default implementation",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Duplicate shortcuts between extensions abort startup through the size check instead of handling gracefully",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "initToken's lightweight-token detection calls getShouldUseLightweightToken which dereferences session.getContext().getClient() which may be null, causing NPE",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "initToken's lightweight-token detection may use wrong client from context instead of the token's actual client, causing encoded token type to reflect wrong client",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1": {
+    "diff2ai": [
+      {
+        "text": "UsernameForm.authenticate calls isConditionalPasskeysEnabled() with no arguments, but the only declaration in UsernamePasswordForm requires a UserModel user parameter, causing compilation failure",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The new helper adds '&& user != null' check which prevents passkeys/conditional UI from being added on fresh logins where context.getUser() is null, breaking discoverable-key login on the username/password page",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "During re-authentication when context.getUser() is already set, conditional UI may offer credentials from different accounts, and if WebAuthnAuthenticator.action doesn't reject a userHandle that differs from the existing context.getUser(), re-authentication could switch the session to another user, undermining prompt=login/max_age guarantees",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/77754": {
+    "diff2ai": [
+      {
+        "text": "Use `default_factory` for `queued` field; the current default `queued: datetime = timezone.now()` runs once at module import time, causing all AssignmentSource instances to share the same timestamp instead of getting the time they were actually queued",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Serialize `queued` explicitly in `to_dict()` so the task payload is JSON-safe; currently `asdict` returns a raw datetime object which may fail serialization or be converted to a string that `from_dict` doesn't parse back to datetime, causing type mismatches",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Add `assignment_source` parameter to `sync_assignee_outbound` abstract method instead of `sync_status_outbound`; the task calls `sync_assignee_outbound` with `assignment_source` kwarg but the abstract contract doesn't declare it, causing TypeError for implementations without `**kwargs`",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/80168": {
+    "diff2ai": [
+      {
+        "text": "MetricAlertDetectorHandler subclasses StatefulDetectorHandler with only 'pass', making it an abstract class since it doesn't implement the required abstract methods (get_dedupe_value, get_group_key_values, build_occurrence_and_event_data)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Instantiating MetricAlertDetectorHandler for any detector with metric alert group type will raise TypeError: Can't instantiate abstract class, which escapes process_detectors and aborts processing of every detector in the batch",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The class needs to either keep a concrete stub until real implementation exists, or implement the three abstract methods with safe no-op defaults",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  }
+}

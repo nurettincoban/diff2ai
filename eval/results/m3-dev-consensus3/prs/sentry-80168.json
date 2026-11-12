@@ -1,0 +1,167 @@
+{
+  "id": "sentry-80168",
+  "goldenUrl": "https://github.com/getsentry/sentry/pull/80168",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Implement abstract methods on `MetricAlertDetectorHandler` or keep it a concrete stub",
+      "affected": [
+        "src/sentry/incidents/grouptype.py:11-12"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Build the occurrence before enqueuing the state update",
+      "affected": [
+        "src/sentry/workflow_engine/processors/detector.py:286-301"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Use the actual evaluated values when building expected occurrences",
+      "affected": [
+        "tests/sentry/workflow_engine/processors/test_detector.py:190-192",
+        "tests/sentry/workflow_engine/processors/test_detector.py:489-491",
+        "tests/sentry/workflow_engine/processors/test_detector.py:509-511"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Doc",
+      "title": "Update the `evaluate` docstring to describe the dict return type",
+      "affected": [
+        "src/sentry/workflow_engine/processors/detector.py:226-231"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Performance",
+      "title": "Make serial per-result Kafka produces on the hot path visible",
+      "affected": [
+        "src/sentry/workflow_engine/processors/detector.py:60-62"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqACjLix8CSY39YXdmw",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 14306,
+      "outputTokens": 2492,
+      "ms": 21666
+    },
+    {
+      "id": "msg_011CgyqACpoAJJyDXn19nVk5",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 14313,
+      "outputTokens": 2299,
+      "ms": 22277
+    },
+    {
+      "id": "msg_011CgyqACqJLK846cfvWtxeF",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 14314,
+      "outputTokens": 2508,
+      "ms": 23962
+    },
+    {
+      "id": "msg_011CgyqBzWC6fgiqSDUoHh61",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 17711,
+      "outputTokens": 2965,
+      "ms": 22846
+    }
+  ],
+  "costUsd": 0.44785600000000003,
+  "durationMs": 48336,
+  "promptSha256": "fc7bc0d70e065a6923b92b79add315ef254d6c297a7509748495ea2cb6521069",
+  "promptChars": 35315,
+  "response": "## 1) Severity: HIGH | Type: Bug\nConsensus: 3/3 reviewers\nTitle: Implement abstract methods on `MetricAlertDetectorHandler` or keep it a concrete stub\n\nAffected:\n- src/sentry/incidents/grouptype.py:11-12\n\nExplanation:\n`MetricAlertDetectorHandler` now subclasses `StatefulDetectorHandler`, but its body is only `pass`. `StatefulDetectorHandler` is an `abc.ABC` that declares these abstract methods:\n- `get_dedupe_value`\n- `get_group_key_values`\n- `build_occurrence_and_event_data`, which this diff adds as a new `@abc.abstractmethod`\n\nThe class also does not define `counter_names`.\n\nBecause none of these are implemented, the class can no longer be instantiated. When `Detector.detector_handler` instantiates the handler for a metric-alert detector, Python raises `TypeError: Can't instantiate abstract class`.\n\n`process_detectors` has no exception handling around `detector.detector_handler`. A single metric-alert detector in the list therefore aborts evaluation for every detector in the batch.\n\nBefore this change, the handler was a safe no-op that returned `[]`. No test exercises the metric-alert group type, so the test suite does not catch this.\n\nTo fix it, do one of the following:\n- Keep the class as a concrete `DetectorHandler` stub that returns `{}` until the stateful implementation is ready.\n- Implement all the abstract methods.\n\nProposed fix:\n~~~python\n# Option A: concrete no-op stub until implemented\nclass MetricAlertDetectorHandler(DetectorHandler[QuerySubscriptionUpdate]):\n    def evaluate(\n        self, data_packet: DataPacket[QuerySubscriptionUpdate]\n    ) -> dict[DetectorGroupKey, DetectorEvaluationResult]:\n        # TODO: Implement as StatefulDetectorHandler\n        return {}\n\n# Option B: implement the abstract hooks\nclass MetricAlertDetectorHandler(StatefulDetectorHandler[QuerySubscriptionUpdate]):\n    def get_dedupe_value(self, data_packet: DataPacket[QuerySubscriptionUpdate]) -> int:\n        return 0\n\n    def get_group_key_values(\n        self, data_packet: DataPacket[QuerySubscriptionUpdate]\n    ) -> dict[DetectorGroupKey, int]:\n        return {}\n\n    def build_occurrence_and_event_data(\n        self, group_key: DetectorGroupKey, value: int, new_status: PriorityLevel\n    ) -> tuple[IssueOccurrence, dict[str, Any]]:\n        raise NotImplementedError\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nConsensus: 1/3 reviewers\nTitle: Build the occurrence before enqueuing the state update\n\nAffected:\n- src/sentry/workflow_engine/processors/detector.py:286-301\n\nExplanation:\n`enqueue_state_update(group_key, is_active, new_status)` runs before `build_occurrence_and_event_data` is called. Two things after that point can raise:\n- The new hook is subclass-provided code and may throw.\n- `PriorityLevel(new_status)` can raise `ValueError` if a `DetectorPriorityLevel` value has no matching `PriorityLevel` member.\n\nIf either raises, the handler already holds a pending state update marking the group as active. If that update is later committed, the stored state says the group is active, but no occurrence was ever produced. Later evaluations then see no status change, so the issue is never created.\n\nThe fix is to compute the result first and enqueue the state update only afterwards.\n\nProposed fix:\n~~~python\nis_active = new_status != DetectorPriorityLevel.OK\nevent_data = None\nresult: StatusChangeMessage | IssueOccurrence\nif new_status == DetectorPriorityLevel.OK:\n    result = StatusChangeMessage(...)\nelse:\n    result, event_data = self.build_occurrence_and_event_data(\n        group_key, value, PriorityLevel(new_status)\n    )\nself.enqueue_state_update(group_key, is_active, new_status)\n~~~\n\n## 3) Severity: LOW | Type: Test\nConsensus: 1/3 reviewers\nTitle: Use the actual evaluated values when building expected occurrences\n\nAffected:\n- tests/sentry/workflow_engine/processors/test_detector.py:190-192\n- tests/sentry/workflow_engine/processors/test_detector.py:489-491\n- tests/sentry/workflow_engine/processors/test_detector.py:509-511\n\nExplanation:\nExpected occurrences are built with `value=6`, but the values actually evaluated differ:\n- `test_state_results_multi_group` evaluates `group_2` with 10.\n- `test_results_on_change` evaluates with 100.\n- `test_dedupe` evaluates with 8.\n\nThese tests pass only because the mock builder ignores `value`. As a result:\n- A regression that passes the wrong value to `build_occurrence_and_event_data` would go unnoticed.\n- Readers are misled about what is being asserted.\n\nPass the real values, and include `value` in the mock occurrence so that mismatches fail.\n\nProposed fix:\n~~~python\noccurrence_2, event_data_2 = build_mock_occurrence_and_event(\n    detector.detector_handler, \"group_2\", 10, PriorityLevel.HIGH\n)\n# and in build_mock_occurrence_and_event:\nevidence_data={\"value\": value},\n~~~\n\n## 4) Severity: LOW | Type: Doc\nConsensus: 1/3 reviewers\nTitle: Update the `evaluate` docstring to describe the dict return type\n\nAffected:\n- src/sentry/workflow_engine/processors/detector.py:226-231\n\nExplanation:\n`evaluate` now returns a dict keyed by group key. The docstring still says it \"returns a list of `DetectorEvaluationResult`\". This is misleading to callers, who might iterate over the keys instead of the values.\n\nProposed fix:\n~~~python\n\"\"\"\nEvaluates a given data packet and returns a dict of `DetectorEvaluationResult` keyed by group key.\n\"\"\"\n~~~\n\n## 5) Severity: LOW | Type: Performance\nConsensus: 1/3 reviewers\nTitle: Make serial per-result Kafka produces on the hot path visible\n\nAffected:\n- src/sentry/workflow_engine/processors/detector.py:60-62\n\nExplanation:\nPreviously, non-OK transitions produced `result=None`. Now every transition into an active state builds an `IssueOccurrence` and calls `produce_occurrence_to_kafka`. These calls happen serially inside the per-detector, per-group-key loop.\n\nWhen a packet fans out to many group keys, the cost depends on producer behaviour:\n- It is cheap if produce is fire-and-forget.\n- It is expensive if produce blocks or flushes per message.\n\nSuggested mitigations:\n- Verify that the producer does not block per call.\n- Consider batching the produces.\n- At minimum, add timing around the loop so the fan-out cost is visible.\n\nProposed fix:\n~~~python\nwith metrics.timer(\"workflow_engine.detector.produce_results\"):\n    for result in detector_results.values():\n        if result.result is not None:\n            create_issue_occurrence_from_result(result)\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "bc61525ca1ff1073617ac60c0157a17ec949d2133b3304a06fa8dfe1f30cb778",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "MetricAlertDetectorHandler inherits from StatefulDetectorHandler but only contains pass, failing to implement its required abstract methods: counter_names (property), get_dedupe_value(), get_group_key_values(), and build_occurrence_and_event_data(). This will cause a TypeError at runtime when the class is instantiated.",
+        "severity": "High",
+        "category": "api",
+        "matched_candidate": "MetricAlertDetectorHandler subclasses StatefulDetectorHandler but doesn't implement required abstract methods (get_dedupe_value, get_group_key_values, build_occurrence_and_event_data) or define counter_names, causing TypeError when instantiated",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: MetricAlertDetectorHandler inherits from StatefulDetectorHandler but fails to implement the required abstract methods (get_dedupe_value, get_group_key_values, build_occurrence_and_event_data) and counter_names property, which will cause a TypeError at runtime when instantiated. The wording is slightly different but covers all the same missing methods and the same consequence."
+      },
+      {
+        "golden_comment": "Docstring says this returns a list of DetectorEvaluationResult, but the method now returns a dict keyed by DetectorGroupKey. Consider updating the docstring to match the new return type.",
+        "severity": "Low",
+        "category": "doc_defect",
+        "matched_candidate": "evaluate docstring says it returns a list of DetectorEvaluationResult but it now returns a dict keyed by group key",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - that the evaluate method's docstring claims to return a list of DetectorEvaluationResult, but the method actually returns a dict keyed by group key. Both comments point to the same documentation/return type mismatch issue."
+      },
+      {
+        "golden_comment": "Wrong value `6` passed for `group_2` occurrence — the data packet specifies `\"group_2\": 10`. Should be `10` to accurately reflect the test scenario, which will ensure the test produces the correct occurrence data.",
+        "severity": "Medium",
+        "category": "test_gap",
+        "matched_candidate": "Test expected occurrences use value=6 but actual evaluated values differ (10, 100, 8), tests only pass because mock builder ignores value parameter",
+        "confidence": 0.9,
+        "reasoning": "The candidate issue identifies that the test expected occurrences use value=6 but the actual evaluated values differ (10, 100, 8). This matches the golden comment which specifically points out that value 6 is passed for group_2 occurrence when the data packet specifies group_2: 10, and it should be 10. Both are identifying the same mismatch between the test's expected occurrence values and the actual data values, specifically mentioning the value 6 vs 10 discrepancy."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "process_detectors has no exception handling around detector.detector_handler, so a single metric-alert detector failure aborts evaluation for every detector in the batch"
+      },
+      {
+        "candidate": "enqueue_state_update runs before build_occurrence_and_event_data, so if the build raises an exception, state is marked active but no occurrence is produced, causing the issue to never be created in later evaluations"
+      },
+      {
+        "candidate": "PriorityLevel(new_status) can raise ValueError if DetectorPriorityLevel value has no matching PriorityLevel member"
+      },
+      {
+        "candidate": "Serial per-result Kafka produces in the per-detector, per-group-key loop may be expensive if producer blocks or flushes per message when packet fans out to many group keys"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 7,
+    "total_golden": 3,
+    "tp": 3,
+    "fp": 4,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.42857142857142855,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "getsentry/sentry",
+    "pr_url": "https://github.com/getsentry/sentry/pull/80168"
+  },
+  "judgeUsage": {
+    "calls": 23,
+    "inputTokens": 7926,
+    "outputTokens": 2413,
+    "costUsd": 0.099955
+  }
+}

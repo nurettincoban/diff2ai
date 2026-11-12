@@ -1,0 +1,106 @@
+{
+  "id": "sentry-80168",
+  "goldenUrl": "https://github.com/getsentry/sentry/pull/80168",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "MetricAlertDetectorHandler is now abstract and cannot be instantiated",
+      "affected": [
+        "src/sentry/incidents/grouptype.py:11-12"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Doc",
+      "title": "Update evaluate docstring to reflect dict return type",
+      "affected": [
+        "src/sentry/workflow_engine/processors/detector.py:229-232"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Tests cannot detect the wrong `value` being passed to the occurrence hook",
+      "affected": [
+        "tests/sentry/workflow_engine/processors/test_detector.py:190-192",
+        "tests/sentry/workflow_engine/processors/test_detector.py:489-491",
+        "tests/sentry/workflow_engine/processors/test_detector.py:509-511"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 3,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgypXBRBLmzst5m5QUWNv",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 14143,
+      "outputTokens": 2380,
+      "ms": 20518
+    }
+  ],
+  "costUsd": 0.104172,
+  "durationMs": 21464,
+  "promptSha256": "fc7bc0d70e065a6923b92b79add315ef254d6c297a7509748495ea2cb6521069",
+  "promptChars": 35315,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: MetricAlertDetectorHandler is now abstract and cannot be instantiated\n\nAffected:\n- src/sentry/incidents/grouptype.py:11-12\n\nExplanation:\n`MetricAlertDetectorHandler` used to implement `evaluate` and return `[]`. It now subclasses `StatefulDetectorHandler` with only `pass`. `StatefulDetectorHandler` declares several abstract methods:\n- `get_dedupe_value` and `get_group_key_values`, which the test mock has to implement.\n- `build_occurrence_and_event_data`, which this PR adds as a new `@abc.abstractmethod`.\n\nNone of these are implemented here, so the class is still abstract. When `Detector.detector_handler` builds the handler for a metric-alert detector (`group_type.detector_handler(detector)`), Python raises `TypeError: Can't instantiate abstract class`. Before this change the call was a harmless no-op. Now any detector of this group type that reaches `process_detectors` will raise instead of being skipped.\n\nThis depends on how `detector_handler` instantiates the handler, which is outside the diff, but the abstract methods are visible in the diff. Fix it in one of two ways:\n- Implement the abstract methods with stubs.\n- Keep the previous plain `DetectorHandler` implementation until the stateful version is actually built.\n\nProposed fix:\n~~~python\nclass MetricAlertDetectorHandler(StatefulDetectorHandler[QuerySubscriptionUpdate]):\n    counter_names: list[str] = []\n\n    def get_dedupe_value(self, data_packet: DataPacket[QuerySubscriptionUpdate]) -> int:\n        # TODO: implement\n        return 0\n\n    def get_group_key_values(\n        self, data_packet: DataPacket[QuerySubscriptionUpdate]\n    ) -> dict[DetectorGroupKey, int]:\n        # TODO: implement\n        return {}\n\n    def build_occurrence_and_event_data(\n        self, group_key: DetectorGroupKey, value: int, new_status: PriorityLevel\n    ) -> tuple[IssueOccurrence, dict[str, Any]]:\n        raise NotImplementedError\n~~~\n\n## 2) Severity: LOW | Type: Doc\nTitle: Update evaluate docstring to reflect dict return type\n\nAffected:\n- src/sentry/workflow_engine/processors/detector.py:229-232\n\nExplanation:\n`evaluate` now returns `dict[DetectorGroupKey, DetectorEvaluationResult]`, but its docstring still says it \"returns a list of `DetectorEvaluationResult`\". Callers reading the docstring could iterate the return value directly and get keys instead of results.\n\nProposed fix:\n~~~python\n\"\"\"\nEvaluates a given data packet and returns a dict of `DetectorEvaluationResult` keyed by group key.\n...\n\"\"\"\n~~~\n\n## 3) Severity: LOW | Type: Test\nTitle: Tests cannot detect the wrong `value` being passed to the occurrence hook\n\nAffected:\n- tests/sentry/workflow_engine/processors/test_detector.py:190-192\n- tests/sentry/workflow_engine/processors/test_detector.py:489-491\n- tests/sentry/workflow_engine/processors/test_detector.py:509-511\n\nExplanation:\nSeveral tests build the expected occurrence with `value=6` even though the evaluated value differs: 10 for `group_2`, 100 in `test_results_on_change`, and 8 in `test_dedupe`. They still pass only because `build_mock_occurrence_and_event` ignores `value`.\n\nAs a result, nothing verifies that `evaluate_group_key_value` passes the correct `value` into `build_occurrence_and_event_data`, and a regression there would go unnoticed. The fix has two parts:\n- Include `value` in the mock output, for example in `evidence_data`.\n- Pass the actual evaluated value in each test.\n\nProposed fix:\n~~~python\n# in build_mock_occurrence_and_event\nevidence_data={\"value\": value},\n...\n# in tests\nbuild_mock_occurrence_and_event(detector.detector_handler, \"group_2\", 10, PriorityLevel.HIGH)\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "MetricAlertDetectorHandler inherits from StatefulDetectorHandler but only contains pass, failing to implement its required abstract methods: counter_names (property), get_dedupe_value(), get_group_key_values(), and build_occurrence_and_event_data(). This will cause a TypeError at runtime when the class is instantiated.",
+        "severity": "High",
+        "category": "api",
+        "matched_candidate": "MetricAlertDetectorHandler is now abstract and cannot be instantiated because it subclasses StatefulDetectorHandler without implementing required abstract methods (get_dedupe_value, get_group_key_values, build_occurrence_and_event_data), causing TypeError when detector_handler tries to instantiate it",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same core problem as the golden comment: MetricAlertDetectorHandler inherits from StatefulDetectorHandler but doesn't implement the required abstract methods, which will cause a TypeError at runtime when instantiation is attempted. The candidate mentions three of the four abstract methods (get_dedupe_value, get_group_key_values, build_occurrence_and_event_data) while the golden also mentions counter_names property, but both identify the same fundamental issue - the class is incomplete and will fail at runtime."
+      },
+      {
+        "golden_comment": "Docstring says this returns a list of DetectorEvaluationResult, but the method now returns a dict keyed by DetectorGroupKey. Consider updating the docstring to match the new return type.",
+        "severity": "Low",
+        "category": "doc_defect",
+        "matched_candidate": "evaluate docstring still says it returns a list of DetectorEvaluationResult but the method now returns dict[DetectorGroupKey, DetectorEvaluationResult]",
+        "confidence": 1,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment - the docstring says the method returns a list of DetectorEvaluationResult, but the method actually returns a dict keyed by DetectorGroupKey. Both comments point out this documentation/return type mismatch and suggest updating the docstring."
+      },
+      {
+        "golden_comment": "Wrong value `6` passed for `group_2` occurrence — the data packet specifies `\"group_2\": 10`. Should be `10` to accurately reflect the test scenario, which will ensure the test produces the correct occurrence data.",
+        "severity": "Medium",
+        "category": "test_gap",
+        "matched_candidate": "Tests cannot detect wrong value being passed to occurrence hook because build_mock_occurrence_and_event ignores the value parameter, so tests pass with value=6 even when evaluated values differ (10, 100, 8)",
+        "confidence": 0.85,
+        "reasoning": "The golden comment identifies that the value `6` is incorrectly passed for `group_2` occurrence when it should be `10` according to the data packet. The candidate issue also identifies this same problem - it notes that tests pass with value=6 even when the evaluated values differ (10, 100, 8), specifically mentioning that 10 is one of the expected values. Both are pointing to the same underlying bug: the wrong value (6) is being passed when it should match the data packet values. The candidate provides additional context about why this bug wasn't caught (mock ignores the value parameter), but it's identifying the same core issue."
+      }
+    ],
+    "false_positives": [],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 3,
+    "total_golden": 3,
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 1,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "getsentry/sentry",
+    "pr_url": "https://github.com/getsentry/sentry/pull/80168"
+  },
+  "judgeUsage": {
+    "calls": 11,
+    "inputTokens": 4092,
+    "outputTokens": 1137,
+    "costUsd": 0.048885
+  }
+}

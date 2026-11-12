@@ -1,0 +1,120 @@
+{
+  "id": "sentry-77754",
+  "goldenUrl": "https://github.com/getsentry/sentry/pull/77754",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Default `queued` timestamp is evaluated once at import time",
+      "affected": [
+        "src/sentry/integrations/services/assignment_source.py:18-18"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "`sync_assignee_outbound` passes the new `assignment_source` kwarg to installations that don't accept it",
+      "affected": [
+        "src/sentry/integrations/tasks/sync_assignee_outbound.py:59-61"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "`from_dict` doesn't validate field types",
+      "affected": [
+        "src/sentry/integrations/services/assignment_source.py:30-35"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 3,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgypizwjaZeZF7XUjFPWR",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 8558,
+      "outputTokens": 948,
+      "ms": 6467
+    }
+  ],
+  "costUsd": 0.026596,
+  "durationMs": 7620,
+  "promptSha256": "33d1ef1d1ce2dd97a6da69e92c9e1774ec4e8c3afafbecead440c48120a0d9d9",
+  "promptChars": 21766,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Default `queued` timestamp is evaluated once at import time\n\nAffected:\n- src/sentry/integrations/services/assignment_source.py:18-18\n\nExplanation:\n`queued: datetime = timezone.now()` is evaluated when the module is imported, so every `AssignmentSource` that doesn't pass `queued` gets the same stale timestamp. This makes the field meaningless. The timestamp also breaks JSON serialization when the task is queued: `asdict` returns a `datetime`, and Celery's JSON serializer may not handle it, depending on the configured serializer (pickle is also possible). The intent was \"passes JSON instead of classes\".\n\nProposed fix:\n~~~python\nfrom dataclasses import field\nqueued: datetime = field(default_factory=timezone.now)\n# and in to_dict, convert to isoformat, or drop the field:\ndef to_dict(self):\n    d = asdict(self)\n    d[\"queued\"] = self.queued.isoformat()\n    return d\n# from_dict: parse the string back to a datetime\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: `sync_assignee_outbound` passes the new `assignment_source` kwarg to installations that don't accept it\n\nAffected:\n- src/sentry/integrations/tasks/sync_assignee_outbound.py:59-61\n\nExplanation:\nThe task now always calls `installation.sync_assignee_outbound(..., assignment_source=...)`. Existing integration implementations (Jira, GitHub, GitLab, Azure DevOps, etc.) may not declare `**kwargs` or this parameter, and the diff doesn't update them. Any that don't would raise `TypeError` and break outbound assignee sync. The abstract signature of `sync_assignee_outbound` was also not updated. The same applies to `sync_status_outbound`, which gains the parameter only in the abstract signature. Verify that all subclasses accept `**kwargs`, and update the abstract method signature.\n\nProposed fix:\n~~~python\n# Update every IssueSyncIntegration.sync_assignee_outbound to accept\n# assignment_source: AssignmentSource | None = None, **kwargs\n~~~\n\n## 3) Severity: LOW | Type: Maintainability\nTitle: `from_dict` doesn't validate field types\n\nAffected:\n- src/sentry/integrations/services/assignment_source.py:30-35\n\nExplanation:\n`cls(**input_dict)` accepts any value types, such as a string `integration_id`. The comparison in `should_sync` would then silently never match, and the loop protection would fail without any signal. Consider validating that `integration_id` is an int.\n\nProposed fix:\n~~~python\nif not isinstance(input_dict.get(\"integration_id\"), int):\n    return None\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The AssignmentSource dataclass uses queued: datetime = timezone.now() as a default field value, which evaluates timezone.now() once at class definition time and shares that single datetime instance across all objects.",
+        "severity": "Medium",
+        "category": "concurrency",
+        "matched_candidate": "Default `queued` timestamp is evaluated once at import time, so every `AssignmentSource` that doesn't pass `queued` gets the same stale timestamp, making the field meaningless",
+        "confidence": 0.99,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the default value `queued: datetime = timezone.now()` is evaluated once at class definition/import time rather than at object instantiation time, causing all instances to share the same stale timestamp. Both comments point to the same bug with the mutable default value pattern in the dataclass."
+      },
+      {
+        "golden_comment": "to_dict() returns a datetime for queued; if this dict is passed in task kwargs (e.g., via apply_async), JSON serialization may fail depending on the serializer, which can cause enqueue errors.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "The `queued` datetime field breaks JSON serialization when the task is queued because `asdict` returns a `datetime` and Celery's JSON serializer may not handle it",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the `queued` datetime field in the dataclass will cause JSON serialization issues when the task is queued via Celery, because `asdict`/`to_dict()` returns a datetime object that JSON serializers may not handle properly. Both comments point to the same underlying bug regarding datetime serialization failures during task enqueueing."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "`sync_assignee_outbound` passes the new `assignment_source` kwarg to installations that don't accept it, causing TypeError in existing integration implementations that don't declare `**kwargs` or this parameter"
+      },
+      {
+        "candidate": "The abstract signature of `sync_assignee_outbound` was not updated to include the new parameter"
+      },
+      {
+        "candidate": "`sync_status_outbound` gains the parameter only in the abstract signature but subclasses may not accept it"
+      },
+      {
+        "candidate": "`from_dict` doesn't validate field types - `cls(**input_dict)` accepts any value types like a string `integration_id`, causing `should_sync` comparison to silently never match and loop protection to fail"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The method name has a typo: test_from_dict_inalid_data should be test_from_dict_invalid_data.",
+        "severity": "Low",
+        "category": "style"
+      },
+      {
+        "golden_comment": "Method name says 'empty_array' but tests empty dict - consider renaming to 'test_from_dict_empty_dict' for clarity.",
+        "severity": "Low",
+        "category": "style"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 6,
+    "total_golden": 4,
+    "tp": 2,
+    "fp": 4,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.3333333333333333,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "getsentry/sentry",
+    "pr_url": "https://github.com/getsentry/sentry/pull/77754"
+  },
+  "judgeUsage": {
+    "calls": 26,
+    "inputTokens": 7120,
+    "outputTokens": 2380,
+    "costUsd": 0.09509999999999999
+  }
+}

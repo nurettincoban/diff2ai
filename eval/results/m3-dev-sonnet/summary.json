@@ -1,0 +1,85 @@
+{
+  "label": "self-run, not independently scored",
+  "tool": "diff2ai",
+  "prsSelected": 10,
+  "prsJudged": 10,
+  "reviewErrors": [],
+  "judgeErrors": 0,
+  "profiles": {
+    "strict": {
+      "tp": 20,
+      "fp": 39,
+      "fn": 6,
+      "prs": 10,
+      "precision": 0.3389830508474576,
+      "recall": 0.7692307692307693,
+      "f1": 0.4705882352941177
+    },
+    "core": {
+      "tp": 20,
+      "fp": 39,
+      "fn": 9,
+      "prs": 10,
+      "precision": 0.3389830508474576,
+      "recall": 0.6896551724137931,
+      "f1": 0.45454545454545453
+    },
+    "all": {
+      "tp": 22,
+      "fp": 39,
+      "fn": 11,
+      "prs": 10,
+      "precision": 0.36065573770491804,
+      "recall": 0.6666666666666666,
+      "f1": 0.4680851063829787
+    }
+  },
+  "recallBySeverity": [
+    {
+      "severity": "Critical",
+      "found": 4,
+      "total": 4,
+      "recall": 1
+    },
+    {
+      "severity": "High",
+      "found": 8,
+      "total": 9,
+      "recall": 0.8888888888888888
+    },
+    {
+      "severity": "Medium",
+      "found": 7,
+      "total": 12,
+      "recall": 0.5833333333333334
+    },
+    {
+      "severity": "Low",
+      "found": 1,
+      "total": 4,
+      "recall": 0.25
+    }
+  ],
+  "findings": {
+    "total": 45,
+    "perPr": 4.5,
+    "bySeverity": {
+      "HIGH": 14,
+      "MEDIUM": 18,
+      "LOW": 13
+    },
+    "unverified": 0,
+    "candidatesTotal": 61,
+    "candidatesPerPr": 6.1
+  },
+  "cost": {
+    "reviewerUsd": 0.460144,
+    "judgeUsd": 0.9906600000000001,
+    "totalUsd": 1.4508040000000002,
+    "perPrUsd": 0.14508040000000003
+  },
+  "durationMs": {
+    "reviewTotal": 108389,
+    "reviewPerPr": 10838.9
+  }
+}
