@@ -32,6 +32,22 @@ jobs:
           diff2ai --version
           diff2ai templates
 
+  # Evaluation harness (eval/): adapter, metric aggregation, cost maths, split
+  # and comparison statistics. Model and judge responses are mocked; the job
+  # has no API key and makes no API calls. Real evaluation runs are manual
+  # (see EVAL.md).
+  eval:
+    name: Evaluation harness (offline tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run tests/eval
+
   test:
     name: Test (Node ${{ matrix.node }} on ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
