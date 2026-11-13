@@ -1,0 +1,183 @@
+{
+  "id": "cal.com-10600",
+  "goldenUrl": "https://github.com/calcom/cal.com/pull/10600",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Security",
+      "title": "Backup codes are not consumed when disabling 2FA and are not rate limited",
+      "affected": [
+        "apps/web/pages/api/auth/two-factor/totp/disable.ts:47-66"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Backup codes are written to the DB before 2FA is confirmed, and an unvalidated code type can throw at login",
+      "affected": [
+        "apps/web/pages/api/auth/two-factor/totp/setup.ts:60-71",
+        "packages/features/auth/lib/next-auth-options.ts:131-156"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Backup-code form field remains registered and required across toggles, and the disable flow sends stale values",
+      "affected": [
+        "apps/web/components/auth/BackupCode.tsx:17-26",
+        "apps/web/components/settings/DisableTwoFactorModal.tsx:103-121"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Closing the enable dialog with the backup code step open loses the codes and state",
+      "affected": [
+        "apps/web/components/settings/EnableTwoFactorModal.tsx:222-231",
+        "apps/web/components/settings/EnableTwoFactorModal.tsx:266-270"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Component name mismatch and unused password type",
+      "affected": [
+        "apps/web/components/auth/BackupCode.tsx:7",
+        "apps/web/components/settings/EnableTwoFactorModal.tsx:174-176"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqbaWj5UimJcutyiUBg",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 16078,
+      "outputTokens": 1777,
+      "ms": 12740
+    }
+  ],
+  "costUsd": 0.049926,
+  "durationMs": 14003,
+  "promptSha256": "23d6ff042fddbc274124e1cd2ff44fbc3471f7da0d8565a846f408c87d69ec30",
+  "promptChars": 36836,
+  "response": "## 1) Severity: HIGH | Type: Security\nTitle: Backup codes are not consumed when disabling 2FA and are not rate limited\n\nAffected:\n- apps/web/pages/api/auth/two-factor/totp/disable.ts:47-66\n\nExplanation:\nThe backup code branch only validates the code. It relies on the later update that nulls `backupCodes`. If that update fails, the code stays valid. More importantly, the backup code path adds a brute-force surface with no rate limiting. Codes are 40 bits of entropy, so this is hard to guess, but the endpoint should still be limited, as login is via `checkRateLimitAndThrowError`. The comparison uses `indexOf`, which is not constant-time. `JSON.parse` of the decrypted data is not guarded. A non-string `req.body.backupCode` makes `replaceAll` throw and return a 500.\n\nProposed fix:\n~~~ts\nif (typeof req.body.backupCode !== \"string\") return res.status(400).json({ error: ErrorCode.IncorrectBackupCode });\n// add rate limiting for this endpoint, and validate the input type before calling replaceAll\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: Backup codes are written to the DB before 2FA is confirmed, and an unvalidated code type can throw at login\n\nAffected:\n- apps/web/pages/api/auth/two-factor/totp/setup.ts:60-71\n- packages/features/auth/lib/next-auth-options.ts:131-156\n\nExplanation:\n`setup` overwrites `backupCodes` for a user whose 2FA is already enabled, and it can only run for a user who has 2FA disabled. A repeated setup call replaces the codes before the TOTP is verified. At login, `credentials.backupCode.replaceAll` assumes a string. Used codes are set to `null` in the array, and the stored array is still compared with `indexOf`. A submitted empty string cannot match null, so this is fine. Concurrent logins with the same code can both succeed, because there is no atomic compare-and-update (a race), so the code is not strictly single-use.\n\nProposed fix:\n~~~ts\n// use a conditional update (updateMany where backupCodes = old ciphertext) and check count === 1 before letting the login proceed\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Backup-code form field remains registered and required across toggles, and the disable flow sends stale values\n\nAffected:\n- apps/web/components/auth/BackupCode.tsx:17-26\n- apps/web/components/settings/DisableTwoFactorModal.tsx:103-121\n\nExplanation:\nThe \"Lost access\" button in the disable modal has no `type=\"button\"`, so it may submit the form. The `Button` default type is likely \"button\", but this depends on code outside the diff. `resetForm` also sets `totpCode` to \"\" while the 6-digit TwoFactor component keeps its own internal state. After toggling, the TwoFactor UI can show stale digits while the form value is empty. In the disable API, `backupCode` is sent as \"\" when TOTP is used, which is falsy, so this works. The login `formSchema` may not include `backupCode`, which could strip the field under the zod resolver; this cannot be verified from the diff.\n\nProposed fix:\n~~~tsx\n<Button type=\"button\" color=\"minimal\" ...>\n// ensure formSchema allows backupCode\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: Closing the enable dialog with the backup code step open loses the codes and state\n\nAffected:\n- apps/web/components/settings/EnableTwoFactorModal.tsx:222-231\n- apps/web/components/settings/EnableTwoFactorModal.tsx:266-270\n\nExplanation:\n2FA is already enabled when the backup codes step is shown. Dismissing the dialog via Escape or the overlay (`onOpenChange`) does not reset the state, and the user may never see the codes. The step stays at `DisplayBackupCodes` on the next open. `onEnable` is also not called in that case. The `backupCodesUrl` blob is never revoked on close or unmount, which leaks it. `useState([])` is typed `never[]`, so TypeScript may complain about `backupCodes.map`.\n\nProposed fix:\n~~~tsx\nconst [backupCodes, setBackupCodes] = useState<string[]>([]);\n// handle onOpenChange(false) at the backup step by calling resetState() and onEnable(), and revoke the URL on close\n~~~\n\n## 5) Severity: LOW | Type: Maintainability\nTitle: Component name mismatch and unused password type\n\nAffected:\n- apps/web/components/auth/BackupCode.tsx:7\n- apps/web/components/settings/EnableTwoFactorModal.tsx:174-176\n\nExplanation:\n`BackupCode.tsx` exports a component named `TwoFactor`, which is confusing in stack traces and devtools. `PasswordField` is given a redundant `type=\"password\"`, which may conflict with the visibility toggle. If the prop is spread after the internal `type`, the toggle would stop working.\n\nProposed fix:\n~~~tsx\nexport default function BackupCode({ center = true }) {\n// remove type=\"password\" from PasswordField\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The exported function TwoFactor handles backup codes and is in BackupCode.tsx. Inconsistent naming.",
+        "severity": "Low",
+        "category": "style",
+        "matched_candidate": "BackupCode.tsx exports a component named TwoFactor, causing confusion in stack traces and devtools",
+        "confidence": 0.95,
+        "reasoning": "Both comments identify the same issue: there's a naming inconsistency where the file is named BackupCode.tsx but exports a component named TwoFactor. The golden comment mentions 'inconsistent naming' while the candidate specifically notes this 'causes confusion in stack traces and devtools' - both are pointing to the same underlying problem of mismatched file/component naming."
+      },
+      {
+        "golden_comment": "Because backupCodes are decrypted and mutated in memory before being written back, two concurrent login requests using the same backupCode could both pass this check and update, so a single backup code may effectively be accepted more than once if used concurrently, weakening the intended one-time-use semantics.",
+        "severity": "High",
+        "category": "concurrency",
+        "matched_candidate": "Concurrent logins with the same backup code can both succeed due to race condition - no atomic compare-and-update",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - a race condition where concurrent login requests using the same backup code can both succeed because there's no atomic compare-and-update operation. Both comments point out that backup codes can be used more than once due to concurrent access, violating the one-time-use semantics."
+      },
+      {
+        "golden_comment": "Object URL for backup codes is not revoked on component unmount, leading to a potential memory leak. This can cause increased memory usage over time, especially if the component is mounted and unmounted frequently.",
+        "severity": "Low",
+        "category": "perf",
+        "matched_candidate": "backupCodesUrl blob is never revoked on close or unmount, causing memory leak",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - that the backup codes blob URL is never revoked on unmount/close, which causes a memory leak. Both comments point to the same underlying issue: Object URL not being revoked leading to memory leak."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Backup codes are not consumed when disabling 2FA - if the update that nulls backupCodes fails, the code stays valid"
+      },
+      {
+        "candidate": "Backup code path has no rate limiting, creating a brute-force attack surface"
+      },
+      {
+        "candidate": "Backup code comparison uses indexOf which is not constant-time"
+      },
+      {
+        "candidate": "JSON.parse of decrypted backup code data is not guarded"
+      },
+      {
+        "candidate": "Non-string req.body.backupCode makes replaceAll throw and return a 500"
+      },
+      {
+        "candidate": "Setup overwrites backupCodes before 2FA is confirmed - repeated setup calls replace codes before TOTP is verified"
+      },
+      {
+        "candidate": "At login, credentials.backupCode.replaceAll assumes a string type without validation"
+      },
+      {
+        "candidate": "Lost access button in disable modal has no type='button', so it may submit the form"
+      },
+      {
+        "candidate": "resetForm sets totpCode to empty while TwoFactor component keeps its own internal state, causing stale digits to display"
+      },
+      {
+        "candidate": "Login formSchema may not include backupCode, which could strip the field under zod resolver"
+      },
+      {
+        "candidate": "Closing the enable dialog with backup code step open loses the codes and state - 2FA is enabled but user may never see codes"
+      },
+      {
+        "candidate": "Step stays at DisplayBackupCodes on next dialog open after dismissing"
+      },
+      {
+        "candidate": "onEnable is not called when dialog is dismissed via Escape or overlay"
+      },
+      {
+        "candidate": "useState([]) is typed never[], so TypeScript may complain about backupCodes.map"
+      },
+      {
+        "candidate": "PasswordField is given redundant type='password' which may conflict with visibility toggle if prop is spread after internal type"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Error message mentions 'backup code login' but this is a disable endpoint, not login",
+        "severity": "Low",
+        "category": "doc_defect"
+      },
+      {
+        "golden_comment": "Backup code validation is case-sensitive due to the use of indexOf(). This causes validation to fail if a user enters uppercase hex characters, as backup codes should be case-insensitive for a better user experience.",
+        "severity": "Medium",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 18,
+    "total_golden": 5,
+    "tp": 3,
+    "fp": 15,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.16666666666666666,
+    "recall": 0.6,
+    "tool": "diff2ai",
+    "repo_name": "calcom/cal.com",
+    "pr_url": "https://github.com/calcom/cal.com/pull/10600"
+  },
+  "judgeUsage": {
+    "calls": 94,
+    "inputTokens": 21922,
+    "outputTokens": 9131,
+    "costUsd": 0.337885
+  }
+}

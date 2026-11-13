@@ -1,0 +1,105 @@
+{
+  "id": "keycloak-32918",
+  "goldenUrl": "https://github.com/keycloak/keycloak/pull/32918",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Test",
+      "title": "Fix test cleanup so it removes the IDPs the test created",
+      "affected": [
+        "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java:381-381",
+        "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java:425-425"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Invalidate login IDP cache when organization state changes, not only on IDP updates",
+      "affected": [
+        "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java:213-255",
+        "services/src/main/java/org/keycloak/organization/forms/login/freemarker/model/OrganizationAwareIdentityProviderBean.java:75-80"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Check other callers of the shared SPI `getLoginPredicate()` after the semantic change",
+      "affected": [
+        "server-spi/src/main/java/org/keycloak/models/IdentityProviderStorageProvider.java:254-254"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 3,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyo5ZdaGcwP9yXBgx9jC",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 11393,
+      "outputTokens": 3234,
+      "ms": 32157
+    }
+  ],
+  "costUsd": 0.110252,
+  "durationMs": 33499,
+  "promptSha256": "2eee9525d70d58ecbfea7b849b11750ef2ebf7cea01b37a375b381212e8c43d8",
+  "promptChars": 27606,
+  "response": "## 1) Severity: MEDIUM | Type: Test\nTitle: Fix test cleanup so it removes the IDPs the test created\n\nAffected:\n- testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java:381-381\n- testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java:425-425\n\nExplanation:\nThe cleanup is registered as `testRealm().identityProviders().get(\"alias\")::remove`. That uses the literal string `\"alias\"`, not the alias of the IDP that was just created.\n\nAs a result, none of the 21 IDPs (`idp-alias-0` … `idp-alias-20`) are removed after the test. They stay in the realm and are still linked to the organization. Later tests that count IDPs or depend on organization/IDP state can become flaky or fail.\n\nProposed fix:\n~~~java\nString alias = \"idp-alias-\" + i;\nidpRep.setAlias(alias);\n...\ntestRealm().identityProviders().create(idpRep).close();\ngetCleanup().addCleanup(testRealm().identityProviders().get(alias)::remove);\n~~~\nApply the same change at line 425, using `\"idp-alias-20\"`.\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Invalidate login IDP cache when organization state changes, not only on IDP updates\n\nAffected:\n- model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java:213-255\n- services/src/main/java/org/keycloak/organization/forms/login/freemarker/model/OrganizationAwareIdentityProviderBean.java:75-80\n\nExplanation:\nThe new login cache stores IDP IDs. It is invalidated only by IDP create, update, or remove through this provider.\n\nWhether an org-linked IDP is usable for login also depends on its organization. For example, disabling an organization makes its IDPs effectively disabled; this is why the bean now re-checks `isEnabled()` on the wrapped model. Organization enable/disable, and possibly organization removal (depending on how IDPs are unlinked, which is outside this diff), never invalidate `cacheKeyForLogin`. Stale IDs therefore stay cached.\n\nThe re-check of `isEnabled()` was added only in `OrganizationAwareIdentityProviderBean`. Any other caller of `getForLogin` that trusts the result (for example, the non-org `IdentityProviderBean`, redirectors, or custom extensions; outside this diff) may now get IDPs belonging to disabled organizations. Before this change, the delegate's query would have filtered those out.\n\nEither invalidate the login caches from the organization cache provider on organization update/remove, or filter `isEnabled()` (on the wrapped model) inside `getForLogin` itself so all callers get correct results.\n\nProposed fix:\n~~~java\n// in getForLogin, when materializing cached ids:\nIdentityProviderModel idp = session.identityProviders().getById(id);\nif (idp == null) { ... }\nif (idp.isEnabled()) {\n    identityProviders.add(idp);\n}\n// and/or in InfinispanOrganizationProvider.update/remove:\nfor (FetchMode mode : FetchMode.values()) {\n    realmCache.registerInvalidation(InfinispanIdentityProviderStorageProvider.cacheKeyForLogin(realm, mode));\n}\n~~~\n\n## 3) Severity: LOW | Type: Maintainability\nTitle: Check other callers of the shared SPI `getLoginPredicate()` after the semantic change\n\nAffected:\n- server-spi/src/main/java/org/keycloak/models/IdentityProviderStorageProvider.java:254-254\n\nExplanation:\n`getLoginPredicate()` is a public static helper in the SPI. It now also requires `BROKER_PUBLIC=true` for any org-linked IDP.\n\nThis change was made to support cache-invalidation decisions, but it affects every existing consumer of the predicate. One example would be the JPA provider or other code building login filters, which is outside this diff. Such consumers could silently start excluding non-public org IDPs, for instance when they evaluate IDPs for a specific organization where non-public brokers were intended to be included.\n\nVerify all usages. If the extra condition is only needed for invalidation, keep it in a private helper in the Infinispan provider instead of changing the SPI contract.\n\nProposed fix:\n~~~java\n// InfinispanIdentityProviderStorageProvider\nprivate static final Predicate<IdentityProviderModel> LOGIN_CACHE_PREDICATE =\n    getLoginPredicate().and(idp -> idp.getOrganizationId() == null\n        || Boolean.parseBoolean(idp.getConfig().get(OrganizationModel.BROKER_PUBLIC)));\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "Cleanup reference uses incorrect alias - should be 'idp-alias-' + i instead of 'alias'.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Test cleanup uses literal string 'alias' instead of the actual IDP alias, leaving 21 IDPs (idp-alias-0 through idp-alias-20) not removed after the test, which can cause flaky tests",
+        "confidence": 0.98,
+        "reasoning": "Both comments identify the same issue: the cleanup code uses the literal string 'alias' instead of the dynamically generated IDP alias names ('idp-alias-' + i or 'idp-alias-0' through 'idp-alias-20'). The golden comment points out the incorrect alias reference, and the candidate issue explains the same problem with additional context about the consequence (21 IDPs not being removed). They are describing the exact same bug."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Login IDP cache is only invalidated on IDP create/update/remove but not when organization state changes (e.g., disabling an organization), causing stale cached IDP IDs"
+      },
+      {
+        "candidate": "The isEnabled() re-check was only added in OrganizationAwareIdentityProviderBean, so other callers of getForLogin may get IDPs belonging to disabled organizations"
+      },
+      {
+        "candidate": "getLoginPredicate() semantic change now requires BROKER_PUBLIC=true for org-linked IDPs, which affects all existing consumers of this public SPI helper and may silently exclude non-public org IDPs in unintended contexts"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "InfinispanIdentityProviderStorageProvider.getForLogin() recursively calls session.identityProviders().getById() instead of idpDelegate.getById(), causing the cache lookup to re-enter the same caching layer.",
+        "severity": "Critical",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 4,
+    "total_golden": 2,
+    "tp": 1,
+    "fp": 3,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.25,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "keycloak/keycloak",
+    "pr_url": "https://github.com/keycloak/keycloak/pull/32918"
+  },
+  "judgeUsage": {
+    "calls": 10,
+    "inputTokens": 3755,
+    "outputTokens": 1157,
+    "costUsd": 0.047700000000000006
+  }
+}

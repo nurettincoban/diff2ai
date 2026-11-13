@@ -1,0 +1,3 @@
+# Evaluation results are records: they stay byte-for-byte as the runs wrote them.
+eval/results/
+eval/.cache/

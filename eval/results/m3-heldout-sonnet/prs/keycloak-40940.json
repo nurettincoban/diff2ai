@@ -1,0 +1,97 @@
+{
+  "id": "keycloak-40940",
+  "goldenUrl": "https://github.com/keycloak/keycloak/pull/40940",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Test",
+      "title": "Concurrency test is racy and may not detect or reliably reproduce the failure",
+      "affected": [
+        "tests/base/src/test/java/org/keycloak/tests/admin/group/GroupTest.java:136-158"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "getSubGroupsCount returns null when the group was concurrently deleted",
+      "affected": [
+        "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/GroupAdapter.java:274-275"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 2,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqhqAhLPnqa8joVzU7d",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 3582,
+      "outputTokens": 731,
+      "ms": 5786
+    }
+  ],
+  "costUsd": 0.014474,
+  "durationMs": 6951,
+  "promptSha256": "e0be2f491c1574dc39d17224c7267c31311a732e526a15dfc75eca413b3eca44",
+  "promptChars": 8428,
+  "response": "## 1) Severity: MEDIUM | Type: Test\nTitle: Concurrency test is racy and may not detect or reliably reproduce the failure\n\nAffected:\n- tests/base/src/test/java/org/keycloak/tests/admin/group/GroupTest.java:136-158\n\nExplanation:\nThe reader thread is started but never joined. The main thread sets `deletedAll` and asserts immediately, so an exception thrown by an in-flight request after the assertion is missed. The thread can also outlive the test and keep calling the admin client after realm cleanup, which can cause flaky failures in later tests. `deletedAll` is also never set if a delete throws, so the loop would run forever. Finally, the reader may not have run a single iteration before deletion starts, so the test may pass without exercising the race. Fix: keep a reference to the thread, set the flag in a `finally` block, join the thread, then assert. Optionally use a latch so the reader has done at least one read before deletion starts.\n\nProposed fix:\n~~~java\nThread reader = new Thread(...);\nreader.start();\ntry {\n    groupUuuids.forEach(id -> managedRealm.admin().groups().group(id).remove());\n} finally {\n    deletedAll.set(true);\n    reader.join(10000);\n}\nassertThat(caughtExceptions, Matchers.empty());\n~~~\n\n## 2) Severity: LOW | Type: Bug\nTitle: getSubGroupsCount returns null when the group was concurrently deleted\n\nAffected:\n- model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/GroupAdapter.java:274-275\n\nExplanation:\nThe `Long` return value is now null if the underlying model has disappeared. Callers that unbox it, such as `GroupUtils` or the representation builders, may hit an NPE instead. The fix only moves the failure and depends on every caller handling null. Check the callers, or return 0 or throw a consistent not-found exception. This is a risk only if callers are outside the diff and unboxing.\n\nProposed fix:\n~~~java\nGroupModel model = modelSupplier.get();\nreturn model == null ? 0L : model.getSubGroupsCount();\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "Returning null from getSubGroupsCount() violates the GroupModel contract (Javadoc says it never returns null) and may lead to NPEs in callers that expect a non-null count.",
+        "severity": "Critical",
+        "category": "api",
+        "matched_candidate": "getSubGroupsCount returns null when the group was concurrently deleted, causing NPE when callers unbox the Long return value",
+        "confidence": 0.95,
+        "reasoning": "Both comments identify the same issue: getSubGroupsCount() returning null can cause NPE in callers. The golden comment emphasizes the contract violation (Javadoc says never returns null), while the candidate focuses on the specific scenario (concurrent deletion) and the unboxing NPE. Both point to the same fundamental problem - returning null from this method leads to NPE in callers."
+      },
+      {
+        "golden_comment": "The reader thread isn’t waited for; flipping deletedAll to true and asserting immediately can race and miss exceptions added just after the flag change, making this test flaky.",
+        "severity": "Medium",
+        "category": "concurrency",
+        "matched_candidate": "Reader thread is started but never joined, causing exceptions from in-flight requests after assertion to be missed",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same problem as the golden comment. Both point out that the reader thread is not properly waited for (not joined), which creates a race condition where exceptions from in-flight requests can be missed. The golden comment specifically mentions the race between flipping deletedAll to true and asserting, while the candidate mentions 'in-flight requests after assertion' - both are describing the same underlying concurrency bug that makes the test flaky."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Thread can outlive the test and keep calling admin client after realm cleanup, causing flaky failures in later tests"
+      },
+      {
+        "candidate": "deletedAll is never set if a delete throws, causing the loop to run forever"
+      },
+      {
+        "candidate": "Reader may not have run a single iteration before deletion starts, so test may pass without exercising the race"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 5,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 3,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.4,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "keycloak/keycloak",
+    "pr_url": "https://github.com/keycloak/keycloak/pull/40940"
+  },
+  "judgeUsage": {
+    "calls": 17,
+    "inputTokens": 3434,
+    "outputTokens": 1219,
+    "costUsd": 0.047645
+  }
+}

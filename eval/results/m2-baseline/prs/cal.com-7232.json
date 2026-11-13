@@ -1,0 +1,146 @@
+{
+  "id": "cal.com-7232",
+  "goldenUrl": "https://github.com/calcom/cal.com/pull/7232",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "One failed SendGrid cancel blocks all later cancellations, forever",
+      "affected": [
+        "packages/features/ee/workflows/api/scheduleEmailReminders.ts:43-77"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "`immediateDelete` path cancels at SendGrid but never removes the DB row",
+      "affected": [
+        "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts:213-223",
+        "packages/features/bookings/lib/handleNewBooking.ts:964-975"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Reliability",
+      "title": "Reminder cancellation is now fire-and-forget (unawaited promises)",
+      "affected": [
+        "packages/features/bookings/lib/handleCancelBooking.ts:484-495",
+        "packages/trpc/server/routers/viewer/bookings.tsx:487-494",
+        "packages/features/bookings/lib/handleNewBooking.ts:964-975",
+        "packages/trpc/server/routers/viewer/workflows.tsx:212-218,376-382,519-525,574-580"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Security",
+      "title": "Ownership scope dropped from reminder deletion",
+      "affected": [
+        "packages/trpc/server/routers/viewer/workflows.tsx:376-382"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Type-only imports converted to value imports; possibly unused imports",
+      "affected": [
+        "packages/trpc/server/routers/viewer/workflows.tsx:1-10",
+        "packages/features/bookings/lib/handleNewBooking.ts:1-10"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoFsDGxB6yKtDZRXWSV",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 13731,
+      "outputTokens": 4517,
+      "ms": 41277
+    }
+  ],
+  "costUsd": 0.145264,
+  "durationMs": 42279,
+  "promptSha256": "3c1978159d9995241a7ef7f5bab487f994dbfc470d7aac0351fe84d83423320c",
+  "promptChars": 33888,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: One failed SendGrid cancel blocks all later cancellations, forever\n\nAffected:\n- packages/features/ee/workflows/api/scheduleEmailReminders.ts:43-77\n\nExplanation:\nThe whole loop sits inside a single `try`. If any `client.request` throws, the loop stops. The remaining reminders are never cancelled, and the deletes queued so far are never awaited.\n\nThe query uses `lte: now + 1h` with no lower bound, so it also matches reminders whose send time has already passed. Cancelling an already-sent or invalid `batch_id` can fail at SendGrid. That failing row is never deleted, so it is picked up again on every cron run and fails again.\n\nRows are returned in the same order each run, so every reminder after the bad one is never cancelled. Those emails go out for bookings that were cancelled or rescheduled.\n\nThe requests are also awaited one at a time, which makes the cron slower as the backlog grows.\n\nFix: wrap each reminder in its own `try/catch`. Always delete the DB row, or at least delete rows whose `scheduledDate` has passed. Consider running the requests in parallel.\n\nProposed fix:\n~~~ts\nawait Promise.allSettled(\n  remindersToCancel.map(async (reminder) => {\n    try {\n      if (reminder.referenceId && dayjs(reminder.scheduledDate).isAfter(dayjs())) {\n        await client.request({\n          url: \"/v3/user/scheduled_sends\",\n          method: \"POST\",\n          body: { batch_id: reminder.referenceId, status: \"cancel\" },\n        });\n      }\n    } catch (e) {\n      console.log(`Error cancelling scheduled email ${reminder.id}: ${e}`);\n    } finally {\n      await prisma.workflowReminder.delete({ where: { id: reminder.id } }).catch(() => null);\n    }\n  })\n);\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: `immediateDelete` path cancels at SendGrid but never removes the DB row\n\nAffected:\n- packages/features/ee/workflows/lib/reminders/emailReminderManager.ts:213-223\n- packages/features/bookings/lib/handleNewBooking.ts:964-975\n\nExplanation:\nWhen `immediateDelete` is true, the function cancels the SendGrid batch and returns. It never deletes the `WorkflowReminder` row.\n\n- For the workflow-delete and step-delete callers in `workflows.tsx`, the cascade from `WorkflowStep` may clean the row up. That relationship is outside this diff, so I have not verified it.\n- In `handleNewBooking`, nothing removes the row. The original booking is left with a reminder that is still `scheduled: true` and has a `referenceId`, but the batch behind it no longer exists at SendGrid.\n\nThe previous code also called `DELETE /v3/user/scheduled_sends/{id}`. That call is now gone, so cancelled batches pile up on the SendGrid account.\n\nProposed fix:\n~~~ts\nif (immediateDelete) {\n  await client.request({\n    url: \"/v3/user/scheduled_sends\",\n    method: \"POST\",\n    body: { batch_id: referenceId, status: \"cancel\" },\n  });\n  await prisma.workflowReminder.delete({ where: { id: reminderId } });\n  return;\n}\n~~~\n\n## 3) Severity: MEDIUM | Type: Reliability\nTitle: Reminder cancellation is now fire-and-forget (unawaited promises)\n\nAffected:\n- packages/features/bookings/lib/handleCancelBooking.ts:484-495\n- packages/trpc/server/routers/viewer/bookings.tsx:487-494\n- packages/features/bookings/lib/handleNewBooking.ts:964-975\n- packages/trpc/server/routers/viewer/workflows.tsx:212-218,376-382,519-525,574-580\n\nExplanation:\nThe old code collected the DB deletes and awaited them with `Promise.all`. The new code calls the async `deleteScheduledEmailReminder` and `deleteScheduledSMSReminder` inside `forEach` without awaiting them.\n\nOn serverless (Vercel/Next API routes) the function can be frozen once the response is sent. When that happens, the `cancelled` update, the row delete, or the Twilio/SendGrid cancel may never run, and the reminders are still sent.\n\nThe `try/catch` in `handleNewBooking` cannot catch any of these rejections, so it does nothing.\n\nProposed fix:\n~~~ts\nawait Promise.all(\n  originalRescheduledBooking.workflowReminders.map((reminder) =>\n    reminder.method === WorkflowMethods.EMAIL\n      ? deleteScheduledEmailReminder(reminder.id, reminder.referenceId, true)\n      : reminder.method === WorkflowMethods.SMS\n      ? deleteScheduledSMSReminder(reminder.id, reminder.referenceId)\n      : Promise.resolve()\n  )\n);\n~~~\n\n## 4) Severity: LOW | Type: Security\nTitle: Ownership scope dropped from reminder deletion\n\nAffected:\n- packages/trpc/server/routers/viewer/workflows.tsx:376-382\n\nExplanation:\nThe old code deleted reminders with `where: { id, booking: { userId: ctx.user.id } }`, which limited deletes to the caller's own bookings. The new helpers delete or update by `id` only.\n\nThis is only safe if `remindersToDeletePromise` already restricts results to the current user's bookings. That query is outside the diff, so I could not confirm it, hence the reduced severity.\n\nFix: confirm the upstream query filters by `booking.userId`. Alternatively, keep the ownership filter, for example by having the helpers use `deleteMany`/`updateMany` with that filter.\n\nProposed fix:\n~~~ts\n// ensure upstream query includes:\nwhere: { booking: { userId: ctx.user.id, eventTypeId: ... } }\n~~~\n\n## 5) Severity: LOW | Type: Maintainability\nTitle: Type-only imports converted to value imports; possibly unused imports\n\nAffected:\n- packages/trpc/server/routers/viewer/workflows.tsx:1-10\n- packages/features/bookings/lib/handleNewBooking.ts:1-10\n\nExplanation:\nSeveral types are now imported as runtime values:\n- `workflows.tsx`: `PrismaPromise` and `Prisma`. Their remaining uses were removed in this diff, so they may now be unused.\n- `handleNewBooking.ts`: `App`, `Credential` and `EventTypeCustomInput`.\n\nUnder `isolatedModules` or `importsNotUsedAsValues`/`verbatimModuleSyntax` settings, these can cause lint or build errors. They also pull type-only symbols into the runtime import.\n\nFix: restore `import type` for the type-only symbols and remove any imports that are no longer used.\n\nProposed fix:\n~~~ts\nimport type { App, Credential, EventTypeCustomInput, Prisma } from \"@prisma/client\";\nimport { BookingStatus, SchedulingType, WebhookTriggerEvents, WorkflowMethods } from \"@prisma/client\";\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "Asynchronous functions deleteScheduledEmailReminder and deleteScheduledSMSReminder are called without await inside forEach loops. This occurs during booking rescheduling/cancellation, and workflow/workflow step deletion/updates. Consequently, scheduled workflow reminders may not be reliably cancelled, potentially leaving them active.",
+        "severity": "Medium",
+        "category": "concurrency",
+        "matched_candidate": "Reminder cancellation is now fire-and-forget with unawaited promises - deleteScheduledEmailReminder and deleteScheduledSMSReminder are called inside forEach without awaiting",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: deleteScheduledEmailReminder and deleteScheduledSMSReminder are called inside forEach loops without being awaited. The candidate describes this as 'fire-and-forget with unawaited promises' which is semantically equivalent to the golden comment's description of async functions being called without await. Both identify the same underlying bug."
+      },
+      {
+        "golden_comment": "When immediateDelete is true, the deleteScheduledEmailReminder function cancels the SendGrid email but fails to delete the corresponding WorkflowReminder record from the database. This creates orphaned database entries and is inconsistent with the immediateDelete: false path, which marks the record as cancelled. The SendGrid DELETE API call is also omitted in this path.",
+        "severity": "High",
+        "category": "data",
+        "matched_candidate": "immediateDelete path cancels at SendGrid but never removes the WorkflowReminder DB row",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - that when immediateDelete is true, the code cancels the SendGrid email but fails to delete/remove the WorkflowReminder database record, leaving orphaned entries. The candidate uses slightly different wording ('never removes the WorkflowReminder DB row' vs 'fails to delete the corresponding WorkflowReminder record') but points to the same underlying bug."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "One failed SendGrid cancel blocks all later cancellations - if any client.request throws, the loop stops, remaining reminders are never cancelled, and deletes queued so far are never awaited"
+      },
+      {
+        "candidate": "Query uses lte: now + 1h with no lower bound, matching reminders whose send time has already passed, and cancelling already-sent or invalid batch_id can fail at SendGrid"
+      },
+      {
+        "candidate": "Failing rows are never deleted, so they are picked up again on every cron run and fail repeatedly, blocking all reminders after the bad one from being cancelled"
+      },
+      {
+        "candidate": "SendGrid requests are awaited one at a time, making the cron slower as the backlog grows"
+      },
+      {
+        "candidate": "DELETE /v3/user/scheduled_sends/{id} call was removed, so cancelled batches pile up on the SendGrid account"
+      },
+      {
+        "candidate": "Ownership scope dropped from reminder deletion - old code used where: { id, booking: { userId: ctx.user.id } } but new helpers delete/update by id only"
+      },
+      {
+        "candidate": "Type-only imports (PrismaPromise, Prisma, App, Credential, EventTypeCustomInput) converted to value imports, which may be unused and can cause lint/build errors under isolatedModules or verbatimModuleSyntax settings"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The 'cancelled' field is nullable, which can lead to existing records having null values instead of a default of false. This can cause incorrect behavior in the application when checking the cancellation status of reminders.",
+        "severity": "Medium",
+        "category": "data"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 11,
+    "total_golden": 3,
+    "tp": 2,
+    "fp": 7,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.18181818181818182,
+    "recall": 0.6666666666666666,
+    "tool": "diff2ai",
+    "repo_name": "calcom/cal.com",
+    "pr_url": "https://github.com/calcom/cal.com/pull/7232"
+  },
+  "judgeUsage": {
+    "calls": 41,
+    "inputTokens": 10998,
+    "outputTokens": 4168,
+    "costUsd": 0.15919
+  }
+}

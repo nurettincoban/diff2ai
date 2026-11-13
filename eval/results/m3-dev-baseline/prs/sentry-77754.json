@@ -1,0 +1,144 @@
+{
+  "id": "sentry-77754",
+  "goldenUrl": "https://github.com/getsentry/sentry/pull/77754",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Compute the `queued` default per instance, not once at import",
+      "affected": [
+        "src/sentry/integrations/services/assignment_source.py:18"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Make `to_dict()` output JSON-serializable for task kwargs",
+      "affected": [
+        "src/sentry/integrations/services/assignment_source.py:27-28",
+        "src/sentry/integrations/utils/sync.py:137-144"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Update the `sync_assignee_outbound` signature, not `sync_status_outbound`",
+      "affected": [
+        "src/sentry/integrations/mixins/issues.py:410-418",
+        "src/sentry/integrations/tasks/sync_assignee_outbound.py:59-61"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Avoid silently losing cycle protection when the source dict fails to parse",
+      "affected": [
+        "src/sentry/integrations/services/assignment_source.py:30-35",
+        "src/sentry/integrations/tasks/sync_assignee_outbound.py:53-56"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Check subclass `should_sync` overrides for the new parameter",
+      "affected": [
+        "src/sentry/integrations/mixins/issues.py:66, 382"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgypVQUhPvz9Nk22jTxfF",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 8558,
+      "outputTokens": 2620,
+      "ms": 23249
+    }
+  ],
+  "costUsd": 0.086632,
+  "durationMs": 24449,
+  "promptSha256": "33d1ef1d1ce2dd97a6da69e92c9e1774ec4e8c3afafbecead440c48120a0d9d9",
+  "promptChars": 21766,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Compute the `queued` default per instance, not once at import\n\nAffected:\n- src/sentry/integrations/services/assignment_source.py:18\n\nExplanation:\n`queued: datetime = timezone.now()` runs once, when the class is defined at module import. Every `AssignmentSource` created without an explicit `queued` gets the same timestamp: the process start time, not the time the assignment was queued. Any later logic that relies on `queued` (staleness checks, ordering, debugging) will be silently wrong. `test_to_dict` only checks that `queued` is not None, so it cannot catch this.\n\nProposed fix:\n~~~python\nfrom dataclasses import asdict, dataclass, field\n\n@dataclass(frozen=True)\nclass AssignmentSource:\n    source_name: str\n    integration_id: int\n    queued: datetime = field(default_factory=timezone.now)\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Make `to_dict()` output JSON-serializable for task kwargs\n\nAffected:\n- src/sentry/integrations/services/assignment_source.py:27-28\n- src/sentry/integrations/utils/sync.py:137-144\n\nExplanation:\n`asdict(self)` returns a raw `datetime` for `queued`. That dict is passed as a Celery task kwarg. The commit history says the intent is to pass JSON-safe data, but a `datetime` is not JSON-serializable. With a JSON task serializer, enqueueing either fails or relies on serializer-specific coercion.\n\nOn the consumer side, `from_dict` does `cls(**input_dict)` with no type conversion. A round-tripped `queued` would therefore arrive as a string (or another non-`datetime` type) and the object would have the wrong type.\n\nFix:\n- Serialize `queued` explicitly, for example as ISO 8601.\n- Parse it back in `from_dict`.\n- Add a test that round-trips the dict through `json.dumps`/`json.loads`.\n\nProposed fix:\n~~~python\ndef to_dict(self) -> dict[str, Any]:\n    d = asdict(self)\n    d[\"queued\"] = self.queued.isoformat()\n    return d\n\n@classmethod\ndef from_dict(cls, input_dict: dict[str, Any]) -> AssignmentSource | None:\n    try:\n        data = dict(input_dict)\n        if isinstance(data.get(\"queued\"), str):\n            data[\"queued\"] = datetime.fromisoformat(data[\"queued\"])\n        return cls(**data)\n    except (ValueError, TypeError):\n        return None\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Update the `sync_assignee_outbound` signature, not `sync_status_outbound`\n\nAffected:\n- src/sentry/integrations/mixins/issues.py:410-418\n- src/sentry/integrations/tasks/sync_assignee_outbound.py:59-61\n\nExplanation:\nThe task now calls `installation.sync_assignee_outbound(..., assignment_source=parsed_assignment_source)`. However, the abstract signature that was changed is `sync_status_outbound`, and nothing in this diff passes `assignment_source` to that method. Meanwhile the abstract `sync_assignee_outbound` contract was left unchanged.\n\nAny concrete integration whose `sync_assignee_outbound` does not accept `**kwargs` or an `assignment_source` parameter will raise `TypeError` inside the task, and outbound assignee sync will break. I can't see the implementations in this diff, so please verify that each one (Jira, Jira Server, GitHub, GitLab, VSTS, example, etc.) accepts the new kwarg.\n\nProposed fix:\n~~~python\n@abstractmethod\ndef sync_assignee_outbound(\n    self,\n    external_issue,\n    user,\n    assign=True,\n    assignment_source: AssignmentSource | None = None,\n    **kwargs,\n):\n    ...\n\n# and revert the unused assignment_source param on sync_status_outbound\n~~~\n\n## 4) Severity: LOW | Type: Bug\nTitle: Avoid silently losing cycle protection when the source dict fails to parse\n\nAffected:\n- src/sentry/integrations/services/assignment_source.py:30-35\n- src/sentry/integrations/tasks/sync_assignee_outbound.py:53-56\n\nExplanation:\nIf `assignment_source_dict` is present but malformed, `from_dict` returns `None` with no logging. `should_sync` then treats the assignment as having no source and syncs back to the originating integration. That recreates the exact sync cycle this PR is meant to break, and leaves no trace of why. Malformed input could come from a version skew between producer and consumer, or from extra keys.\n\nFix:\n- Log a warning when parsing fails.\n- Consider ignoring unknown keys so that adding fields later stays backward compatible.\n\nProposed fix:\n~~~python\nexcept (ValueError, TypeError):\n    logger.warning(\"assignment_source.parse_failed\", extra={\"input\": input_dict})\n    return None\n~~~\n\n## 5) Severity: LOW | Type: Maintainability\nTitle: Check subclass `should_sync` overrides for the new parameter\n\nAffected:\n- src/sentry/integrations/mixins/issues.py:66, 382\n\nExplanation:\nThe task now calls `installation.should_sync(\"outbound_assignee\", parsed_assignment_source)` with a second positional argument. Any integration subclass that overrides `should_sync(self, attribute)` with the old one-argument signature will raise `TypeError`. I can't see whether such overrides exist from this diff, so please search for them.\n\nProposed fix:\n~~~text\ngrep -rn \"def should_sync\" src/sentry/integrations\n# Update any override to: def should_sync(self, attribute, sync_source=None)\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The AssignmentSource dataclass uses queued: datetime = timezone.now() as a default field value, which evaluates timezone.now() once at class definition time and shares that single datetime instance across all objects.",
+        "severity": "Medium",
+        "category": "concurrency",
+        "matched_candidate": "queued: datetime = timezone.now() runs once at module import, causing all AssignmentSource instances without explicit queued to share the same timestamp instead of getting the time they were actually queued",
+        "confidence": 0.99,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the timezone.now() default value is evaluated once at class/module definition time rather than at instance creation time, causing all instances to share the same timestamp. Both comments point to the same bug with the same understanding of why it's problematic."
+      },
+      {
+        "golden_comment": "to_dict() returns a datetime for queued; if this dict is passed in task kwargs (e.g., via apply_async), JSON serialization may fail depending on the serializer, which can cause enqueue errors.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "to_dict() returns a raw datetime for queued which is not JSON-serializable, causing failures or incorrect coercion when passed as Celery task kwargs with JSON serializer",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the to_dict() method returns a raw datetime object for the 'queued' field, which is not JSON-serializable, and this can cause failures when passed as Celery task kwargs with JSON serialization. Both comments point to the same bug with the same consequences."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "from_dict() does no type conversion, so a round-tripped queued arrives as a string instead of datetime"
+      },
+      {
+        "candidate": "The abstract sync_assignee_outbound signature was not updated to accept assignment_source parameter, but the task calls it with that argument - concrete implementations without **kwargs or assignment_source parameter will raise TypeError"
+      },
+      {
+        "candidate": "sync_status_outbound was changed to accept assignment_source but nothing in the diff passes that parameter to it, suggesting wrong method was modified"
+      },
+      {
+        "candidate": "When assignment_source_dict fails to parse, from_dict returns None with no logging, causing should_sync to treat the assignment as having no source and potentially recreating the sync cycle the PR is meant to prevent"
+      },
+      {
+        "candidate": "Subclass overrides of should_sync with the old one-argument signature will raise TypeError since the task now calls it with a second positional argument"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The method name has a typo: test_from_dict_inalid_data should be test_from_dict_invalid_data.",
+        "severity": "Low",
+        "category": "style"
+      },
+      {
+        "golden_comment": "Method name says 'empty_array' but tests empty dict - consider renaming to 'test_from_dict_empty_dict' for clarity.",
+        "severity": "Low",
+        "category": "style"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 7,
+    "total_golden": 4,
+    "tp": 2,
+    "fp": 5,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.2857142857142857,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "getsentry/sentry",
+    "pr_url": "https://github.com/getsentry/sentry/pull/77754"
+  },
+  "judgeUsage": {
+    "calls": 30,
+    "inputTokens": 8732,
+    "outputTokens": 2935,
+    "costUsd": 0.11703499999999999
+  }
+}

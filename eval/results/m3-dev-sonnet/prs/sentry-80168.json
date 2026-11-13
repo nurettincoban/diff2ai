@@ -1,0 +1,108 @@
+{
+  "id": "sentry-80168",
+  "goldenUrl": "https://github.com/getsentry/sentry/pull/80168",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Abstract hook added to StatefulDetectorHandler breaks MetricAlertDetectorHandler instantiation",
+      "affected": [
+        "src/sentry/incidents/grouptype.py:11-12",
+        "src/sentry/workflow_engine/processors/detector.py:166-170"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Duplicate group-key detection removed and the new dict can silently overwrite results",
+      "affected": [
+        "src/sentry/workflow_engine/processors/detector.py:56-65",
+        "src/sentry/workflow_engine/processors/detector.py:237-244"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "PriorityLevel conversion may raise for DetectorPriorityLevel values with no PriorityLevel counterpart",
+      "affected": [
+        "src/sentry/workflow_engine/processors/detector.py:295-301"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 3,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgypjYfhVmshXYaaQWc63",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 14143,
+      "outputTokens": 915,
+      "ms": 7032
+    }
+  ],
+  "costUsd": 0.037436,
+  "durationMs": 8035,
+  "promptSha256": "fc7bc0d70e065a6923b92b79add315ef254d6c297a7509748495ea2cb6521069",
+  "promptChars": 35315,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Abstract hook added to StatefulDetectorHandler breaks MetricAlertDetectorHandler instantiation\n\nAffected:\n- src/sentry/incidents/grouptype.py:11-12\n- src/sentry/workflow_engine/processors/detector.py:166-170\n\nExplanation:\n`build_occurrence_and_event_data` is now abstract. `MetricAlertDetectorHandler` subclasses `StatefulDetectorHandler` with `pass`. It therefore leaves the new hook, and the existing `get_dedupe_value`, `get_group_key_values` and `counter_names`, unimplemented. Instantiating it raises `TypeError`. This happens whenever `Detector.detector_handler` resolves to this handler. The old stub at least returned `[]`, so this is a regression for any metric alert detector that reaches processing. The class is only a placeholder.\n\nProposed fix:\n~~~python\nclass MetricAlertDetectorHandler(DetectorHandler[QuerySubscriptionUpdate]):\n    def evaluate(self, data_packet):\n        return {}\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Duplicate group-key detection removed and the new dict can silently overwrite results\n\nAffected:\n- src/sentry/workflow_engine/processors/detector.py:56-65\n- src/sentry/workflow_engine/processors/detector.py:237-244\n\nExplanation:\nThe old duplicate check and error log are gone. Results are keyed by `result.group_key`, but the loop iterates `group_values.items()`. A handler's `evaluate_group_key_value` could return a result whose `group_key` differs from the iterated key. In that case one result would silently overwrite another. Using the loop's `group_key` as the dict key removes that mismatch.\n\nProposed fix:\n~~~python\nresults[group_key] = result\n~~~\n\n## 3) Severity: LOW | Type: Bug\nTitle: PriorityLevel conversion may raise for DetectorPriorityLevel values with no PriorityLevel counterpart\n\nAffected:\n- src/sentry/workflow_engine/processors/detector.py:295-301\n\nExplanation:\n`PriorityLevel(new_status)` assumes every non-OK `DetectorPriorityLevel` value maps to a `PriorityLevel`. If the enums diverge, a `ValueError` aborts evaluation for the whole packet. This risk depends on code outside the diff. Validate the mapping or add a test covering every level.\n\nProposed fix:\n~~~python\n# Add an explicit mapping, or a test asserting all non-OK DetectorPriorityLevel values convert.\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "MetricAlertDetectorHandler inherits from StatefulDetectorHandler but only contains pass, failing to implement its required abstract methods: counter_names (property), get_dedupe_value(), get_group_key_values(), and build_occurrence_and_event_data(). This will cause a TypeError at runtime when the class is instantiated.",
+        "severity": "High",
+        "category": "api",
+        "matched_candidate": "Abstract hook build_occurrence_and_event_data added to StatefulDetectorHandler breaks MetricAlertDetectorHandler instantiation because it leaves the new hook and existing abstract methods unimplemented, causing TypeError when instantiated",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same core problem: MetricAlertDetectorHandler will cause a TypeError at runtime because it doesn't implement the required abstract methods from StatefulDetectorHandler. The candidate specifically mentions build_occurrence_and_event_data and 'existing abstract methods' being unimplemented, which aligns with the golden comment's concern about counter_names, get_dedupe_value(), get_group_key_values(), and build_occurrence_and_event_data() not being implemented. Both identify the same bug - MetricAlertDetectorHandler only contains 'pass' and fails to implement required abstract methods, causing TypeError at instantiation."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Duplicate group-key detection was removed and the new dict can silently overwrite results when a handler's evaluate_group_key_value returns a result whose group_key differs from the iterated key"
+      },
+      {
+        "candidate": "PriorityLevel conversion may raise ValueError for DetectorPriorityLevel values with no PriorityLevel counterpart if the enums diverge, aborting evaluation for the whole packet"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Docstring says this returns a list of DetectorEvaluationResult, but the method now returns a dict keyed by DetectorGroupKey. Consider updating the docstring to match the new return type.",
+        "severity": "Low",
+        "category": "doc_defect"
+      },
+      {
+        "golden_comment": "Wrong value `6` passed for `group_2` occurrence — the data packet specifies `\"group_2\": 10`. Should be `10` to accurately reflect the test scenario, which will ensure the test produces the correct occurrence data.",
+        "severity": "Medium",
+        "category": "test_gap"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 3,
+    "total_golden": 3,
+    "tp": 1,
+    "fp": 2,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.3333333333333333,
+    "recall": 0.3333333333333333,
+    "tool": "diff2ai",
+    "repo_name": "getsentry/sentry",
+    "pr_url": "https://github.com/getsentry/sentry/pull/80168"
+  },
+  "judgeUsage": {
+    "calls": 11,
+    "inputTokens": 3638,
+    "outputTokens": 1090,
+    "costUsd": 0.045439999999999994
+  }
+}

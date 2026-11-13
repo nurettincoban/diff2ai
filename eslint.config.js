@@ -5,7 +5,7 @@ import globals from 'globals';
 
 export default [
   // Ignore build output
-  { ignores: ['dist/**'] },
+  { ignores: ['dist/**', 'eval/.cache/**'] },
   js.configs.recommended,
   // Plain JS (e.g. test fixtures) runs on Node
   {

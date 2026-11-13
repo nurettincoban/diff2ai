@@ -1,0 +1,184 @@
+{
+  "id": "keycloak-greptile-1",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "type": "Bug",
+      "title": "Fix compile error: `isConditionalPasskeysEnabled()` is called without its required argument",
+      "affected": [
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernameForm.java:47-47",
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:160-162"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Fix inverted user check that disables conditional passkeys on normal login",
+      "affected": [
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:160-162",
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:113-117",
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:137-140"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Security",
+      "title": "Verify a passkey used during re-authentication belongs to the already-identified user",
+      "affected": [
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/WebAuthnConditionalUIAuthenticator.java:64-67",
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/WebAuthnAuthenticator.java:101-101"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Avoid forcing the username form on re-authentication for users without passkeys",
+      "affected": [
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernameForm.java:47-52"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Replace the fragile try/catch element-absence check with `assertThrows`",
+      "affected": [
+        "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java:291-296",
+        "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java:312-317"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Add `@Override` to the `shouldShowWebAuthnAuthenticators` override",
+      "affected": [
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/WebAuthnConditionalUIAuthenticator.java:64-67"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Avoid util class depending on a browser authenticator constant",
+      "affected": [
+        "services/src/main/java/org/keycloak/authentication/authenticators/util/AuthenticatorUtils.java:35-35",
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/AbstractUsernameFormAuthenticator.java:58-58"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 7,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyq6EoFvri6uWaS2dXTW",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 18008,
+      "outputTokens": 2287,
+      "ms": 20538
+    },
+    {
+      "id": "msg_011Cgyq6E6acXXPw6MduBh8s",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 18007,
+      "outputTokens": 3992,
+      "ms": 36339
+    },
+    {
+      "id": "msg_011Cgyq6ENTHXixy9BMryfuB",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 18000,
+      "outputTokens": 4223,
+      "ms": 36620
+    },
+    {
+      "id": "msg_011Cgyq8xU52C3qPXE51YYLc",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 23306,
+      "outputTokens": 4059,
+      "ms": 32187
+    }
+  ],
+  "costUsd": 0.6005039999999999,
+  "durationMs": 70821,
+  "promptSha256": "4b890c180494339f221539e429ff18e85b91e42d1562d4cae81bf8da6e04a861",
+  "promptChars": 42076,
+  "response": "## 1) Severity: CRITICAL | Type: Bug\nConsensus: 3/3 reviewers\nTitle: Fix compile error: `isConditionalPasskeysEnabled()` is called without its required argument\n\nAffected:\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernameForm.java:47-47\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:160-162\n\nExplanation:\n`UsernameForm` extends `UsernamePasswordForm`. The only overload this diff adds is `isConditionalPasskeysEnabled(UserModel user)`. `UsernameForm.authenticate` calls `isConditionalPasskeysEnabled()` with no arguments, and the diff shows no zero-argument overload. The `services` module will therefore not compile.\n\nPassing `context.getUser()` makes it compile. However, the method is also logically wrong (see issue 2), so fix both together.\n\nProposed fix:\n~~~java\n// UsernameForm\nif (context.getUser() != null && !isConditionalPasskeysEnabled(context.getUser())) {\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nConsensus: 3/3 reviewers\nTitle: Fix inverted user check that disables conditional passkeys on normal login\n\nAffected:\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:160-162\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:113-117\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:137-140\n\nExplanation:\n`isConditionalPasskeysEnabled` returns `... && user != null`. The previous code filled WebAuthn conditional-UI data exactly when no user was selected yet (`context.getUser() == null`), which is the normal first-factor login. The new helper inverts that condition, with two effects:\n\n- **First login breaks.** On a fresh login, `fillContextForm` is never called in `authenticate()` or `challenge()`. No passkey challenge or `webauth` form is rendered, so the primary passkey login path stops working. This also contradicts the new tests, which assert `//form[@id='webauth']` is present on the initial `openLoginForm()` page.\n- **Re-authentication over-shows passkeys.** Passkey UI is shown for every identified user, including users with no passkey credential.\n\nThe condition should be true when no user is identified yet. When a user is already set, it should be true only if that user actually has a passkey credential configured.\n\nProposed fix:\n~~~java\nprotected boolean isConditionalPasskeysEnabled(UserModel user) {\n    return webauthnAuth != null && webauthnAuth.isPasskeysEnabled()\n            && (user == null || user.credentialManager().isConfiguredFor(webauthnAuth.getCredentialType()));\n}\n~~~\n\n## 3) Severity: MEDIUM | Type: Security\nConsensus: 2/3 reviewers\nTitle: Verify a passkey used during re-authentication belongs to the already-identified user\n\nAffected:\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/WebAuthnConditionalUIAuthenticator.java:64-67\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/WebAuthnAuthenticator.java:101-101\n\nExplanation:\n`WebAuthnConditionalUIAuthenticator.shouldShowWebAuthnAuthenticators` now always returns `false`. During re-authentication (for example `prompt=login`), `context.getUser()` is already set. Even so, the challenge is issued without `allowCredentials` and with `isUserIdentified=false`. The browser can therefore present any discoverable credential for the RP, including one belonging to a different user.\n\nIf the action path resolves the user from the `userHandle` without comparing it to the existing `context.getUser()`, re-authentication could switch the session to another account. That logic is outside this diff, so it cannot be confirmed here.\n\nTo address this:\n- Verify that `action()` rejects a mismatching user, or add that check.\n- Add a test that attempts re-authentication with another user's passkey.\n\nProposed fix:\n~~~java\n// in WebAuthn action handling, after resolving user from userHandle\nUserModel existing = context.getUser();\nif (existing != null && !existing.getId().equals(resolvedUser.getId())) {\n    context.getEvent().user(existing).error(Errors.DIFFERENT_USER_AUTHENTICATING);\n    context.failure(AuthenticationFlowError.USER_CONFLICT);\n    return;\n}\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nConsensus: 1/3 reviewers\nTitle: Avoid forcing the username form on re-authentication for users without passkeys\n\nAffected:\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernameForm.java:47-52\n\nExplanation:\n`UsernameForm` now skips the form only when `isConditionalPasskeysEnabled` is false. If that helper returns true for any identified user whenever realm passkeys are enabled, every re-authenticating user gets the username form. That includes users with no passkey, who previously skipped it via `context.success()`.\n\nLimiting the helper to users who actually have a passkey credential (issue 2) restricts this behavior change to users who can use the form.\n\nProposed fix:\n~~~java\n// with isConditionalPasskeysEnabled fixed as in issue 2\nif (context.getUser() != null && !isConditionalPasskeysEnabled(context.getUser())) {\n~~~\n\n## 5) Severity: LOW | Type: Test\nConsensus: 2/3 reviewers\nTitle: Replace the fragile try/catch element-absence check with `assertThrows`\n\nAffected:\n- testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java:291-296\n- testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java:312-317\n\nExplanation:\n`try { assertThat(findElement(...), nullValue()); fail(); } catch (Exception e) {}` treats any unrelated exception as \"element absent\". That includes stale elements, timeouts and other WebDriver errors, so the test can pass for the wrong reason. Sibling tests already use `Assert.assertThrows(NoSuchElementException.class, ...)`, which is more precise.\n\nProposed fix:\n~~~java\n// import org.openqa.selenium.NoSuchElementException;\nAssert.assertThrows(NoSuchElementException.class,\n        () -> driver.findElement(By.xpath(\"//form[@id='webauth']\")));\n~~~\n\n## 6) Severity: LOW | Type: Maintainability\nConsensus: 1/3 reviewers\nTitle: Add `@Override` to the `shouldShowWebAuthnAuthenticators` override\n\nAffected:\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/WebAuthnConditionalUIAuthenticator.java:64-67\n\nExplanation:\nThis method overrides `WebAuthnAuthenticator.shouldShowWebAuthnAuthenticators` but has no `@Override` annotation. If the parent method is later renamed or its signature changes, this method would silently stop overriding it. The security-relevant behavior (not listing authenticators) would then change without any compile error.\n\nProposed fix:\n~~~java\n@Override\nprotected boolean shouldShowWebAuthnAuthenticators(AuthenticationFlowContext context) {\n    return false;\n}\n~~~\n\n## 7) Severity: LOW | Type: Maintainability\nConsensus: 1/3 reviewers\nTitle: Avoid util class depending on a browser authenticator constant\n\nAffected:\n- services/src/main/java/org/keycloak/authentication/authenticators/util/AuthenticatorUtils.java:35-35\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/AbstractUsernameFormAuthenticator.java:58-58\n\nExplanation:\n`USER_SET_BEFORE_USERNAME_PASSWORD_AUTH` was widened from `protected` to `public` only so that `AuthenticatorUtils` can import it. This makes the generic `util` package depend on `browser`, which already depends on `util`, creating a package cycle. Move the constant into `AuthenticatorUtils` (or a constants class) and reference it from the authenticator.\n\nProposed fix:\n~~~java\n// AuthenticatorUtils\npublic static final String USER_SET_BEFORE_USERNAME_PASSWORD_AUTH = \"USER_SET_BEFORE_USERNAME_PASSWORD_AUTH\";\n\n// AbstractUsernameFormAuthenticator\nprotected static final String USER_SET_BEFORE_USERNAME_PASSWORD_AUTH = AuthenticatorUtils.USER_SET_BEFORE_USERNAME_PASSWORD_AUTH;\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "bc61525ca1ff1073617ac60c0157a17ec949d2133b3304a06fa8dfe1f30cb778",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "In UsernameForm.authenticate(), isConditionalPasskeysEnabled() is called without passing the required UserModel parameter.",
+        "severity": "Medium",
+        "category": "api",
+        "matched_candidate": "Compile error: isConditionalPasskeysEnabled() is called without its required argument in UsernameForm.authenticate - need to pass context.getUser()",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: isConditionalPasskeysEnabled() is being called without passing the required UserModel parameter in UsernameForm.authenticate(). The candidate even suggests the fix (passing context.getUser()), which aligns with the missing parameter issue. Both comments point to the same bug - a method call missing its required argument."
+      },
+      {
+        "golden_comment": "With isConditionalPasskeysEnabled(UserModel user) requiring user != null, authenticate(...) will not call webauthnAuth.fillContextForm(context) on the initial login page where context.getUser() is still null, so conditional passkey UI will not be set up for first-time passkey login. Consider whether this should also be enabled when no user has been selected yet so ID-less passkey authentication on the initial login form continues to work.",
+        "severity": "Medium",
+        "category": "speculative",
+        "matched_candidate": "Inverted user check in isConditionalPasskeysEnabled disables conditional passkeys on normal login - returns true when user != null but should be true when no user is identified yet, breaking first login and over-showing passkeys during re-authentication",
+        "confidence": 0.92,
+        "reasoning": "Both comments identify the same core issue: the isConditionalPasskeysEnabled method's user != null check prevents conditional passkeys from working on the initial login page where no user has been selected yet. The golden comment explains that authenticate() won't call webauthnAuth.fillContextForm(context) when context.getUser() is null, breaking ID-less passkey authentication. The candidate issue identifies the same problem - that the inverted user check 'disables conditional passkeys on normal login' and 'breaking first login'. Both point to the same bug where the condition should allow conditional passkeys when no user is identified yet."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Security issue: passkey used during re-authentication may belong to a different user than the already-identified user - need to verify userHandle matches context.getUser() to prevent session switching"
+      },
+      {
+        "candidate": "Users without passkeys are forced to see the username form on re-authentication when realm passkeys are enabled, instead of skipping via context.success()"
+      },
+      {
+        "candidate": "Fragile try/catch element-absence check in test treats any exception as 'element absent' - should use Assert.assertThrows(NoSuchElementException.class, ...) instead"
+      },
+      {
+        "candidate": "Missing @Override annotation on shouldShowWebAuthnAuthenticators override - method could silently stop overriding if parent signature changes"
+      },
+      {
+        "candidate": "Package cycle: AuthenticatorUtils in util package depends on USER_SET_BEFORE_USERNAME_PASSWORD_AUTH constant from browser package - constant should be moved to AuthenticatorUtils or a constants class"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 7,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 5,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.2857142857142857,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/keycloak-greptile",
+    "pr_url": "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1"
+  },
+  "judgeUsage": {
+    "calls": 16,
+    "inputTokens": 6280,
+    "outputTokens": 1959,
+    "costUsd": 0.080375
+  }
+}

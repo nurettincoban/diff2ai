@@ -1,0 +1,125 @@
+{
+  "id": "grafana-94942",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/94942",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Maintainability",
+      "title": "Replace inverted, always-false feature-flag helper with an explicit disable",
+      "affected": [
+        "pkg/expr/reader.go:194-200",
+        "pkg/expr/reader.go:129-132"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Implementation",
+      "title": "Return a typed, user-meaningful error when a SQL expression is rejected",
+      "affected": [
+        "pkg/expr/reader.go:131"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Fail fast in the SQL code paths instead of running dead DuckDB logic",
+      "affected": [
+        "pkg/expr/sql/parser.go:22-26",
+        "pkg/expr/sql_command.go:96-100"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Document or unexport the stub `DB` type",
+      "affected": [
+        "pkg/expr/sql/db.go:9-26"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoRXvC1XNpbAxQihtVx",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 14563,
+      "outputTokens": 2799,
+      "ms": 26629
+    }
+  ],
+  "costUsd": 0.114232,
+  "durationMs": 27647,
+  "promptSha256": "f642e75029558a9877737f5f285165671cf0efb1e84e874f890c339918b3e681",
+  "promptChars": 22477,
+  "response": "## 1) Severity: MEDIUM | Type: Maintainability\nTitle: Replace inverted, always-false feature-flag helper with an explicit disable\n\nAffected:\n- pkg/expr/reader.go:194-200\n- pkg/expr/reader.go:129-132\n\nExplanation:\n`enableSqlExpressions` computes `enabled := !IsEnabledGlobally(FlagSqlExpressions)` and then returns `false` on both branches.\n\n- **It always returns false.** The flag check has no effect, but the code reads as if the flag controls the behavior. The variable named `enabled` actually holds \"flag is disabled\", which makes this harder to follow.\n- **Turning the flag on does nothing.** A future maintainer may expect enabling it to restore the feature and get a confusing \"not implemented\" error instead.\n- **It can still panic.** The helper dereferences `h.features`. If any `ExpressionQueryReader` is built with a nil `features`, this crashes even though the result is ignored. I can't see the constructor, so this part is unverified.\n\nIf the intent is to hard-disable SQL expressions, say so plainly and drop the dead flag lookup. If the intent is flag gating, return the flag value.\n\nProposed fix:\n~~~go\ncase QueryTypeSQL:\n\t// SQL expressions are temporarily disabled: the DuckDB backend was removed.\n\treturn eq, errutil.NotImplemented(\"sse.sqlExpressionsDisabled\").Errorf(\"SQL expressions are currently disabled\")\n~~~\nOr, for real flag gating:\n~~~go\nfunc sqlExpressionsEnabled(h *ExpressionQueryReader) bool {\n\treturn h.features != nil && h.features.IsEnabledGlobally(featuremgmt.FlagSqlExpressions)\n}\n~~~\n\n## 2) Severity: LOW | Type: Implementation\nTitle: Return a typed, user-meaningful error when a SQL expression is rejected\n\nAffected:\n- pkg/expr/reader.go:131\n\nExplanation:\nA plain `fmt.Errorf(\"sqlExpressions is not implemented\")` will most likely surface to API clients as a generic or internal error rather than a 4xx/501. The message is also misleading: the feature was implemented and is now disabled. The surrounding package already uses `errutil` for structured errors, so use a typed error with a clear message.\n\nProposed fix:\n~~~go\nreturn eq, errutil.NotImplemented(\"sse.sqlExpressionsDisabled\").Errorf(\"SQL expressions are not supported in this build\")\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Fail fast in the SQL code paths instead of running dead DuckDB logic\n\nAffected:\n- pkg/expr/sql/parser.go:22-26\n- pkg/expr/sql_command.go:96-100\n\nExplanation:\n`TablesList` still escapes quotes and builds a DuckDB-specific `SELECT json_serialize_sql(...)` command, then passes it to a stub `RunCommands` that always errors. The local variable is still named `duckDB`. `SQLCommand.Execute` likewise calls a stub that always fails.\n\nThe reader blocks `QueryTypeSQL`, but SQL commands may also be built through other paths, such as legacy graph building through `UnmarshalSQLCommand` / `NewSQLCommand`. I can't see those paths in this diff. If they exist, they now fail at runtime with only a generic \"not implemented\" message.\n\nExisting tests for `TablesList` and SQL commands, such as `parser_test.go` and `sql_command_test.go`, will probably start failing unless they are skipped. They are not touched in this change; please verify against the repository.\n\nMake the disabled state explicit at these entry points, and skip or update the affected tests.\n\nProposed fix:\n~~~go\n// TablesList returns a list of tables for the sql statement\nfunc TablesList(rawSQL string) ([]string, error) {\n\treturn nil, errors.New(\"sql expressions are disabled: no SQL engine available\")\n}\n~~~\nThen add `t.Skip(\"sql expressions disabled\")` to the dependent tests.\n\n## 4) Severity: LOW | Type: Maintainability\nTitle: Document or unexport the stub `DB` type\n\nAffected:\n- pkg/expr/sql/db.go:9-26\n\nExplanation:\nThe new exported `DB` type and `NewInMemoryDB()` look like a working in-memory database API, but every method returns `errors.New(\"not implemented\")`. Callers have no way to detect that this is a placeholder, and the name suggests real functionality.\n\nAdd a doc comment explaining that it is a placeholder for the removed DuckDB engine. Also export a sentinel error such as `ErrNotImplemented`, so callers can test for it with `errors.Is` instead of comparing strings.\n\nProposed fix:\n~~~go\n// ErrNotImplemented is returned while SQL expressions have no backing engine.\nvar ErrNotImplemented = errors.New(\"sql expressions: engine not implemented\")\n\n// DB is a placeholder for the removed DuckDB engine. All methods return ErrNotImplemented.\ntype DB struct{}\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The enableSqlExpressions function has flawed logic that always returns false, effectively disabling SQL expressions unconditionally:",
+        "severity": "Critical",
+        "category": "bug",
+        "matched_candidate": "enableSqlExpressions helper always returns false regardless of flag state - the inverted flag check has no effect and the variable named 'enabled' actually holds 'flag is disabled'",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - that the enableSqlExpressions function always returns false regardless of the flag state. The candidate correctly notes that the inverted flag check has no effect and the logic is flawed, which matches the golden comment's description of 'flawed logic that always returns false, effectively disabling SQL expressions unconditionally.'"
+      },
+      {
+        "golden_comment": "The DB methods NewInMemoryDB().RunCommands, DB.QueryFramesInto, and DB.TablesList in pkg/expr/sql/db.go return hardcoded 'not implemented' errors after removing the go-duck dependency.",
+        "severity": "High",
+        "category": "api",
+        "matched_candidate": "TablesList still builds DuckDB-specific SQL commands and passes them to a stub RunCommands that always errors - dead code is still being executed",
+        "confidence": 0.9,
+        "reasoning": "The candidate issue identifies that TablesList uses RunCommands which always errors (stub/not implemented). This matches the golden comment which states that DB methods including RunCommands and TablesList return hardcoded 'not implemented' errors. Both are pointing to the same underlying issue - these methods are non-functional stubs that return errors after the go-duck dependency was removed."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "enableSqlExpressions helper can panic if h.features is nil when dereferencing, even though the result is ignored"
+      },
+      {
+        "candidate": "Plain fmt.Errorf error for SQL expression rejection will surface as generic/internal error rather than 4xx/501, and message is misleading since feature was implemented and is now disabled"
+      },
+      {
+        "candidate": "SQL commands may be built through other paths like UnmarshalSQLCommand/NewSQLCommand that now fail at runtime with only generic 'not implemented' message"
+      },
+      {
+        "candidate": "Existing tests for TablesList and SQL commands in parser_test.go and sql_command_test.go will likely fail but are not touched in this change"
+      },
+      {
+        "candidate": "New exported DB type and NewInMemoryDB() look like working in-memory database API but every method returns 'not implemented' error - callers have no way to detect this is a placeholder"
+      },
+      {
+        "candidate": "No sentinel error exported for the stub DB type, forcing callers to compare strings instead of using errors.Is"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 9,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 6,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.2222222222222222,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/94942"
+  },
+  "judgeUsage": {
+    "calls": 28,
+    "inputTokens": 6166,
+    "outputTokens": 2618,
+    "costUsd": 0.09627999999999999
+  }
+}

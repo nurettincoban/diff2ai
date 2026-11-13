@@ -1,0 +1,149 @@
+{
+  "id": "sentry-greptile-3",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/3",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Treat missing `sample_weight` as 1 in `upsampled_count()`",
+      "affected": [
+        "src/sentry/search/events/datasets/discover.py:1041-1052"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Stop using a substring match to detect error-only queries",
+      "affected": [
+        "src/sentry/api/helpers/error_upsampling.py:130-140"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Performance",
+      "title": "Remove the eligibility cache that adds overhead and cannot be invalidated",
+      "affected": [
+        "src/sentry/api/helpers/error_upsampling.py:13-40",
+        "src/sentry/api/helpers/error_upsampling.py:43-54",
+        "src/sentry/api/helpers/error_upsampling.py:67-74"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Maintainability",
+      "title": "Remove the accidentally committed `sentry-repo` submodule",
+      "affected": [
+        "sentry-repo:1"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Check whether renaming `count()` breaks top-events result keys",
+      "affected": [
+        "src/sentry/api/endpoints/organization_events_stats.py:229-257"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Add tests for the cached eligibility path and clear the cache between tests",
+      "affected": [
+        "tests/sentry/api/helpers/test_error_upsampling.py:1-101",
+        "tests/snuba/api/endpoints/test_organization_events_stats.py:3604-3722"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 6,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoB3vYrnof3JeFTmHm9",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 12499,
+      "outputTokens": 3435,
+      "ms": 31591
+    }
+  ],
+  "costUsd": 0.118696,
+  "durationMs": 32595,
+  "promptSha256": "404e8a5995865415edabb6437fe9797e562c3ee45fd99be1342b6098874dc62d",
+  "promptChars": 32301,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Treat missing `sample_weight` as 1 in `upsampled_count()`\n\nAffected:\n- src/sentry/search/events/datasets/discover.py:1041-1052\n\nExplanation:\n`sum(sample_weight)` skips NULL rows. Any event without a sample weight contributes 0 to the count. This includes:\n- events stored before the project was allowlisted;\n- events sent by SDKs that don't set `error_sampling.client_sample_rate`;\n- non-error rows that reach this function (see issue 2).\n\nOnce a project is allowlisted, its error counts will silently drop, possibly to 0. The commit message says the null check was removed \"per schema requirements\". The diff shows nothing that enforces this: `sample_weight` is nullable, and the factory helper only sets `sample_rate` when the context exists. `toInt64` also truncates fractional sums, though that matters less.\n\nProposed fix:\n~~~python\nsnql_aggregate=lambda args, alias: Function(\n    \"toInt64\",\n    [Function(\"sum\", [Function(\"ifNull\", [Column(\"sample_weight\"), 1])])],\n    alias,\n),\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Stop using a substring match to detect error-only queries\n\nAffected:\n- src/sentry/api/helpers/error_upsampling.py:130-140\n\nExplanation:\n`\"event.type:error\" in query` also matches:\n- `!event.type:error` (an explicit negation);\n- `event.type:error OR event.type:transaction`.\n\nIt also misses equivalent forms such as `event.type:[error]`. For the discover dataset, this applies upsampling to queries that include transactions. Combined with issue 1, those rows contribute 0, so counts are wrong. Parse the query with the event search parser instead. At minimum, require a positive, non-OR `event.type:error` filter.\n\nProposed fix:\n~~~python\nfrom sentry.api.event_search import parse_search_query, SearchFilter\n\ndef _is_error_focused_query(request: Request) -> bool:\n    query = request.GET.get(\"query\", \"\")\n    try:\n        terms = parse_search_query(query)\n    except Exception:\n        return False\n    if any(isinstance(t, str) and t.upper() == \"OR\" for t in terms):\n        return False\n    return any(\n        isinstance(t, SearchFilter)\n        and t.key.name == \"event.type\"\n        and t.operator == \"=\"\n        and t.value.value == \"error\"\n        for t in terms\n    )\n~~~\n\n## 3) Severity: MEDIUM | Type: Performance\nTitle: Remove the eligibility cache that adds overhead and cannot be invalidated\n\nAffected:\n- src/sentry/api/helpers/error_upsampling.py:13-40\n- src/sentry/api/helpers/error_upsampling.py:43-54\n- src/sentry/api/helpers/error_upsampling.py:67-74\n\nExplanation:\n`options.get` is already served from an in-process cache. The new code replaces it with a shared-cache GET (and a SET on a miss) on every events-stats request.\n\n- **Slower, not faster:** the lookup runs before the cheap dataset check, so it also hits transactions and spans queries that can never be upsampled.\n- **Invalidation never happens:** the key is per organization and per exact project-ID set. `invalidate_upsampling_cache` cannot enumerate all keys when the allowlist changes, and nothing in the diff calls it. Allowlist removals therefore stay stale for up to 60s.\n- **Misleading docs:** the docstring at 50-53 says the allowlist is read \"fresh each time\", which contradicts the cache in front of it.\n\nEither drop the cache, or check the dataset first and include an allowlist version in the key.\n\nProposed fix:\n~~~python\ndef is_errors_query_for_error_upsampled_projects(snuba_params, organization, dataset, request) -> bool:\n    if not _should_apply_sample_weight_transform(dataset, request):\n        return False\n    return _are_all_projects_error_upsampled(snuba_params.project_ids, organization)\n# and delete invalidate_upsampling_cache\n~~~\n\n## 4) Severity: MEDIUM | Type: Maintainability\nTitle: Remove the accidentally committed `sentry-repo` submodule\n\nAffected:\n- sentry-repo:1\n\nExplanation:\nThe change adds a gitlink (mode 160000) with no matching `.gitmodules` entry. This looks like a stray nested checkout. It breaks `git submodule` operations and can confuse tooling and CI. Remove it from the index.\n\nProposed fix:\n~~~bash\ngit rm --cached sentry-repo\necho \"sentry-repo/\" >> .git/info/exclude\n~~~\n\n## 5) Severity: LOW | Type: Bug\nTitle: Check whether renaming `count()` breaks top-events result keys\n\nAffected:\n- src/sentry/api/endpoints/organization_events_stats.py:229-257\n\nExplanation:\nFor top events, only the timeseries columns become `upsampled_count() as count`. `selected_columns` and `orderby` still reference `count()`. The ranking query and the timeseries query then use different aggregates, and results may be keyed under a different column name than the one the response serializer looks up via `query_columns`. This depends on code outside the diff, and no test covers `topEvents` with upsampling. Add a test, or transform the field list and orderby consistently.\n\nProposed fix:\n~~~python\n# add a test exercising topEvents=N with yAxis=count() and allowlisted projects,\n# asserting the ranking and the returned series keys/values\n~~~\n\n## 6) Severity: LOW | Type: Test\nTitle: Add tests for the cached eligibility path and clear the cache between tests\n\nAffected:\n- tests/sentry/api/helpers/test_error_upsampling.py:1-101\n- tests/snuba/api/endpoints/test_organization_events_stats.py:3604-3722\n\nExplanation:\n`is_errors_query_for_error_upsampled_projects` (the cache logic) is never tested directly. The endpoint tests mock `options` but leave the 60s cache in place. A cached eligibility value from one test could leak into another if the cache backend persists across tests and the same project set is reused, which would make tests order-dependent. Clear the cache in `setUp`, and add tests for the dataset/query gating together with the cache.\n\nProposed fix:\n~~~python\ndef setUp(self):\n    super().setUp()\n    from sentry.utils.cache import cache\n    cache.clear()\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [],
+    "false_positives": [
+      {
+        "candidate": "sum(sample_weight) skips NULL rows, causing events without sample_weight to contribute 0 to the count, which will silently drop error counts when projects are allowlisted"
+      },
+      {
+        "candidate": "Using substring match 'event.type:error in query' incorrectly matches negations like '!event.type:error' and OR conditions, and misses equivalent forms like 'event.type:[error]', causing upsampling to be applied incorrectly to queries that include transactions"
+      },
+      {
+        "candidate": "Eligibility cache adds overhead by running before the dataset check, hitting transactions and spans queries that can never be upsampled"
+      },
+      {
+        "candidate": "Cache invalidation never happens because invalidate_upsampling_cache cannot enumerate all keys when the allowlist changes, causing stale values for up to 60s"
+      },
+      {
+        "candidate": "Docstring claims allowlist is read 'fresh each time' but contradicts the cache implementation in front of it"
+      },
+      {
+        "candidate": "Accidentally committed sentry-repo submodule (gitlink mode 160000) with no matching .gitmodules entry breaks git submodule operations and confuses tooling/CI"
+      },
+      {
+        "candidate": "Renaming count() to upsampled_count() may break top-events result keys because selected_columns and orderby still reference count(), causing ranking query and timeseries query to use different aggregates"
+      },
+      {
+        "candidate": "is_errors_query_for_error_upsampled_projects cache logic is never tested directly and cached values could leak between tests if cache persists, making tests order-dependent"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "In _set_sample_rate_from_error_sampling(), the check `if client_sample_rate:` treats 0.0 as falsy, so a sample_rate of 0.0 is silently skipped and never set on normalized_data.",
+        "severity": "Low",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "Using Python’s built-in hash() to build cache keys is non-deterministic across processes (hash randomization), so keys won’t match across workers and invalidate_upsampling_cache may fail to delete them. Use a deterministic serialization of project_ids for the cache key.",
+        "severity": "Low",
+        "category": "data"
+      },
+      {
+        "golden_comment": "The upsampling eligibility check passes the outer dataset instead of the actual dataset used by scoped_dataset. In paths where the query ultimately runs against discover (e.g., dashboard split) while the original dataset is metrics, upsampling may be skipped even when all projects are allowlisted.",
+        "severity": "Medium",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 8,
+    "total_golden": 3,
+    "tp": 0,
+    "fp": 8,
+    "fn": 3,
+    "errors_count": 0,
+    "precision": 0,
+    "recall": 0,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/sentry-greptile",
+    "pr_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/3"
+  },
+  "judgeUsage": {
+    "calls": 32,
+    "inputTokens": 8609,
+    "outputTokens": 3108,
+    "costUsd": 0.12074499999999999
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "id": "grafana-76186",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/76186",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Logger wrapper's FromContext drops the contextual attributes when the type assertion fails",
+      "affected": [
+        "pkg/plugins/log/logger.go:48-56"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "TestLogger.FromContext returns a fresh logger, so tests can't observe log calls",
+      "affected": [
+        "pkg/plugins/log/fake.go:46-48"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "The contextual logger middleware is order-dependent, and the unexported `instrumentContext` name is misleading",
+      "affected": [
+        "pkg/services/pluginsintegration/pluginsintegration.go:156-161",
+        "pkg/services/pluginsintegration/clientmiddleware/contextual_logger_middleware.go:26-37"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 3,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqdCA7w5JswXC8MuFWU",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 12563,
+      "outputTokens": 1020,
+      "ms": 7473
+    }
+  ],
+  "costUsd": 0.035326,
+  "durationMs": 8629,
+  "promptSha256": "24d1d5169d8d671dda92f9315fad2efd6f3466bc333360b4c9c36771335b39f6",
+  "promptChars": 26904,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Logger wrapper's FromContext drops the contextual attributes when the type assertion fails\n\nAffected:\n- pkg/plugins/log/logger.go:48-56\n\nExplanation:\n`FromContext` asserts that `d.l.FromContext(ctx)` is a `*log.ConcreteLogger`. If the result is any other `log.Logger` implementation, the code falls back to `d.New()`. That fallback discards the context attributes (plugin ID, endpoint, datasource, traceID and so on) and silently loses the request-scoped data this PR is meant to add. The `d.l` field type is not visible in the diff, so the assertion may always succeed today. The fallback is still fragile. A more robust approach is to hold or wrap the `log.Logger` interface directly, so no assertion is needed.\n\nProposed fix:\n~~~go\nfunc (d *grafanaInfraLogWrapper) FromContext(ctx context.Context) Logger {\n\treturn &grafanaInfraLogWrapper{l: d.l.FromContext(ctx)} // make field type log.Logger\n}\n~~~\n\n## 2) Severity: LOW | Type: Test\nTitle: TestLogger.FromContext returns a fresh logger, so tests can't observe log calls\n\nAffected:\n- pkg/plugins/log/fake.go:46-48\n\nExplanation:\n`FromContext` returns `NewTestLogger()`, a new instance. Anything logged through it, as `LoggerMiddleware` now does via `m.logger.FromContext(ctx).Info(...)`, is never recorded on the original test logger. Tests that assert on `InfoLogs` for the middleware would silently fail or be impossible to write. Return `f` itself.\n\nProposed fix:\n~~~go\nfunc (f *TestLogger) FromContext(_ context.Context) Logger {\n\treturn f\n}\n~~~\n\n## 3) Severity: LOW | Type: Maintainability\nTitle: The contextual logger middleware is order-dependent, and the unexported `instrumentContext` name is misleading\n\nAffected:\n- pkg/services/pluginsintegration/pluginsintegration.go:156-161\n- pkg/services/pluginsintegration/clientmiddleware/contextual_logger_middleware.go:26-37\n\nExplanation:\n`LoggerMiddleware` now depends on `ContextualLoggerMiddleware` running before it, to get plugin and request attributes. Nothing enforces or documents this. The old \"should live at the top of the stack\" comment was removed. In addition, the stream endpoints (`SubscribeStream`, `PublishStream`, `RunStream`) get no contextual attributes. The helper `instrumentContext` is also left over from the old naming, and the logger name `plugin.instrumentation` is unchanged. Document the ordering requirement and consider renaming the helper.\n\nProposed fix:\n~~~go\n// NewContextualLoggerMiddleware ... must be placed before LoggerMiddleware in the stack.\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The `TestLogger.FromContext` method returns a new `TestLogger` instance via `NewTestLogger()` instead of returning the receiver (f). This causes logs to be recorded on an un-referenced instance, leading to broken test assertions that expect logs to be recorded on the original logger.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "TestLogger.FromContext returns a fresh logger instance instead of itself, so tests can't observe log calls made through the returned logger",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: TestLogger.FromContext returns a new/fresh logger instance instead of returning itself (the receiver), which means tests cannot observe log calls made through the returned logger. Both comments point to the same bug where logs are recorded on an unreferenced instance rather than the original logger."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "LoggerMiddleware depends on ContextualLoggerMiddleware running before it but nothing enforces or documents this ordering requirement"
+      },
+      {
+        "candidate": "Stream endpoints (SubscribeStream, PublishStream, RunStream) don't get contextual attributes"
+      },
+      {
+        "candidate": "The helper function 'instrumentContext' name is misleading and left over from old naming"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The ContextualLoggerMiddleware methods (QueryData, CallResource, CheckHealth, CollectMetrics) panic when a nil request is received. This occurs because they directly access req.PluginContext (via the instrumentContext function) without first checking if req is nil. This is a regression, as previous middleware layers gracefully handled nil requests.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "The traceID is no longer logged for plugin requests. During a refactoring, the tracing import and the logic to extract and add traceID from the context to log parameters were removed from the LoggerMiddleware. The newly introduced ContextualLoggerMiddleware does not add this information, resulting in missing traceID in plugin request logs and impacting debugging and request tracing capabilities.",
+        "severity": "Low",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 5,
+    "total_golden": 3,
+    "tp": 1,
+    "fp": 3,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.2,
+    "recall": 0.3333333333333333,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/76186"
+  },
+  "judgeUsage": {
+    "calls": 17,
+    "inputTokens": 5245,
+    "outputTokens": 1847,
+    "costUsd": 0.07239999999999999
+  }
+}

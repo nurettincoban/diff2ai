@@ -1,0 +1,187 @@
+{
+  "id": "cal.com-22532",
+  "goldenUrl": "https://github.com/calcom/cal.com/pull/22532",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Make the webhook path actually bump `SelectedCalendar.updatedAt`",
+      "affected": [
+        "packages/app-store/googlecalendar/lib/CalendarService.ts:1022-1024",
+        "packages/lib/server/repository/selectedCalendar.ts:400-405"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Throw a TRPCError instead of a generic Error in deleteCache",
+      "affected": [
+        "packages/trpc/server/routers/viewer/calendars/deleteCache.handler.ts:24-26"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Format the cache timestamp with the user's locale and timezone",
+      "affected": [
+        "packages/features/apps/components/CredentialActionsDropdown.tsx:88-94"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Existing cache rows get a misleading \"last updated\" value from the migration",
+      "affected": [
+        "packages/prisma/migrations/20250715160635_add_calendar_cache_updated_at/migration.sql:9"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Make the webhook helper script portable and cwd-independent",
+      "affected": [
+        "scripts/test-gcal-webhooks.sh:5",
+        "scripts/test-gcal-webhooks.sh:8",
+        "scripts/test-gcal-webhooks.sh:28-31",
+        "scripts/test-gcal-webhooks.sh:56-59",
+        "scripts/test-gcal-webhooks.sh:68"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Avoid `npx` fetching an undeclared `tsx` at runtime",
+      "affected": [
+        "apps/web/package.json:11"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "INFO",
+      "type": "Maintainability",
+      "title": "Remove now-unused `updatedAt`/`googleChannelId` selections",
+      "affected": [
+        "packages/lib/server/repository/user.ts:899-900",
+        "packages/lib/getConnectedDestinationCalendars.ts:21-28"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 7,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoVZx63XAEtCXDbG4hB",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 15924,
+      "outputTokens": 4324,
+      "ms": 37858
+    }
+  ],
+  "costUsd": 0.150176,
+  "durationMs": 38882,
+  "promptSha256": "d2b3b8739b0da1a3e8984e96337b45a34ea5e0652340e9aa37dee1536a6a68ef",
+  "promptChars": 36247,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Make the webhook path actually bump `SelectedCalendar.updatedAt`\n\nAffected:\n- packages/app-store/googlecalendar/lib/CalendarService.ts:1022-1024\n- packages/lib/server/repository/selectedCalendar.ts:400-405\n\nExplanation:\n`updateManyByCredentialId(this.credential.id, {})` passes an empty `data` object. It relies on Prisma's `@updatedAt` to set the timestamp. With an empty update payload, Prisma may skip the query or issue no column changes, so `updatedAt` is not guaranteed to change. The stated goal of commit 08762ca (\"refresh SelectedCalendar timestamps\") would then silently fail.\n\nTwo related problems:\n- The call runs unconditionally on every cache refresh and rewrites every `SelectedCalendar` row for the credential, including rows for unrelated event-type scopes. That adds write load on each Google webhook.\n- `data` is typed as `Prisma.SelectedCalendarUpdateInput`. `updateMany` expects `UpdateManyMutationInput`, so callers can pass relation writes that `updateMany` cannot honor.\n\nThe UI now reads the cache timestamp from `CalendarCache`, not `SelectedCalendar`. If this write is still needed, set the timestamp explicitly. Otherwise, remove it.\n\nProposed fix:\n~~~ts\nstatic async touchManyByCredentialId(credentialId: number) {\n  return prisma.selectedCalendar.updateMany({\n    where: { credentialId },\n    data: { updatedAt: new Date() },\n  });\n}\n// or drop the call in fetchAvailabilityAndSetCache entirely if unused\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Throw a TRPCError instead of a generic Error in deleteCache\n\nAffected:\n- packages/trpc/server/routers/viewer/calendars/deleteCache.handler.ts:24-26\n\nExplanation:\nWhen the credential is missing or not owned by the user, the handler throws a plain `Error`. tRPC maps that to `INTERNAL_SERVER_ERROR` (500). As a result:\n- Error monitoring logs it as a server fault.\n- Clients cannot tell an authorization failure apart from a real crash.\n\nUse `TRPCError` with `NOT_FOUND` or `FORBIDDEN` instead.\n\nThe handler also bypasses the `CalendarCacheRepository` that this PR introduces for reads. It calls `prisma.calendarCache` directly, even though the repository already has `deleteManyByCredential`.\n\nProposed fix:\n~~~ts\nimport { TRPCError } from \"@trpc/server\";\n...\nif (!credential) {\n  throw new TRPCError({ code: \"NOT_FOUND\", message: \"Credential not found\" });\n}\nawait new CalendarCacheRepository().deleteManyByCredential(credentialId);\n~~~\n\n## 3) Severity: LOW | Type: Bug\nTitle: Format the cache timestamp with the user's locale and timezone\n\nAffected:\n- packages/features/apps/components/CredentialActionsDropdown.tsx:88-94\n\nExplanation:\n`new Intl.DateTimeFormat(\"en-US\", ...)` hard-codes the US locale and ignores the user's locale (available via `useLocale`). Every non-English user sees `M/D/YY`, which is ambiguous. It also ignores the user's profile timezone.\n\nProposed fix:\n~~~tsx\nconst { t, i18n } = useLocale();\n...\ntimestamp: new Intl.DateTimeFormat(i18n.language, { dateStyle: \"short\", timeStyle: \"short\" })\n  .format(new Date(cacheUpdatedAt)),\n~~~\n\n## 4) Severity: LOW | Type: Bug\nTitle: Existing cache rows get a misleading \"last updated\" value from the migration\n\nAffected:\n- packages/prisma/migrations/20250715160635_add_calendar_cache_updated_at/migration.sql:9\n\nExplanation:\n`DEFAULT NOW()` stamps every pre-existing `CalendarCache` row with the time the migration ran. Until those rows are refreshed, the UI will claim the cache was \"last updated\" at deploy time.\n\nThe header comment also contradicts the SQL. It says the column is added without a default, but the statement adds one.\n\nPossible fixes:\n- Backfill from a meaningful column, for example `expiresAt` minus the cache TTL.\n- Accept the inaccuracy and fix the comment.\n\nProposed fix:\n~~~sql\n-- AlterTable: add updatedAt; existing rows are stamped with migration time\nALTER TABLE \"CalendarCache\" ADD COLUMN \"updatedAt\" TIMESTAMP(3) NOT NULL DEFAULT NOW();\n~~~\n\n## 5) Severity: LOW | Type: Bug\nTitle: Make the webhook helper script portable and cwd-independent\n\nAffected:\n- scripts/test-gcal-webhooks.sh:5\n- scripts/test-gcal-webhooks.sh:8\n- scripts/test-gcal-webhooks.sh:28-31\n- scripts/test-gcal-webhooks.sh:56-59\n- scripts/test-gcal-webhooks.sh:68\n\nExplanation:\n- **Line 68:** `sed -i '' -E` is BSD/macOS syntax. With GNU sed (Linux, CI), the `''` is taken as the script and the command fails.\n- **Line 5:** `ENV_FILE=\"../.env\"` is resolved relative to the caller's cwd, not the script's location. Running the script from the repo root writes to the parent directory and can create a stray `.env` file there.\n- **Line 8:** `pgrep` can return several PIDs.\n- **Lines 28-31:** In the reuse branch, the URL is read from a log that may be stale or missing.\n- **Lines 56-59:** `cleanup` exits 0 on failure, so callers cannot detect errors.\n\nProposed fix:\n~~~bash\nSCRIPT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\nENV_FILE=\"$SCRIPT_DIR/../.env\"\n...\ntmp=\"$(mktemp)\"; sed -E \"s|^GOOGLE_WEBHOOK_URL=.*|GOOGLE_WEBHOOK_URL=$TUNNEL_URL|\" \"$ENV_FILE\" > \"$tmp\" && mv \"$tmp\" \"$ENV_FILE\"\n# and use `exit 1` on failure paths\n~~~\n\n## 6) Severity: LOW | Type: Maintainability\nTitle: Avoid `npx` fetching an undeclared `tsx` at runtime\n\nAffected:\n- apps/web/package.json:11\n\nExplanation:\n`npx tsx` downloads `tsx` from the registry when it is not a declared dependency. This makes the script:\n- Non-reproducible, since the version is unpinned.\n- Dependent on network access.\n- A minor supply-chain risk.\n\nAdd `tsx` to devDependencies and call it directly.\n\nProposed fix:\n~~~json\n\"dev:cron\": \"tsx cron-tester.ts\"\n~~~\n\n## 7) Severity: INFO | Type: Maintainability\nTitle: Remove now-unused `updatedAt`/`googleChannelId` selections\n\nAffected:\n- packages/lib/server/repository/user.ts:899-900\n- packages/lib/getConnectedDestinationCalendars.ts:21-28\n\nExplanation:\nThese fields were added for the earlier per-calendar dropdown design. After the refactor in commit 4fb15e0, the UI uses `cacheUpdatedAt` from `CalendarCache` at the credential level. The extra selected fields and widened types appear to be dead data that is loaded on every user/calendars fetch.\n\nThis is based on the diff only. Verify that no other consumer reads these fields before removing them.\n\nProposed fix:\n~~~ts\n// revert to Pick<SelectedCalendar, \"externalId\" | \"integration\" | \"eventTypeId\">\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The updateManyByCredentialId call uses an empty data object, which prevents Prisma's @updatedAt decorator from updating the updatedAt timestamp. This results in inaccurate cache status tracking, as the timestamp isn't updated when the cache is refreshed. To fix this, explicitly set the updatedAt field.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "updateManyByCredentialId passes an empty data object, which may cause Prisma to skip the query or issue no column changes, so updatedAt is not guaranteed to change",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same problem as the golden comment: the updateManyByCredentialId call uses an empty data object, which means updatedAt won't be updated. Both comments point to the same underlying bug - that passing an empty data object to Prisma's updateMany prevents the @updatedAt decorator from working properly, resulting in the timestamp not being changed when the cache is refreshed."
+      },
+      {
+        "golden_comment": "logic: macOS-specific sed syntax with empty string after -i flag will fail on Linux systems",
+        "severity": "Low",
+        "category": "bug",
+        "matched_candidate": "sed -i '' -E is BSD/macOS syntax and fails with GNU sed on Linux/CI",
+        "confidence": 0.98,
+        "reasoning": "Both comments identify the exact same issue: the sed -i '' syntax is macOS/BSD-specific and will fail on Linux systems (including CI environments). The candidate issue correctly identifies this cross-platform compatibility problem with the sed command syntax."
+      },
+      {
+        "golden_comment": "Throwing a generic Error for authentication failures results in a 500 response in tRPC. Instead, it should return a structured TRPCError with an appropriate code, such as FORBIDDEN, to accurately reflect the error type.",
+        "severity": "High",
+        "category": "api",
+        "matched_candidate": "When the credential is missing or not owned by the user, the handler throws a plain Error instead of TRPCError, causing it to be mapped to INTERNAL_SERVER_ERROR (500) and logged as a server fault",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: throwing a plain Error instead of TRPCError causes the error to be mapped to a 500/INTERNAL_SERVER_ERROR response instead of an appropriate error code. Both comments point to the same bug regarding authentication/authorization failures being improperly handled."
+      },
+      {
+        "golden_comment": "Date is formatted with hardcoded 'en-US' locale instead of using the user's locale from useLocale, which can lead to incorrect date representation for users in different locales.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Intl.DateTimeFormat hard-codes 'en-US' locale and ignores the user's locale and timezone, causing non-English users to see ambiguous M/D/YY format",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same core problem as the golden comment: the date formatting uses a hardcoded 'en-US' locale instead of using the user's actual locale. Both comments point out that this causes incorrect/inappropriate date representation for non-English/non-US users. The candidate adds additional detail about timezone and the specific M/D/YY format ambiguity, but the fundamental issue is the same - hardcoded locale instead of user's locale."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "The updateManyByCredentialId call runs unconditionally on every cache refresh and rewrites every SelectedCalendar row for the credential, including rows for unrelated event-type scopes, adding write load on each Google webhook"
+      },
+      {
+        "candidate": "data is typed as Prisma.SelectedCalendarUpdateInput but updateMany expects UpdateManyMutationInput, so callers can pass relation writes that updateMany cannot honor"
+      },
+      {
+        "candidate": "The deleteCache handler bypasses the CalendarCacheRepository and calls prisma.calendarCache directly, even though the repository already has deleteManyByCredential"
+      },
+      {
+        "candidate": "Migration DEFAULT NOW() stamps every pre-existing CalendarCache row with the migration time, causing misleading 'last updated' values until rows are refreshed"
+      },
+      {
+        "candidate": "Migration header comment contradicts the SQL - it says the column is added without a default, but the statement adds one"
+      },
+      {
+        "candidate": "ENV_FILE='../.env' is resolved relative to caller's cwd, not the script's location, potentially creating a stray .env file"
+      },
+      {
+        "candidate": "pgrep can return several PIDs, causing issues in the script"
+      },
+      {
+        "candidate": "In the reuse branch, the URL is read from a log that may be stale or missing"
+      },
+      {
+        "candidate": "cleanup function exits 0 on failure, so callers cannot detect errors"
+      },
+      {
+        "candidate": "npx tsx downloads tsx from the registry when it is not a declared dependency, making the script non-reproducible, network-dependent, and a minor supply-chain risk"
+      },
+      {
+        "candidate": "updatedAt and googleChannelId selections appear to be dead data loaded on every user/calendars fetch after the refactor removed their usage"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 15,
+    "total_golden": 4,
+    "tp": 4,
+    "fp": 11,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.26666666666666666,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "calcom/cal.com",
+    "pr_url": "https://github.com/calcom/cal.com/pull/22532"
+  },
+  "judgeUsage": {
+    "calls": 68,
+    "inputTokens": 16965,
+    "outputTokens": 6556,
+    "costUsd": 0.24872500000000003
+  }
+}

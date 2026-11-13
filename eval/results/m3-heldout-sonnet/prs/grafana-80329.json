@@ -1,0 +1,126 @@
+{
+  "id": "grafana-80329",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/80329",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Implementation",
+      "title": "Debug logging at Error level on every batch, including full ID lists",
+      "affected": [
+        "pkg/services/annotations/annotationsimpl/xorm_store.go:534-537",
+        "pkg/services/annotations/annotationsimpl/xorm_store.go:554-557",
+        "pkg/services/annotations/annotationsimpl/xorm_store.go:576-579"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Cleanup job interval changed from 10 to 1 minute",
+      "affected": [
+        "pkg/services/cleanup/cleanup.go:77"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "SQLite parameter-limit workaround is keyed on the configured batch size instead of the ID count, and is fragile",
+      "affected": [
+        "pkg/services/annotations/annotationsimpl/xorm_store.go:605-618"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "MaxCount cleanup can loop forever or run wastefully when deletes affect 0 rows",
+      "affected": [
+        "pkg/services/annotations/annotationsimpl/xorm_store.go:640-654"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Test helper uses require inside the DB session callback and discards the callback's error",
+      "affected": [
+        "pkg/services/annotations/annotationsimpl/cleanup_test.go:273-291"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqemFi9mfYPCkqQjRQy",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 9730,
+      "outputTokens": 1510,
+      "ms": 10668
+    }
+  ],
+  "costUsd": 0.03456,
+  "durationMs": 11791,
+  "promptSha256": "071aeda4617fcd164531de90070e11fa7bc75c07f852487420150f9bd92957c6",
+  "promptChars": 20454,
+  "response": "## 1) Severity: HIGH | Type: Implementation\nTitle: Debug logging at Error level on every batch, including full ID lists\n\nAffected:\n- pkg/services/annotations/annotationsimpl/xorm_store.go:534-537\n- pkg/services/annotations/annotationsimpl/xorm_store.go:554-557\n- pkg/services/annotations/annotationsimpl/xorm_store.go:576-579\n\nExplanation:\nEach batch logs at Error level, including the full `ids` slice (up to the batch size, e.g. 32k IDs) and the SQL condition. This is leftover debugging output. It floods the logs and falsely signals errors on a normal cleanup run. It also logs `err` as nil on success. The variables `x, y` are poorly named as well. Remove these logs, or drop them to Debug level without the ID list.\n\nProposed fix:\n~~~go\naffected, err := r.deleteByIDs(ctx, \"annotation\", ids)\nreturn affected, err\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: Cleanup job interval changed from 10 to 1 minute\n\nAffected:\n- pkg/services/cleanup/cleanup.go:77\n\nExplanation:\nThe ticker was changed to run every minute. This is unrelated to the change and looks like a debugging leftover. It makes every cleanup job (temp files, expired dashboards, and so on) run 10x more often, adding load. Revert it.\n\nProposed fix:\n~~~go\nticker := time.NewTicker(time.Minute * 10)\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: SQLite parameter-limit workaround is keyed on the configured batch size instead of the ID count, and is fragile\n\nAffected:\n- pkg/services/annotations/annotationsimpl/xorm_store.go:605-618\n\nExplanation:\nThe limit is 999 only for SQLite older than 3.32; newer versions allow 32766. The code switches to inlined IDs whenever the batch size exceeds 999, so the workaround covers most configurations. The check should be on `len(ids)`, which is what matters. The comment is also inaccurate. Inlining is safe here because the IDs are int64. Still, `fmt.Sprintf` in a loop is O(n²) string concatenation. Use `strings.Builder` or `strings.Join`.\n\nProposed fix:\n~~~go\nif r.db.GetDBType() == migrator.SQLite && len(ids) > sqliteParameterLimit {\n    parts := make([]string, len(ids))\n    for i, v := range ids { parts[i] = strconv.FormatInt(v, 10) }\n    sql = fmt.Sprintf(`DELETE FROM %s WHERE id IN (%s)`, table, strings.Join(parts, \",\"))\n}\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: MaxCount cleanup can loop forever or run wastefully when deletes affect 0 rows\n\nAffected:\n- pkg/services/annotations/annotationsimpl/xorm_store.go:640-654\n\nExplanation:\nThe loop ends only when a batch affects zero rows. Previously, a single statement did the select and delete together. Now, if IDs are fetched but deletion returns 0 affected rows (for example, rows deleted concurrently by another instance), the loop ends early, which is acceptable. The reverse is worse: fetchIDs is a separate query with a non-transactional read, so a persistently failing delete is returned as an error. Overall the termination logic is acceptable, but the loop's behavior depends on rows-affected semantics, so terminating on `len(ids)==0` would be more robust.\n\nProposed fix:\n~~~go\n// terminate on len(ids)==0 rather than affected==0\n~~~\n\n## 5) Severity: LOW | Type: Test\nTitle: Test helper uses require inside the DB session callback and discards the callback's error\n\nAffected:\n- pkg/services/annotations/annotationsimpl/cleanup_test.go:273-291\n\nExplanation:\n`require.NoError` inside the callback calls FailNow from within the session callback. The callback also returns nil, so errors are never propagated. Return the error instead. Also, the `ID` is set explicitly on the annotations, so a second test case reuses IDs; this relies on the cleanup hook deleting everything first.\n\nProposed fix:\n~~~go\n_, err := sess.InsertMulti(...)\nif err != nil { return err }\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The code uses Error log level for what appears to be debugging information. This will pollute error logs in production. Consider using Debug or Info level instead.",
+        "severity": "Low",
+        "category": "perf",
+        "matched_candidate": "Debug logging at Error level on every batch, including full ID lists (up to 32k IDs) and SQL condition - floods logs and falsely signals errors on normal cleanup runs",
+        "confidence": 0.95,
+        "reasoning": "Both comments identify the same issue: using Error log level for what is essentially debug/informational logging. The golden comment notes it will 'pollute error logs in production' while the candidate says it 'floods logs and falsely signals errors on normal cleanup runs'. Both are pointing to the inappropriate use of Error level for non-error information, though the candidate provides more specific details about what's being logged (batch IDs, SQL conditions)."
+      },
+      {
+        "golden_comment": "The cleanup job ticker was changed from 10 minutes to 1 minute, which can lead to increased database load and contention due to more frequent execution of cleanup tasks. This change should be reviewed to ensure it aligns with performance expectations.",
+        "severity": "Low",
+        "category": "perf",
+        "matched_candidate": "Cleanup job interval changed from 10 to 1 minute, causing cleanup jobs to run 10x more often and adding unnecessary load - appears to be debugging leftover",
+        "confidence": 0.95,
+        "reasoning": "Both comments identify the same issue: the cleanup job ticker interval was changed from 10 minutes to 1 minute, which will cause more frequent execution and increased load. The golden comment mentions 'increased database load and contention' while the candidate mentions 'unnecessary load' and suggests it's a 'debugging leftover'. Both are pointing to the same underlying concern about the interval change and its performance implications."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "SQLite parameter-limit workaround checks configured batch size instead of len(ids), and uses O(n²) string concatenation with fmt.Sprintf in a loop instead of strings.Builder or strings.Join"
+      },
+      {
+        "candidate": "MaxCount cleanup loop terminates on affected==0 instead of len(ids)==0, which is less robust when rows-affected semantics vary"
+      },
+      {
+        "candidate": "Test helper uses require.NoError inside DB session callback which calls FailNow, and callback returns nil instead of propagating errors"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 5,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 3,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.4,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/80329"
+  },
+  "judgeUsage": {
+    "calls": 12,
+    "inputTokens": 4062,
+    "outputTokens": 1181,
+    "costUsd": 0.049835000000000004
+  }
+}

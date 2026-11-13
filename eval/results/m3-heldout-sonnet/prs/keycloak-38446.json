@@ -1,0 +1,140 @@
+{
+  "id": "keycloak-38446",
+  "goldenUrl": "https://github.com/keycloak/keycloak/pull/38446",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Recovery-code credential in user storage is stored as plaintext, and the local fallback uses different data",
+      "affected": [
+        "server-spi-private/src/main/java/org/keycloak/utils/CredentialHelper.java:112-131"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "NoSuchElementException risk and unsafe Optional.get() in RecoveryAuthnCodeInputLoginBean",
+      "affected": [
+        "services/src/main/java/org/keycloak/forms/login/freemarker/model/RecoveryAuthnCodeInputLoginBean.java:17-19"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Recovery code validation in test storage never invalidates used codes, and its credential model is malformed",
+      "affected": [
+        "testsuite/integration-arquillian/servers/auth-server/services/testsuite-providers/src/main/java/org/keycloak/testsuite/federation/BackwardsCompatibilityUserStorage.java:231-252",
+        "testsuite/integration-arquillian/servers/auth-server/services/testsuite-providers/src/main/java/org/keycloak/testsuite/federation/BackwardsCompatibilityUserStorage.java:340"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Test cleanup and typos",
+      "affected": [
+        "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/federation/storage/BackwardsCompatibilityUserStorageTest.java:134-135"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyqh1pshyh9bRKqzRCDv",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 16789,
+      "outputTokens": 1411,
+      "ms": 9950
+    }
+  ],
+  "costUsd": 0.047688,
+  "durationMs": 11054,
+  "promptSha256": "9f04c33b4b6395e1372291a7bc16c23dca6f4e0382f48f7d6fefb684d2df24e6",
+  "promptChars": 39123,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Recovery-code credential in user storage is stored as plaintext, and the local fallback uses different data\n\nAffected:\n- server-spi-private/src/main/java/org/keycloak/utils/CredentialHelper.java:112-131\n\nExplanation:\nThe raw generated codes are serialized to JSON and passed to the user storage via updateCredential. A federated provider therefore receives the plaintext recovery codes, whereas the local path stores hashed data (credentialModel). That is a deliberate design choice for the federated case, but it is undocumented. Also, updateCredential is called on every user, even when the storage does not support the credential type. For local users this may throw or return false depending on the provider. For a local user, the updater may be a no-op; this should be verified. The code uses a hardcoded provider id string rather than RecoveryAuthnCodesCredentialProviderFactory.PROVIDER_ID. The provider is also fetched before it is known to be needed and is not null-checked.\n\nProposed fix:\n~~~java\n// document the plaintext hand-off to user storage; use the PROVIDER_ID constant;\n// look up the provider only in the local-storage branch and null-check it\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: NoSuchElementException risk and unsafe Optional.get() in RecoveryAuthnCodeInputLoginBean\n\nAffected:\n- services/src/main/java/org/keycloak/forms/login/freemarker/model/RecoveryAuthnCodeInputLoginBean.java:17-19\n\nExplanation:\n`credentialModelOpt.get()` is called without checking presence. The same applies to `getNextRecoveryAuthnCode().get()`. If no credential is found, the login page fails with an unhelpful exception. Federated credential models from user storage may also lack the stored credential data format that `createFromCredentialModel` expects. The federated path is also unconsumed: after a successful login the used code is not removed from user storage, so codes can be reused (see the authenticator, which only updates local credentials).\n\nProposed fix:\n~~~java\nCredentialModel cm = RecoveryAuthnCodesUtils.getCredential(user)\n    .orElseThrow(() -> new IllegalStateException(\"Recovery codes credential not found\"));\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Recovery code validation in test storage never invalidates used codes, and its credential model is malformed\n\nAffected:\n- testsuite/integration-arquillian/servers/auth-server/services/testsuite-providers/src/main/java/org/keycloak/testsuite/federation/BackwardsCompatibilityUserStorage.java:231-252\n- testsuite/integration-arquillian/servers/auth-server/services/testsuite-providers/src/main/java/org/keycloak/testsuite/federation/BackwardsCompatibilityUserStorage.java:340\n\nExplanation:\n`getCredentials` builds the model via `createFromValues`, which generates a new model with no id. It also discards the stored id. On a JSON parse failure it only logs the error and drops the credential silently. Validation uses a raw `List` and `key.equals(...)`, which is unchecked. The raw `List.class` read gives untyped elements.\n\nProposed fix:\n~~~java\nList<String> keys = JsonSerialization.readValue(data, new TypeReference<List<String>>(){});\nmodel.setId(myUser.recoveryCodes.getId());\n~~~\n\n## 4) Severity: LOW | Type: Test\nTitle: Test cleanup and typos\n\nAffected:\n- testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/federation/storage/BackwardsCompatibilityUserStorageTest.java:134-135\n\nExplanation:\nThe config alias \"delayed-suthenticator-config\" contains a typo. Also, the test hardcodes the user \"otp1\" and relies on the `assertUserDontHaveDBCredentials` helper without verifying recovery codes are absent from the DB.\n\nProposed fix:\n~~~java\nconfig.setAlias(\"delayed-authenticator-config\");\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "Unsafe raw List deserialization without type safety. Calling Optional.get() directly on the Optional returned by RecoveryAuthnCodesUtils.getCredential(user) without checking isPresent() can lead to a NoSuchElementException if the Optional is empty.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "credentialModelOpt.get() is called without checking presence, risking NoSuchElementException",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same problem as the golden comment - calling .get() on an Optional without first checking if it's present (isPresent()), which can lead to a NoSuchElementException. The candidate specifically mentions 'credentialModelOpt.get() is called without checking presence, risking NoSuchElementException' which matches the golden comment's concern about 'Calling Optional.get() directly... without checking isPresent() can lead to a NoSuchElementException if the Optional is empty.'"
+      },
+      {
+        "golden_comment": "After creating the RecoveryAuthnCodesCredentialModel, consider setting its id from the stored credential (e.g., myUser.recoveryCodes.getId()); otherwise getId() will be null and downstream removal by id (e.g., removeStoredCredentialById in the authenticator flow) may not work.",
+        "severity": "Low",
+        "category": "bug",
+        "matched_candidate": "getCredentials builds the model via createFromValues which generates a new model with no id and discards the stored id",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same underlying problem as the golden comment. Both point out that when creating the RecoveryAuthnCodesCredentialModel via createFromValues, the id from the stored credential is not being set/preserved, resulting in a null id. The golden comment specifically mentions this will cause issues with downstream removal by id, while the candidate describes it as 'discards the stored id'. They are identifying the same bug - the missing id assignment when building the credential model."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Recovery-code credential in user storage is stored as plaintext, while the local fallback stores hashed data - this is undocumented"
+      },
+      {
+        "candidate": "updateCredential is called on every user even when the storage does not support the credential type, which may throw or return false"
+      },
+      {
+        "candidate": "Code uses hardcoded provider id string rather than RecoveryAuthnCodesCredentialProviderFactory.PROVIDER_ID constant"
+      },
+      {
+        "candidate": "Provider is fetched before it is known to be needed and is not null-checked"
+      },
+      {
+        "candidate": "getNextRecoveryAuthnCode().get() is called without checking presence, risking NoSuchElementException"
+      },
+      {
+        "candidate": "Federated credential models from user storage may lack the stored credential data format that createFromCredentialModel expects"
+      },
+      {
+        "candidate": "After successful login the used code is not removed from user storage, so codes can be reused in federated path"
+      },
+      {
+        "candidate": "On JSON parse failure in test storage it only logs the error and drops the credential silently"
+      },
+      {
+        "candidate": "Validation uses raw List and key.equals(...) which is unchecked - raw List.class read gives untyped elements"
+      },
+      {
+        "candidate": "Config alias 'delayed-suthenticator-config' contains a typo (should be 'delayed-authenticator-config')"
+      },
+      {
+        "candidate": "Test hardcodes user 'otp1' and relies on assertUserDontHaveDBCredentials helper without verifying recovery codes are absent from the DB"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 13,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 11,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.15384615384615385,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "keycloak/keycloak",
+    "pr_url": "https://github.com/keycloak/keycloak/pull/38446"
+  },
+  "judgeUsage": {
+    "calls": 31,
+    "inputTokens": 8239,
+    "outputTokens": 3266,
+    "costUsd": 0.122845
+  }
+}

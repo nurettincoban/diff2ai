@@ -1,0 +1,112 @@
+{
+  "id": "sentry-80528",
+  "goldenUrl": "https://github.com/getsentry/sentry/pull/80528",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Use the computed `config` copy in the monitor context",
+      "affected": [
+        "src/sentry/monitors/logic/incident_occurrence.py:159-171"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Maintainability",
+      "title": "Removed and renamed public symbols may break existing imports and mocks",
+      "affected": [
+        "src/sentry/monitors/logic/mark_failed.py:1-79"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Handle the case where no failed check-in has a mapped status",
+      "affected": [
+        "src/sentry/monitors/logic/incident_occurrence.py:130-156"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Performance",
+      "title": "Repeated per-occurrence queries inside the loop",
+      "affected": [
+        "src/sentry/monitors/logic/incidents.py:93-100",
+        "src/sentry/monitors/logic/incident_occurrence.py:46-48,67,90"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoBDr7Tx37SmFXX26Tv",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 10505,
+      "outputTokens": 2259,
+      "ms": 20303
+    }
+  ],
+  "costUsd": 0.0872,
+  "durationMs": 21296,
+  "promptSha256": "2f4e3e78a72a4f13c6b827d9d4e5859e416633200f35ade6f5840eef35d58ef4",
+  "promptChars": 26256,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Use the computed `config` copy in the monitor context\n\nAffected:\n- src/sentry/monitors/logic/incident_occurrence.py:159-171\n\nExplanation:\n`get_monitor_environment_context` copies the config and replaces `schedule_type` with its display value. It then returns the original `monitor_environment.monitor.config`, so the `config` copy is never used.\n\nAs a result, the occurrence's monitor context gets the raw integer `schedule_type` instead of the human-readable label. This bug existed before and is carried into the new module unchanged. Since the code is being moved anyway, this is a good time to fix it.\n\nProposed fix:\n~~~python\n    return {\n        \"id\": str(monitor_environment.monitor.guid),\n        \"slug\": str(monitor_environment.monitor.slug),\n        \"name\": monitor_environment.monitor.name,\n        \"config\": config,\n        \"status\": monitor_environment.get_status_display(),\n        \"type\": monitor_environment.monitor.get_type_display(),\n    }\n~~~\n\n## 2) Severity: MEDIUM | Type: Maintainability\nTitle: Removed and renamed public symbols may break existing imports and mocks\n\nAffected:\n- src/sentry/monitors/logic/mark_failed.py:1-79\n\nExplanation:\nThese names are removed from `mark_failed.py` with no compatibility re-exports:\n- `mark_failed_threshold`, renamed to `try_incident_threshold`\n- `create_issue_platform_occurrence`, renamed to `create_incident_occurrence`\n- `get_failure_reason`\n- `SimpleCheckIn`\n- `HUMAN_FAILURE_STATUS_MAP` and `SINGULAR_HUMAN_FAILURE_MAP`\n- `get_monitor_environment_context`\n\nThe diff updates no other files. Any tests or code that import these names, or patch them as `sentry.monitors.logic.mark_failed.<name>`, will fail at import time or silently patch nothing. A likely example is a test of `get_failure_reason` in the mark_failed tests.\n\nI can't confirm this from the diff alone. Grep the repo for these names and update the callers and patch targets, or re-export the names temporarily.\n\nProposed fix:\n~~~bash\nrg \"mark_failed\\.(mark_failed_threshold|create_issue_platform_occurrence|get_failure_reason|SimpleCheckIn|get_monitor_environment_context|HUMAN_FAILURE|SINGULAR_HUMAN)\" src tests\n# update to sentry.monitors.logic.incidents / incident_occurrence / types\n~~~\n\n## 3) Severity: LOW | Type: Bug\nTitle: Handle the case where no failed check-in has a mapped status\n\nAffected:\n- src/sentry/monitors/logic/incident_occurrence.py:130-156\n\nExplanation:\nThe function ignores any status not in `HUMAN_FAILURE_STATUS_MAP`. If none of the passed check-ins has a mapped status, `status_counts` is empty and the function returns the malformed string `\" check-ins detected\"`.\n\nThe docstring says the fallback output is `\"A failed check-in was detected\"`, but no code produces it. Its other example output (`\"... were detected\"`) also doesn't match what the function actually returns.\n\nProposed fix:\n~~~python\n    if not status_counts:\n        return _(\"A failed check-in was detected\")\n    if sum(status_counts.values()) == 1:\n        ...\n~~~\n\n## 4) Severity: LOW | Type: Performance\nTitle: Repeated per-occurrence queries inside the loop\n\nAffected:\n- src/sentry/monitors/logic/incidents.py:93-100\n- src/sentry/monitors/logic/incident_occurrence.py:46-48,67,90\n\nExplanation:\n`create_incident_occurrence` is called once for each check-in within the threshold. Every call re-fetches the same data:\n- `failed_checkin.monitor_environment`, a fresh FK load per check-in instance\n- `get_last_successful_checkin()`\n- `get_environment()`, called twice per invocation\n\nWith large failure thresholds this becomes an N+1 query pattern. Fixes:\n- Add `select_related(\"monitor_environment__monitor\")` to the check-ins queryset.\n- Compute the environment name and last successful timestamp once and reuse them.\n\nProposed fix:\n~~~python\ncheckins = MonitorCheckIn.objects.filter(\n    id__in=[c[\"id\"] for c in previous_checkins]\n).select_related(\"monitor_environment__monitor\")\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The function modifies the config variable to include display values but then returns the original monitor.config instead of the modified version.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "get_monitor_environment_context copies the config and replaces schedule_type with its display value, but returns the original monitor_environment.monitor.config instead of the computed config copy, causing the occurrence's monitor context to get the raw integer schedule_type instead of the human-readable label",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the function creates a modified config variable with display values (specifically mentioning schedule_type), but then returns the original monitor.config instead of the modified config copy. Both comments point to the same bug where the computed/modified config is not being returned."
+      },
+      {
+        "golden_comment": "The code fetches MonitorCheckIn objects by ID when the required data already exists in previous_checkins. This creates an unnecessary database query.",
+        "severity": "Low",
+        "category": "perf",
+        "matched_candidate": "create_incident_occurrence causes N+1 query pattern by re-fetching the same data (monitor_environment FK, last successful checkin, environment name) for each check-in within the threshold instead of computing once and reusing",
+        "confidence": 0.85,
+        "reasoning": "The golden comment identifies that MonitorCheckIn objects are being fetched by ID when the data already exists in previous_checkins, creating unnecessary database queries. The candidate issue mentions an N+1 query pattern where the same data is being re-fetched for each check-in instead of computing once and reusing. Both are pointing to the same fundamental problem: unnecessary/redundant database queries when the data is already available. The candidate's description of 're-fetching the same data' and 'N+1 query pattern' aligns with the golden comment's concern about fetching objects when 'required data already exists in previous_checkins'."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Removed and renamed public symbols (mark_failed_threshold, create_issue_platform_occurrence, get_failure_reason, SimpleCheckIn, HUMAN_FAILURE_STATUS_MAP, SINGULAR_HUMAN_FAILURE_MAP, get_monitor_environment_context) may break existing imports and mocks since there are no compatibility re-exports"
+      },
+      {
+        "candidate": "get_failure_reason returns malformed string ' check-ins detected' when no failed check-in has a mapped status in HUMAN_FAILURE_STATUS_MAP, and the docstring's fallback output doesn't match actual code behavior"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 4,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 2,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.5,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "getsentry/sentry",
+    "pr_url": "https://github.com/getsentry/sentry/pull/80528"
+  },
+  "judgeUsage": {
+    "calls": 17,
+    "inputTokens": 3808,
+    "outputTokens": 1126,
+    "costUsd": 0.04719
+  }
+}

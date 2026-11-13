@@ -1,0 +1,121 @@
+{
+  "id": "sentry-77754",
+  "goldenUrl": "https://github.com/getsentry/sentry/pull/77754",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Default `queued` timestamp is set once at import time",
+      "affected": [
+        "src/sentry/integrations/services/assignment_source.py:18"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "`to_dict()` puts a `datetime` into Celery task kwargs and does not round-trip",
+      "affected": [
+        "src/sentry/integrations/services/assignment_source.py:27-35",
+        "src/sentry/integrations/utils/sync.py:137-144"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Wrong abstract method updated; `sync_assignee_outbound` now receives an undeclared kwarg",
+      "affected": [
+        "src/sentry/integrations/mixins/issues.py:411-418",
+        "src/sentry/integrations/tasks/sync_assignee_outbound.py:59-61"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Tests don't exercise a serialization round-trip",
+      "affected": [
+        "tests/sentry/integrations/services/test_assignment_source.py:21-38"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyo9SsPMqF5CuBfhuy6N",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 8558,
+      "outputTokens": 2592,
+      "ms": 23088
+    }
+  ],
+  "costUsd": 0.086072,
+  "durationMs": 24062,
+  "promptSha256": "33d1ef1d1ce2dd97a6da69e92c9e1774ec4e8c3afafbecead440c48120a0d9d9",
+  "promptChars": 21766,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Default `queued` timestamp is set once at import time\n\nAffected:\n- src/sentry/integrations/services/assignment_source.py:18\n\nExplanation:\n`queued: datetime = timezone.now()` is evaluated once, when the class is defined at module import. Every `AssignmentSource` created afterwards gets that same frozen timestamp, so `queued` is wrong for every instance created later in the process lifetime. Any future logic that relies on it (TTLs, ordering, debugging) will be wrong. Use `field(default_factory=timezone.now)` so each instance gets its own timestamp.\n\nProposed fix:\n~~~python\nfrom dataclasses import asdict, dataclass, field\n\n@dataclass(frozen=True)\nclass AssignmentSource:\n    source_name: str\n    integration_id: int\n    queued: datetime = field(default_factory=timezone.now)\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: `to_dict()` puts a `datetime` into Celery task kwargs and does not round-trip\n\nAffected:\n- src/sentry/integrations/services/assignment_source.py:27-35\n- src/sentry/integrations/utils/sync.py:137-144\n\nExplanation:\nThe commit history says the intent is to pass JSON-safe data to the task (\"Passes JSON instead of classes when queueing task\"). However, `asdict(self)` returns `queued` as a raw `datetime`:\n- Under a JSON task serializer, this either fails to serialize when the task is queued, or gets converted to a string.\n- If it becomes a string, `from_dict` calls `cls(**input_dict)` without any type validation. `queued` then silently becomes a `str` despite the `datetime` annotation.\n\nThe tests do not catch this. `self.tasks()` runs tasks eagerly without a serialization round-trip, and no test serializes `to_dict()` output. Fix by serializing `queued` to ISO format in `to_dict` and parsing it back in `from_dict`.\n\nProposed fix:\n~~~python\ndef to_dict(self) -> dict[str, Any]:\n    d = asdict(self)\n    d[\"queued\"] = self.queued.isoformat()\n    return d\n\n@classmethod\ndef from_dict(cls, input_dict: dict[str, Any]) -> AssignmentSource | None:\n    try:\n        data = dict(input_dict)\n        if isinstance(data.get(\"queued\"), str):\n            data[\"queued\"] = datetime.fromisoformat(data[\"queued\"])\n        return cls(**data)\n    except (ValueError, TypeError):\n        return None\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Wrong abstract method updated; `sync_assignee_outbound` now receives an undeclared kwarg\n\nAffected:\n- src/sentry/integrations/mixins/issues.py:411-418\n- src/sentry/integrations/tasks/sync_assignee_outbound.py:59-61\n\nExplanation:\nThe task now calls `installation.sync_assignee_outbound(..., assignment_source=parsed_assignment_source)`. The diff does not update the `sync_assignee_outbound` signature to accept this argument.\n\nInstead, it adds `assignment_source` to `sync_status_outbound`. Nothing in this change passes that argument, so this looks like a mistake.\n\nAny concrete integration whose `sync_assignee_outbound` lacks `**kwargs` will raise `TypeError` at task runtime, and assignee sync will break. This cannot be verified from the diff alone. Add the parameter to the abstract `sync_assignee_outbound`, check all implementations, and revert the unrelated `sync_status_outbound` change (or wire it up properly).\n\nProposed fix:\n~~~python\n@abstractmethod\ndef sync_assignee_outbound(\n    self,\n    external_issue,\n    user,\n    assign=True,\n    assignment_source: AssignmentSource | None = None,\n    **kwargs,\n):\n    ...\n~~~\n\n## 4) Severity: LOW | Type: Test\nTitle: Tests don't exercise a serialization round-trip\n\nAffected:\n- tests/sentry/integrations/services/test_assignment_source.py:21-38\n\nExplanation:\n`test_to_dict` and `test_from_dict_valid_data` test each direction separately. Neither checks that `from_dict(json.loads(json.dumps(src.to_dict())))` reproduces an equivalent object. As a result, the datetime and serializability problems described in issue 2 go undetected. Add a round-trip test.\n\nProposed fix:\n~~~python\ndef test_round_trip_json(self):\n    import json\n    src = AssignmentSource(source_name=\"foo\", integration_id=1)\n    restored = AssignmentSource.from_dict(json.loads(json.dumps(src.to_dict())))\n    assert restored == src\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The AssignmentSource dataclass uses queued: datetime = timezone.now() as a default field value, which evaluates timezone.now() once at class definition time and shares that single datetime instance across all objects.",
+        "severity": "Medium",
+        "category": "concurrency",
+        "matched_candidate": "Default `queued` timestamp is set once at import time - `queued: datetime = timezone.now()` is evaluated once when the class is defined, so every `AssignmentSource` instance gets the same frozen timestamp instead of its own creation time. Use `field(default_factory=timezone.now)` instead.",
+        "confidence": 1,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment: the `queued: datetime = timezone.now()` default value is evaluated once at class definition time rather than at instance creation time, causing all instances to share the same timestamp. The candidate even provides the same solution (using default_factory). This is a perfect match."
+      },
+      {
+        "golden_comment": "to_dict() returns a datetime for queued; if this dict is passed in task kwargs (e.g., via apply_async), JSON serialization may fail depending on the serializer, which can cause enqueue errors.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "`to_dict()` puts a raw `datetime` into Celery task kwargs which doesn't round-trip properly - `asdict(self)` returns `queued` as a raw `datetime` which either fails to serialize or becomes a string, and `from_dict` doesn't parse it back to datetime. Need to serialize `queued` to ISO format in `to_dict` and parse it back in `from_dict`.",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same core problem as the golden comment: to_dict() returns a raw datetime object for the 'queued' field, which causes JSON serialization issues when passed to Celery task kwargs. The candidate goes further by also mentioning the from_dict parsing issue, but the fundamental problem identified (datetime serialization failure in Celery context) is exactly the same."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Wrong abstract method updated - `assignment_source` parameter was added to `sync_status_outbound` but the task calls `sync_assignee_outbound` with this argument. The `sync_assignee_outbound` signature needs to be updated instead, and concrete implementations without `**kwargs` will raise `TypeError`."
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The method name has a typo: test_from_dict_inalid_data should be test_from_dict_invalid_data.",
+        "severity": "Low",
+        "category": "style"
+      },
+      {
+        "golden_comment": "Method name says 'empty_array' but tests empty dict - consider renaming to 'test_from_dict_empty_dict' for clarity.",
+        "severity": "Low",
+        "category": "style"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 4,
+    "total_golden": 4,
+    "tp": 2,
+    "fp": 1,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.5,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "getsentry/sentry",
+    "pr_url": "https://github.com/getsentry/sentry/pull/77754"
+  },
+  "judgeUsage": {
+    "calls": 21,
+    "inputTokens": 6406,
+    "outputTokens": 1929,
+    "costUsd": 0.08025499999999999
+  }
+}

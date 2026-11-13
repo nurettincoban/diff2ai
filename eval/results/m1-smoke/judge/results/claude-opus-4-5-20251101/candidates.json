@@ -1,0 +1,164 @@
+{
+  "https://github.com/calcom/cal.com/pull/14943": {
+    "diff2ai": [
+      {
+        "text": "The retry-exhausted delete branch (retryCount > 1) has no method filter, causing the SMS cron job to delete any WorkflowReminder with retryCount exceeding 1, including EMAIL and WHATSAPP reminders",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Failure inside the catch block aborts the whole batch - if prisma.workflowReminder.update fails (DB hiccup or concurrent row deletion), the exception escapes the loop, skipping remaining reminders and returning 500 instead of ok: true",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Non-atomic increment for retryCount (retryCount: reminder.retryCount + 1) uses a stale read value, causing lost increments if two cron invocations overlap",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Magic number gt: 1 for retry limit is undocumented and easy to misread - should extract a named constant like MAX_SMS_RETRIES",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Failed reminders are hard-deleted with no logging, leaving no trace of why attendees or hosts never received SMS notifications",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unindexed OR predicate with retryCount column and no method filter will force sequential scan of entire WorkflowReminder table on every cron run",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/77754": {
+    "diff2ai": [
+      {
+        "text": "The `queued` default value `queued: datetime = timezone.now()` is evaluated once at import time, causing all AssignmentSource instances to share the same stale timestamp in long-running processes",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "`to_dict()` returns a raw datetime for `queued` which fails JSON serialization or becomes a string that violates the type when reconstructed via `from_dict`",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The `sync_assignee_outbound` implementations across providers may not accept the new `assignment_source` kwarg, causing TypeError for any provider without `**kwargs` or explicit parameter",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The `assignment_source` parameter was incorrectly added to `sync_status_outbound` instead of `sync_assignee_outbound` - no caller passes it to status sync and status sync doesn't use AssignmentSource",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Missing test for deassign cycle-breaking when source integration matches target",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Missing test for propagation to other integrations when source is from a different integration",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4": {
+    "diff2ai": [
+      {
+        "text": "Posts with cook_method == raw_html skip sanitization, allowing stored XSS from untrusted RSS/Atom feeds and remote pages containing malicious HTML or javascript: URLs",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "URL is interpolated directly into href attribute without escaping, allowing attribute breakout with single quotes to inject event handlers",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Kernel#open on URL strings allows shell command execution if string starts with pipe character, and import_remote receives untrusted URLs from Disqus exports",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Protocol-relative URLs starting with // are incorrectly matched by href.start_with?('/') check, causing them to be mangled into broken URLs",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "ERB template uses 'end if' which compiles incorrectly, causing rendering to work only by accident with altered output ordering",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Feed items without content element cause NoMethodError when calling .scrub on nil, and one bad item aborts processing of entire feed due to retry: false",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Every request for unknown embed_url enqueues a job without checking throttle, allowing queue flooding by anonymous visitors with arbitrary embed_url values",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Redis throttle using setnx followed by separate expire is not atomic - if process dies between calls, key never expires and URL is permanently blocked",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Modifying already-shipped migration create_top_topics has no effect on existing installs, and force: true can silently destroy data",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Disqus importer regressed: --category option removed, created_at no longer preserved, and network errors during HTTP fetch abort entire import",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "If embedded post has been deleted, embed.post is nil and PostRevisor.new(nil).revise! raises, breaking feed polling for all subsequent items",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "postMessage handler uses indexOf substring check for origin comparison, allowing origins like forum.example.co to pass when expecting forum.example.com",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Controller spec expects TopicRetriever.new but controller actually calls Jobs.enqueue, so spec only passes if jobs run inline in test environment",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "id": "keycloak-greptile-1",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "type": "Bug",
+      "title": "Call to `isConditionalPasskeysEnabled()` does not compile",
+      "affected": [
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernameForm.java:47-47"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "`user != null` check disables passkeys on normal login and shows them to users without passkeys",
+      "affected": [
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:160-162",
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:113-117",
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:137-140"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Test",
+      "title": "\"User without passkey\" test does not cover a user without a passkey",
+      "affected": [
+        "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java:277-333"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Broad `catch (Exception)` can hide unrelated WebDriver failures",
+      "affected": [
+        "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java:291-296",
+        "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java:312-317"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Re-authentication check duplicated and constant visibility widened",
+      "affected": [
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/AbstractUsernameFormAuthenticator.java:58-58",
+        "services/src/main/java/org/keycloak/authentication/authenticators/util/AuthenticatorUtils.java:125-133"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyo5ZeJi1MisSVXThFAx",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 17837,
+      "outputTokens": 3881,
+      "ms": 33816
+    }
+  ],
+  "costUsd": 0.148968,
+  "durationMs": 35191,
+  "promptSha256": "4b890c180494339f221539e429ff18e85b91e42d1562d4cae81bf8da6e04a861",
+  "promptChars": 42076,
+  "response": "## 1) Severity: CRITICAL | Type: Bug\nTitle: Call to `isConditionalPasskeysEnabled()` does not compile\n\nAffected:\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernameForm.java:47-47\n\nExplanation:\nCommit 3214b188de changed the method to `isConditionalPasskeysEnabled(UserModel user)` in `UsernamePasswordForm`. `UsernameForm` was not updated and still calls a no-arg `isConditionalPasskeysEnabled()`. No such overload exists, so the `services` module fails to compile.\n\nProposed fix:\n~~~java\nif (context.getUser() != null && !isConditionalPasskeysEnabled(context.getUser())) {\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: `user != null` check disables passkeys on normal login and shows them to users without passkeys\n\nAffected:\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:160-162\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:113-117\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:137-140\n\nExplanation:\nThe old code filled the WebAuthn/conditional-UI data only when no user was selected (`context.getUser() == null`). The new helper requires `user != null`, which inverts that condition:\n\n- **First login regression:** on a first, unauthenticated login (user is null), the passkey form and conditional UI are no longer rendered. This breaks passkey login on the regular username/password form. It also contradicts the new tests, which expect `//form[@id='webauth']` on the initial login page (e.g. PasskeysUsernamePasswordFormTest lines 194-199).\n- **Wrong users get passkeys:** on re-authentication, passkeys are offered to any identified user, even one with no passwordless credential. The intent (\"user context validation\") is to show passkeys either when no user is known yet, or when the known user actually has a passkey.\n- **UsernameForm side effect:** once issue 1 is fixed, `UsernameForm` will skip its form for users who are still eligible for passkeys, which is not the intended behaviour.\n\nProposed fix:\n~~~java\nprotected boolean isConditionalPasskeysEnabled(UserModel currentUser) {\n    return webauthnAuth != null && webauthnAuth.isPasskeysEnabled()\n            && (currentUser == null\n                || currentUser.credentialManager().isConfiguredFor(WebAuthnCredentialModel.TYPE_PASSWORDLESS));\n}\n~~~\n\n## 3) Severity: MEDIUM | Type: Test\nTitle: \"User without passkey\" test does not cover a user without a passkey\n\nAffected:\n- testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java:277-333\n\nExplanation:\nThe test claims to check re-authentication of a user who has no passkey. However, it turns passkeys off for the whole realm (`setWebAuthnPolicyPasskeysEnabled(Boolean.FALSE)`). The webauth form is therefore hidden for every user, whatever credentials they have.\n\nThe case that matters is untested: realm passkeys enabled, and a user who has only a password re-authenticates with `prompt=login`. That is exactly the case that issue 2 gets wrong.\n\nProposed fix:\n~~~text\nEnable passkeys on the realm (setPasswordlessPolicyForExternalKey()), log in as\ntest-user@localhost (password only), re-authenticate with prompt=login, and assert\nthat //form[@id='webauth'] is absent.\n~~~\n\n## 4) Severity: LOW | Type: Test\nTitle: Broad `catch (Exception)` can hide unrelated WebDriver failures\n\nAffected:\n- testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java:291-296\n- testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java:312-317\n\nExplanation:\nThe `try { assertThat(findElement(...), nullValue()); fail(...) } catch (Exception)` pattern swallows any exception, not only the expected one. A stale element, a timeout, or another WebDriver exception would make the test pass silently. The file already shows the clearer idiom elsewhere.\n\nProposed fix:\n~~~java\nAssert.assertThrows(NoSuchElementException.class,\n        () -> driver.findElement(By.xpath(\"//form[@id='webauth']\")));\n~~~\n\n## 5) Severity: LOW | Type: Maintainability\nTitle: Re-authentication check duplicated and constant visibility widened\n\nAffected:\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/AbstractUsernameFormAuthenticator.java:58-58\n- services/src/main/java/org/keycloak/authentication/authenticators/util/AuthenticatorUtils.java:125-133\n\nExplanation:\nThe new utility reads the `USER_SET_BEFORE_USERNAME_PASSWORD_AUTH` auth note directly. This repeats the logic of `isUserAlreadySetBeforeUsernamePasswordAuth`, which may now be unused or could drift from the utility. To support this, the constant was made `public`. The utility in turn depends on a browser authenticator subclass, which inverts the usual layering.\n\nThe same section also overrides `shouldShowWebAuthnAuthenticators` in `WebAuthnConditionalUIAuthenticator` without `@Override`.\n\nProposed fix:\n~~~text\nHave AbstractUsernameFormAuthenticator.isUserAlreadySetBeforeUsernamePasswordAuth\ndelegate to a single shared helper (or move the constant into AuthenticatorUtils).\nAdd @Override to WebAuthnConditionalUIAuthenticator.shouldShowWebAuthnAuthenticators.\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "In UsernameForm.authenticate(), isConditionalPasskeysEnabled() is called without passing the required UserModel parameter.",
+        "severity": "Medium",
+        "category": "api",
+        "matched_candidate": "Call to `isConditionalPasskeysEnabled()` does not compile - UsernameForm still calls a no-arg method that no longer exists after commit 3214b188de changed it to require a UserModel parameter",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment: the isConditionalPasskeysEnabled() method is being called without the required UserModel parameter in UsernameForm. The candidate provides additional context about why this is a problem (the method signature changed in a commit), but it's pointing to the same underlying bug."
+      },
+      {
+        "golden_comment": "With isConditionalPasskeysEnabled(UserModel user) requiring user != null, authenticate(...) will not call webauthnAuth.fillContextForm(context) on the initial login page where context.getUser() is still null, so conditional passkey UI will not be set up for first-time passkey login. Consider whether this should also be enabled when no user has been selected yet so ID-less passkey authentication on the initial login form continues to work.",
+        "severity": "Medium",
+        "category": "speculative",
+        "matched_candidate": "The `user != null` check inverts the original condition, causing passkey form and conditional UI to not render on first unauthenticated login when user is null",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same core problem as the golden comment: the `user != null` check prevents the passkey/conditional UI from being rendered on the initial login page when no user has been selected yet (user is null). Both comments point out that this breaks the first-time/ID-less passkey authentication flow because the conditional passkey UI won't be set up when context.getUser() returns null."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Passkeys are incorrectly offered to any identified user on re-authentication, even users without passwordless credentials"
+      },
+      {
+        "candidate": "UsernameForm will skip its form for users who are still eligible for passkeys once the compilation issue is fixed, which is not intended behavior"
+      },
+      {
+        "candidate": "Test claiming to check re-authentication of user without passkey actually disables passkeys for the whole realm instead of testing a user with only password credentials"
+      },
+      {
+        "candidate": "Broad `catch (Exception)` pattern swallows any exception including stale element or timeout errors, causing tests to pass silently on unrelated WebDriver failures"
+      },
+      {
+        "candidate": "Re-authentication check logic is duplicated between the new utility and `isUserAlreadySetBeforeUsernamePasswordAuth`, and the constant visibility was widened to public unnecessarily"
+      },
+      {
+        "candidate": "Missing `@Override` annotation on `shouldShowWebAuthnAuthenticators` in `WebAuthnConditionalUIAuthenticator`"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 8,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 6,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.25,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/keycloak-greptile",
+    "pr_url": "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1"
+  },
+  "judgeUsage": {
+    "calls": 18,
+    "inputTokens": 6141,
+    "outputTokens": 2185,
+    "costUsd": 0.08533
+  }
+}

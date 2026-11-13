@@ -1,0 +1,134 @@
+{
+  "id": "grafana-94942",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/94942",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Maintainability",
+      "title": "Replace the misleading feature-flag check with an explicit \"always disabled\"",
+      "affected": [
+        "pkg/expr/reader.go:194-200"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Make sure the gate covers every path that builds a SQL command",
+      "affected": [
+        "pkg/expr/reader.go:128-132",
+        "pkg/expr/sql/parser.go:22-26",
+        "pkg/expr/sql_command.go:96-103"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Test",
+      "title": "Update or skip the existing SQL expression tests that now fail",
+      "affected": [
+        "pkg/expr/sql/parser.go:22-26",
+        "pkg/expr/sql/db.go:12-22"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Avoid leaving dead DuckDB-specific code behind a stub",
+      "affected": [
+        "pkg/expr/sql/parser.go:23-26",
+        "pkg/expr/sql/db.go:9-26"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgypZNP3gV7tQg5k9ixGV",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 14563,
+      "outputTokens": 2781,
+      "ms": 25915
+    }
+  ],
+  "costUsd": 0.113872,
+  "durationMs": 26872,
+  "promptSha256": "f642e75029558a9877737f5f285165671cf0efb1e84e874f890c339918b3e681",
+  "promptChars": 22477,
+  "response": "## 1) Severity: MEDIUM | Type: Maintainability\nTitle: Replace the misleading feature-flag check with an explicit \"always disabled\"\n\nAffected:\n- pkg/expr/reader.go:194-200\n\nExplanation:\n`enableSqlExpressions` returns `false` on both branches, so the `FlagSqlExpressions` check has no effect.\n\n- The local variable `enabled` holds the *negated* flag value. That makes the code read as if the flag controls the outcome when it does not.\n- It still calls `h.features.IsEnabledGlobally(...)`. If `features` can be nil, this adds a possible nil-pointer panic for no benefit (I cannot verify nil-ability from this diff).\n- Anyone who turns the flag on will still get \"not implemented\", with nothing in the code explaining why.\n\nIf the intent is to hard-disable SQL expressions until a new engine lands, say so directly and drop the dead flag lookup. If the intent is to honour the flag, the logic is wrong. Note, however, that the stub DB would then fail every query anyway.\n\nProposed fix:\n~~~go\ncase QueryTypeSQL:\n\t// SQL expressions are temporarily disabled: the DuckDB engine was removed\n\t// and pkg/expr/sql.DB is a stub. Re-enable together with a real engine.\n\treturn eq, fmt.Errorf(\"sql expressions are currently disabled\")\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Make sure the gate covers every path that builds a SQL command\n\nAffected:\n- pkg/expr/reader.go:128-132\n- pkg/expr/sql/parser.go:22-26\n- pkg/expr/sql_command.go:96-103\n\nExplanation:\nThe new gate only lives in `ExpressionQueryReader.ReadQuery`. In Grafana, SQL expression nodes can also be built through the legacy pipeline (`nodes.go` → `UnmarshalSQLCommand` → `sql.TablesList`). That path does not go through this reader.\n\nOn that path, `TablesList` now always fails with a generic \"not implemented\" from the stub `DB.RunCommands`. `Execute` would also fail and log at Error level on every call. Users would get an opaque error instead of a clear \"disabled\" message.\n\nI cannot see `nodes.go`/`commands.go` in this diff, so please verify whether a feature-flag check already exists there. If it does not, add the same explicit disabled check where the SQL command is unmarshalled.\n\nProposed fix:\n~~~go\n// in UnmarshalSQLCommand (or buildCMDNode for TypeSQL)\nreturn nil, fmt.Errorf(\"sql expressions are currently disabled\")\n~~~\n\n## 3) Severity: MEDIUM | Type: Test\nTitle: Update or skip the existing SQL expression tests that now fail\n\nAffected:\n- pkg/expr/sql/parser.go:22-26\n- pkg/expr/sql/db.go:12-22\n\nExplanation:\n`TablesList` and `QueryFramesInto` now always return errors. Any existing tests that exercise real parsing or execution will fail, because none are updated in this change. Examples would be `pkg/expr/sql/parser_test.go` asserting the table names, or SQLCommand/reader tests for `QueryTypeSQL`. I cannot see the test files, so please confirm.\n\nThose tests should be skipped with a reason, or changed to assert the disabled behaviour. That keeps CI green and makes it obvious they need restoring when an engine is reintroduced.\n\nProposed fix:\n~~~go\nfunc TestParse(t *testing.T) {\n\tt.Skip(\"SQL expressions disabled: DuckDB engine removed\")\n\t...\n}\n~~~\n\n## 4) Severity: LOW | Type: Maintainability\nTitle: Avoid leaving dead DuckDB-specific code behind a stub\n\nAffected:\n- pkg/expr/sql/parser.go:23-26\n- pkg/expr/sql/db.go:9-26\n\nExplanation:\n`TablesList` still escapes quotes by hand and builds a DuckDB-specific `json_serialize_sql` statement, then sends it to a stub that always errors. It also keeps the variable name `duckDB`.\n\nThe new `DB` type has no doc comment saying it is a placeholder. Future readers may assume it is a working in-memory engine, or reuse the string-interpolated SQL pattern with a real engine. That pattern carries injection risk if the escaping is ever relied upon.\n\nAdd a doc comment marking `DB` as a non-functional placeholder, and short-circuit `TablesList` with a clear error.\n\nProposed fix:\n~~~go\n// DB is a placeholder; SQL expressions are disabled until an engine is chosen.\ntype DB struct{}\n\nfunc TablesList(rawSQL string) ([]string, error) {\n\treturn nil, errors.New(\"sql expressions are currently disabled\")\n}\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The enableSqlExpressions function has flawed logic that always returns false, effectively disabling SQL expressions unconditionally:",
+        "severity": "Critical",
+        "category": "bug",
+        "matched_candidate": "enableSqlExpressions returns false on both branches, making the FlagSqlExpressions check have no effect - the local variable 'enabled' holds the negated flag value making the code misleading",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the same problem as the golden comment - that the enableSqlExpressions function always returns false regardless of the flag value. The candidate specifically notes that it 'returns false on both branches' and that the FlagSqlExpressions check has 'no effect', which is exactly the same underlying issue described in the golden comment about 'flawed logic that always returns false, effectively disabling SQL expressions unconditionally'."
+      },
+      {
+        "golden_comment": "The DB methods NewInMemoryDB().RunCommands, DB.QueryFramesInto, and DB.TablesList in pkg/expr/sql/db.go return hardcoded 'not implemented' errors after removing the go-duck dependency.",
+        "severity": "High",
+        "category": "api",
+        "matched_candidate": "Anyone who turns the flag on will still get 'not implemented' with nothing in the code explaining why",
+        "confidence": 0.85,
+        "reasoning": "The candidate issue identifies that users will get 'not implemented' errors with no explanation, which directly relates to the golden comment about DB methods returning hardcoded 'not implemented' errors after removing the go-duck dependency. Both are pointing to the same underlying problem - the code has stub implementations that return 'not implemented' errors, which will affect users who try to use this functionality."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "The code still calls h.features.IsEnabledGlobally() which adds a possible nil-pointer panic if features can be nil, for no benefit since the flag check doesn't work"
+      },
+      {
+        "candidate": "The new gate only lives in ExpressionQueryReader.ReadQuery but SQL expression nodes can also be built through the legacy pipeline (nodes.go → UnmarshalSQLCommand → sql.TablesList) which doesn't go through this reader"
+      },
+      {
+        "candidate": "On the legacy path, TablesList now always fails with a generic 'not implemented' from the stub DB.RunCommands, giving users an opaque error instead of a clear 'disabled' message"
+      },
+      {
+        "candidate": "TablesList and QueryFramesInto now always return errors, so existing tests that exercise real parsing or execution will fail but none are updated in this change"
+      },
+      {
+        "candidate": "Tests should be skipped with a reason or changed to assert the disabled behaviour to keep CI green"
+      },
+      {
+        "candidate": "TablesList still escapes quotes by hand and builds a DuckDB-specific json_serialize_sql statement then sends it to a stub that always errors - dead code left behind"
+      },
+      {
+        "candidate": "The new DB type has no doc comment saying it is a placeholder, so future readers may assume it is a working in-memory engine"
+      },
+      {
+        "candidate": "The string-interpolated SQL pattern in TablesList carries injection risk if the escaping is ever relied upon with a real engine"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 10,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 8,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.2,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/94942"
+  },
+  "judgeUsage": {
+    "calls": 22,
+    "inputTokens": 6669,
+    "outputTokens": 2800,
+    "costUsd": 0.10334499999999999
+  }
+}

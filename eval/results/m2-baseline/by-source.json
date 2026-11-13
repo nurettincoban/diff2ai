@@ -1,0 +1,99 @@
+{
+  "label": "self-run, not independently scored",
+  "run": "m2-baseline",
+  "config": "baseline",
+  "prs": 50,
+  "candidatesPerFinding": 1.5679442508710801,
+  "bySource": [
+    {
+      "source": "cal_dot_com",
+      "prs": 10,
+      "goldenComments": 41,
+      "core": {
+        "tp": 28,
+        "fp": 75,
+        "fn": 9,
+        "prs": 10,
+        "precision": 0.27184466019417475,
+        "recall": 0.7567567567567568,
+        "f1": 0.39999999999999997
+      },
+      "findingsPerPr": 7,
+      "candidatesPerPr": 10.9,
+      "costPerPrUsd": 0.3688313,
+      "reviewErrors": 0
+    },
+    {
+      "source": "discourse",
+      "prs": 10,
+      "goldenComments": 41,
+      "core": {
+        "tp": 29,
+        "fp": 59,
+        "fn": 9,
+        "prs": 10,
+        "precision": 0.32954545454545453,
+        "recall": 0.7631578947368421,
+        "f1": 0.4603174603174603
+      },
+      "findingsPerPr": 5.8,
+      "candidatesPerPr": 9.3,
+      "costPerPrUsd": 0.3032467,
+      "reviewErrors": 0
+    },
+    {
+      "source": "grafana",
+      "prs": 10,
+      "goldenComments": 25,
+      "core": {
+        "tp": 17,
+        "fp": 58,
+        "fn": 8,
+        "prs": 10,
+        "precision": 0.22666666666666666,
+        "recall": 0.68,
+        "f1": 0.34
+      },
+      "findingsPerPr": 4.7,
+      "candidatesPerPr": 7.7,
+      "costPerPrUsd": 0.22464810000000002,
+      "reviewErrors": 0
+    },
+    {
+      "source": "keycloak",
+      "prs": 10,
+      "goldenComments": 30,
+      "core": {
+        "tp": 17,
+        "fp": 59,
+        "fn": 8,
+        "prs": 10,
+        "precision": 0.2236842105263158,
+        "recall": 0.68,
+        "f1": 0.3366336633663366
+      },
+      "findingsPerPr": 5.2,
+      "candidatesPerPr": 8.3,
+      "costPerPrUsd": 0.29500099999999996,
+      "reviewErrors": 0
+    },
+    {
+      "source": "sentry",
+      "prs": 10,
+      "goldenComments": 36,
+      "core": {
+        "tp": 24,
+        "fp": 63,
+        "fn": 9,
+        "prs": 10,
+        "precision": 0.27586206896551724,
+        "recall": 0.7272727272727273,
+        "f1": 0.4
+      },
+      "findingsPerPr": 6,
+      "candidatesPerPr": 8.8,
+      "costPerPrUsd": 0.31378179999999994,
+      "reviewErrors": 0
+    }
+  ]
+}

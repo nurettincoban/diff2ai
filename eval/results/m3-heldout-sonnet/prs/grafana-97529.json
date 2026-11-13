@@ -1,0 +1,125 @@
+{
+  "id": "grafana-97529",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/97529",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Concurrent BuildIndex calls can race and overwrite or leak indexes",
+      "affected": [
+        "pkg/storage/unified/search/bleve.go:87-140"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Index error is now unchecked after removing the conditional log",
+      "affected": [
+        "pkg/storage/unified/search/bleve.go:96-104"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Eager Init in NewResourceServer blocks construction and uses a context that is not visible in the diff",
+      "affected": [
+        "pkg/storage/unified/resource/server.go:258-262"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Test skipped for postgres, hiding a likely real regression",
+      "affected": [
+        "pkg/server/module_server_test.go:35-38"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyqh8VxMHuerkAqkxJxU",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 6499,
+      "outputTokens": 1108,
+      "ms": 9230
+    }
+  ],
+  "costUsd": 0.024078,
+  "durationMs": 10285,
+  "promptSha256": "989165e69371dcea7cf7555a46878e76a5d6e8ebec1dc2a296ab457755a812df",
+  "promptChars": 13786,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Concurrent BuildIndex calls can race and overwrite or leak indexes\n\nAffected:\n- pkg/storage/unified/search/bleve.go:87-140\n\nExplanation:\nThe lock around the whole function was removed and now covers only the final cache write. Two concurrent BuildIndex calls for the same key can both run `bleve.New(dir, mapper)`. For file-based indexes the second call fails because the directory is already in use. For in-memory indexes the last writer wins and the other index is leaked without being closed. The cache is also never checked under the lock before the build starts. Use per-key locking or singleflight, or re-check the cache under the lock before inserting and close the loser's index.\n\nProposed fix:\n~~~go\nb.cacheMu.Lock()\nif existing, ok := b.cache[key]; ok {\n    b.cacheMu.Unlock()\n    idx.Close()\n    return existing, nil\n}\nb.cache[key] = idx\nb.cacheMu.Unlock()\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Index error is now unchecked after removing the conditional log\n\nAffected:\n- pkg/storage/unified/search/bleve.go:96-104\n\nExplanation:\nThe `if err == nil` block was removed and replaced with a TODO comment. The `IndexTenants` metric is incremented whether or not `bleve.New` succeeded. If error handling does not follow immediately, a nil index could be used. Also, the file-index metric is counted even on failure.\n\nProposed fix:\n~~~go\nindex, err = bleve.New(dir, mapper)\nif err == nil {\n    resource.IndexMetrics.IndexTenants.WithLabelValues(key.Namespace, \"file\").Inc()\n}\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Eager Init in NewResourceServer blocks construction and uses a context that is not visible in the diff\n\nAffected:\n- pkg/storage/unified/resource/server.go:258-262\n\nExplanation:\n`NewResourceServer` now runs the full initialization synchronously. This includes the search index build, which can take a long time and delays startup. The `ctx` it uses is not visible in the diff. If it is a cancellable or short-lived context, it could cancel the index build. Any init failure now fails server creation, which can break dependent modules, and this is likely why the postgres test had to be skipped. `Init` also still runs on a server whose `search` may be nil, and `History` and `Origin` dereference `s.search` without a nil check.\n\nProposed fix:\nUse a long-lived context for init. Make the blocking behavior explicit, or run the index build in the background. Add nil checks for `s.search` in `History` and `Origin`.\n\n## 4) Severity: LOW | Type: Test\nTitle: Test skipped for postgres, hiding a likely real regression\n\nAffected:\n- pkg/server/module_server_test.go:35-38\n\nExplanation:\nThe test is skipped on postgres because it fails in CI. This probably reflects a real issue introduced by eager initialization, such as init ordering or timeouts. The skip has no tracking issue.\n\nProposed fix:\nInvestigate the root cause and link a tracking issue in the TODO, or fix the init behavior.\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "A race condition in BuildIndex allows multiple goroutines to concurrently build the same expensive index for the same key. This is caused by moving the b.cacheMu lock from protecting the entire function to only protecting the final cache assignment. ",
+        "severity": "High",
+        "category": "concurrency",
+        "matched_candidate": "Concurrent BuildIndex calls can race and overwrite or leak indexes - the lock now only covers the final cache write, allowing two concurrent calls for the same key to both run bleve.New(dir, mapper), causing failures for file-based indexes or leaked indexes for in-memory ones",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same race condition problem as the golden comment. Both describe: 1) The lock (b.cacheMu) now only covers the final cache write instead of the entire function, 2) This allows multiple concurrent calls for the same key to both execute the expensive index building operation (bleve.New), 3) This causes duplicate work and potential issues (golden says 'expensive index', candidate mentions 'failures for file-based indexes or leaked indexes'). The candidate correctly identifies the same underlying bug with the same root cause."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Index error is unchecked after removing the conditional log - IndexTenants metric is incremented whether or not bleve.New succeeded, and a nil index could be used if error handling doesn't follow"
+      },
+      {
+        "candidate": "File-index metric is counted even on failure of bleve.New"
+      },
+      {
+        "candidate": "NewResourceServer now runs full initialization synchronously including search index build, which can take a long time and delays startup"
+      },
+      {
+        "candidate": "The ctx used in NewResourceServer Init is not visible in the diff - if it is cancellable or short-lived, it could cancel the index build"
+      },
+      {
+        "candidate": "Any init failure now fails server creation, which can break dependent modules"
+      },
+      {
+        "candidate": "Init runs on a server whose search may be nil, and History and Origin dereference s.search without a nil check"
+      },
+      {
+        "candidate": "Test skipped for postgres hiding a likely real regression caused by eager initialization, with no tracking issue for the skip"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Calling s.search.TotalDocs() here may race with concurrent index creation: TotalDocs iterates b.cache without synchronization, and the event watcher goroutine started just above could trigger BuildIndex writes concurrently, potentially causing a concurrent map read/write panic.",
+        "severity": "High",
+        "category": "concurrency"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 9,
+    "total_golden": 2,
+    "tp": 1,
+    "fp": 7,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.1111111111111111,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/97529"
+  },
+  "judgeUsage": {
+    "calls": 20,
+    "inputTokens": 5920,
+    "outputTokens": 2327,
+    "costUsd": 0.08777500000000002
+  }
+}

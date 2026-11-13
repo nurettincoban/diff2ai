@@ -1,0 +1,281 @@
+{
+  "label": "self-run, not independently scored",
+  "baselineRun": "m2-baseline",
+  "variantRun": "m3-heldout-sonnet",
+  "variantConfig": "sonnet",
+  "split": "heldout",
+  "prs": [
+    "cal.com-10600",
+    "cal.com-10967",
+    "cal.com-11059",
+    "cal.com-14740",
+    "cal.com-22345",
+    "cal.com-7232",
+    "cal.com-8087",
+    "cal.com-8330",
+    "discourse-graphite-1",
+    "discourse-graphite-10",
+    "discourse-graphite-3",
+    "discourse-graphite-5",
+    "discourse-graphite-6",
+    "discourse-graphite-7",
+    "discourse-graphite-8",
+    "discourse-graphite-9",
+    "grafana-103633",
+    "grafana-107534",
+    "grafana-76186",
+    "grafana-79265",
+    "grafana-80329",
+    "grafana-90045",
+    "grafana-90939",
+    "grafana-97529",
+    "keycloak-32918",
+    "keycloak-33832",
+    "keycloak-36880",
+    "keycloak-36882",
+    "keycloak-37038",
+    "keycloak-37429",
+    "keycloak-38446",
+    "keycloak-40940",
+    "sentry-67876",
+    "sentry-80528",
+    "sentry-93824",
+    "sentry-95633",
+    "sentry-greptile-1",
+    "sentry-greptile-2",
+    "sentry-greptile-3",
+    "sentry-greptile-5"
+  ],
+  "baseline": {
+    "label": "self-run, not independently scored",
+    "tool": "diff2ai",
+    "prsSelected": 40,
+    "prsJudged": 40,
+    "reviewErrors": [],
+    "judgeErrors": 0,
+    "profiles": {
+      "strict": {
+        "tp": 80,
+        "fp": 250,
+        "fn": 33,
+        "prs": 40,
+        "precision": 0.24242424242424243,
+        "recall": 0.7079646017699115,
+        "f1": 0.3611738148984199
+      },
+      "core": {
+        "tp": 92,
+        "fp": 250,
+        "fn": 37,
+        "prs": 40,
+        "precision": 0.26900584795321636,
+        "recall": 0.7131782945736435,
+        "f1": 0.39065817409766457
+      },
+      "all": {
+        "tp": 98,
+        "fp": 250,
+        "fn": 42,
+        "prs": 40,
+        "precision": 0.28160919540229884,
+        "recall": 0.7,
+        "f1": 0.4016393442622951
+      }
+    },
+    "recallBySeverity": [
+      {
+        "severity": "Critical",
+        "found": 7,
+        "total": 8,
+        "recall": 0.875
+      },
+      {
+        "severity": "High",
+        "found": 36,
+        "total": 45,
+        "recall": 0.8
+      },
+      {
+        "severity": "Medium",
+        "found": 33,
+        "total": 47,
+        "recall": 0.7021276595744681
+      },
+      {
+        "severity": "Low",
+        "found": 16,
+        "total": 29,
+        "recall": 0.5517241379310345
+      }
+    ],
+    "findings": {
+      "total": 231,
+      "perPr": 5.775,
+      "bySeverity": {
+        "MEDIUM": 98,
+        "LOW": 99,
+        "HIGH": 31,
+        "CRITICAL": 2,
+        "INFO": 1
+      },
+      "unverified": 0,
+      "candidatesTotal": 358,
+      "candidatesPerPr": 8.95
+    },
+    "cost": {
+      "reviewerUsd": 5.6440160000000015,
+      "judgeUsd": 6.446024999999999,
+      "totalUsd": 12.090041,
+      "perPrUsd": 0.302251025
+    },
+    "durationMs": {
+      "reviewTotal": 1439903,
+      "reviewPerPr": 35997.575
+    }
+  },
+  "variant": {
+    "label": "self-run, not independently scored",
+    "tool": "diff2ai",
+    "prsSelected": 40,
+    "prsJudged": 40,
+    "reviewErrors": [],
+    "judgeErrors": 0,
+    "profiles": {
+      "strict": {
+        "tp": 75,
+        "fp": 279,
+        "fn": 38,
+        "prs": 40,
+        "precision": 0.211864406779661,
+        "recall": 0.6637168141592921,
+        "f1": 0.32119914346895073
+      },
+      "core": {
+        "tp": 84,
+        "fp": 279,
+        "fn": 45,
+        "prs": 40,
+        "precision": 0.23140495867768596,
+        "recall": 0.6511627906976745,
+        "f1": 0.34146341463414637
+      },
+      "all": {
+        "tp": 92,
+        "fp": 279,
+        "fn": 48,
+        "prs": 40,
+        "precision": 0.24797843665768193,
+        "recall": 0.6571428571428571,
+        "f1": 0.36007827788649704
+      }
+    },
+    "recallBySeverity": [
+      {
+        "severity": "Critical",
+        "found": 8,
+        "total": 8,
+        "recall": 1
+      },
+      {
+        "severity": "High",
+        "found": 31,
+        "total": 45,
+        "recall": 0.6888888888888889
+      },
+      {
+        "severity": "Medium",
+        "found": 31,
+        "total": 47,
+        "recall": 0.6595744680851063
+      },
+      {
+        "severity": "Low",
+        "found": 14,
+        "total": 29,
+        "recall": 0.4827586206896552
+      }
+    ],
+    "findings": {
+      "total": 174,
+      "perPr": 4.35,
+      "bySeverity": {
+        "HIGH": 46,
+        "MEDIUM": 77,
+        "LOW": 47,
+        "CRITICAL": 4
+      },
+      "unverified": 0,
+      "candidatesTotal": 379,
+      "candidatesPerPr": 9.475
+    },
+    "cost": {
+      "reviewerUsd": 1.8497280000000005,
+      "judgeUsd": 6.643549999999999,
+      "totalUsd": 8.493278,
+      "perPrUsd": 0.21233195
+    },
+    "durationMs": {
+      "reviewTotal": 466502,
+      "reviewPerPr": 11662.55
+    }
+  },
+  "pairedBootstrap": {
+    "strict": {
+      "resamples": 10000,
+      "seed": 20261112,
+      "f1": {
+        "delta": -0.039974671429469144,
+        "low": -0.08327829075958754,
+        "high": 0
+      },
+      "precision": {
+        "delta": -0.030559835644581423,
+        "low": -0.06142603914191658,
+        "high": -0.0016578483245149878
+      },
+      "recall": {
+        "delta": -0.04424778761061943,
+        "low": -0.14018691588785048,
+        "high": 0.04385964912280704
+      }
+    },
+    "core": {
+      "resamples": 10000,
+      "seed": 20261112,
+      "f1": {
+        "delta": -0.0491947594635182,
+        "low": -0.09462365591397853,
+        "high": -0.008147340157744598
+      },
+      "precision": {
+        "delta": -0.0376008892755304,
+        "low": -0.0711305691475663,
+        "high": -0.006463996679809125
+      },
+      "recall": {
+        "delta": -0.06201550387596899,
+        "low": -0.15315315315315314,
+        "high": 0.021428571428571463
+      }
+    },
+    "all": {
+      "resamples": 10000,
+      "seed": 20261112,
+      "f1": {
+        "delta": -0.04156106637579804,
+        "low": -0.08691280871731999,
+        "high": -0.00006677684846667642
+      },
+      "precision": {
+        "delta": -0.033630758744616907,
+        "low": -0.06717052507768478,
+        "high": -0.0014510422326173278
+      },
+      "recall": {
+        "delta": -0.042857142857142816,
+        "low": -0.13114754098360648,
+        "high": 0.038961038961038974
+      }
+    }
+  }
+}

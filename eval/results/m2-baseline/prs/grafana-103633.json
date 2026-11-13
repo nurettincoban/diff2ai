@@ -1,0 +1,149 @@
+{
+  "id": "grafana-103633",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/103633",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Denial cache hides newly granted permissions for the whole TTL",
+      "affected": [
+        "pkg/services/authz/rbac/service.go:116-121",
+        "pkg/services/authz/rbac/service.go:153-155"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Performance",
+      "title": "Denial cache keyed per resource name can grow without bound",
+      "affected": [
+        "pkg/services/authz/rbac/service.go:153-155",
+        "pkg/services/authz/rbac/cache.go:30-32"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Denial cache key is ambiguous and omits identity type",
+      "affected": [
+        "pkg/services/authz/rbac/cache.go:30-32"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Performance",
+      "title": "Cached-deny path does duplicate work and records a cache hit as a miss",
+      "affected": [
+        "pkg/services/authz/rbac/service.go:123-137"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Cache lookup removed from getUserPermissions/getAnonymousPermissions affects all callers",
+      "affected": [
+        "pkg/services/authz/rbac/service.go:379-380",
+        "pkg/services/authz/rbac/service.go:423-424"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Explicit-deny test cannot prove the denial cache short-circuits",
+      "affected": [
+        "pkg/services/authz/rbac/service_test.go:981-982"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 6,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyo8vaycHYVbKoxrN6cg",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 10076,
+      "outputTokens": 5152,
+      "ms": 50945
+    }
+  ],
+  "costUsd": 0.143344,
+  "durationMs": 51932,
+  "promptSha256": "dd2089a281d879750d52f8501e3091826e916f3b0942346fdfb0d553ff2375ea",
+  "promptChars": 20617,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Denial cache hides newly granted permissions for the whole TTL\n\nAffected:\n- pkg/services/authz/rbac/service.go:116-121\n- pkg/services/authz/rbac/service.go:153-155\n\nExplanation:\nThe new `Check` flow is built to pick up fresh grants. When the cached permission map does not allow access, it falls back to the database (see the \"outdated cache\" test).\n\nThe denial cache undoes this. Once a deny for `(user, action, name, folder)` is cached, `Check` returns `Allowed: false` at line 117. It never consults the permission cache or the DB for `shortCacheTTL`.\n\nSo a user who has just been granted access, or whose dashboard was just moved into an accessible folder, keeps being denied. Nothing invalidates this cache. Users will see \"I was given access but still get 403\" bugs.\n\nThe client-side cache was also removed for in-proc calls, specifically to reduce staleness. That makes this regression more visible.\n\nFix options:\n- Use a much shorter TTL for denials.\n- Invalidate denial entries when role, team or permission changes are written.\n- Or drop the denial cache and rely on singleflight plus the permission cache.\n\nProposed fix:\n~~~go\n// in NewService\npermDenialCache: newCacheWrap[bool](cache, logger, denialCacheTTL), // e.g. a few seconds\n// and/or delete matching denial entries on permission writes\n~~~\n\n## 2) Severity: MEDIUM | Type: Performance\nTitle: Denial cache keyed per resource name can grow without bound\n\nAffected:\n- pkg/services/authz/rbac/service.go:153-155\n- pkg/services/authz/rbac/cache.go:30-32\n\nExplanation:\nEvery denied `Check` stores one entry per `(namespace, user, action, name, parent folder)`. The values come straight from the request.\n\nA caller that iterates many names or folders, or a large dashboard listing done via per-item checks, creates one local-cache entry per resource. These live in the shared cache that also holds permissions, teams and folder trees.\n\nBefore this change, cache size scaled with users × actions. It now scales with users × resources. This raises memory use and cache churn, and gives a cheap way to inflate memory with arbitrary names.\n\nFix options:\n- Bound the cache.\n- Use a short TTL.\n- Or cache denials at a coarser granularity.\n\nProposed fix:\n~~~go\n// Prefer a bounded/LRU cache for denials, or skip caching when Name is empty/unknown,\n// and keep the TTL short.\n~~~\n\n## 3) Severity: LOW | Type: Bug\nTitle: Denial cache key is ambiguous and omits identity type\n\nAffected:\n- pkg/services/authz/rbac/cache.go:30-32\n\nExplanation:\nThe key is built as `ns.perm_<uid>_<action>_<name>_<parent>` with `_` separators. Resource names, folder UIDs and user UIDs may themselves contain `_`. Different `(name, parent)` or `(uid, action, …)` tuples can therefore produce the same key and cause false denials.\n\nThe key also shares the `ns.perm_<uid>_<action>` prefix used by `userPermCacheKey`, in the same underlying cache. That makes accidental overlaps with a different value type (`bool` vs `map[string]bool`) possible.\n\nThe identity type is also not part of the key. Anonymous/render identities and users therefore share a key space keyed only on UID.\n\nUse a dedicated prefix and an unambiguous encoding, such as length-prefixed values or a separator that cannot occur in UIDs.\n\nProposed fix:\n~~~go\nfunc userPermDenialCacheKey(namespace, idType, userUID, action, name, parent string) string {\n\treturn fmt.Sprintf(\"%s.perm_denial_%s:%s|%s|%d:%s|%d:%s\",\n\t\tnamespace, idType, userUID, action, len(name), name, len(parent), parent)\n}\n~~~\n\n## 4) Severity: LOW | Type: Performance\nTitle: Cached-deny path does duplicate work and records a cache hit as a miss\n\nAffected:\n- pkg/services/authz/rbac/service.go:123-137\n\nExplanation:\nWhen cached permissions exist but do not allow access, `Check`:\n- resolves user identifiers again inside `getIdentityPermissions`,\n- re-runs the DB permission fetch, and\n- evaluates `checkPermission` a second time.\n\nThat is roughly double the work on every first-time deny.\n\nIt also increments `permissionCacheUsage{\"false\"}` even though the cache was hit. This skews the hit/miss metric that this PR reorganizes.\n\nErrors from `getCachedIdentityPermissions` (for example a DB error from `GetUserIdentifiers`) are silently treated as a miss. Consider distinguishing `cache.ErrNotFound` from real errors.\n\nProposed fix:\n~~~go\ncachedPerms, err := s.getCachedIdentityPermissions(...)\nswitch {\ncase err == nil:\n\ts.metrics.permissionCacheUsage.WithLabelValues(\"true\", checkReq.Action).Inc()\n\t// ... check, return if allowed\ncase !errors.Is(err, cache.ErrNotFound):\n\tctxLogger.Warn(\"cache lookup failed\", \"error\", err)\n\ts.metrics.permissionCacheUsage.WithLabelValues(\"false\", checkReq.Action).Inc()\ndefault:\n\ts.metrics.permissionCacheUsage.WithLabelValues(\"false\", checkReq.Action).Inc()\n}\n~~~\n\n## 5) Severity: LOW | Type: Maintainability\nTitle: Cache lookup removed from getUserPermissions/getAnonymousPermissions affects all callers\n\nAffected:\n- pkg/services/authz/rbac/service.go:379-380\n- pkg/services/authz/rbac/service.go:423-424\n\nExplanation:\n`getUserPermissions` and `getAnonymousPermissions` no longer read `permCache`. They only write it. Any caller of `getIdentityPermissions` other than `Check` and `List` now always hits the database. Such callers cannot be seen in this diff and would need checking.\n\nThe test case covering the cache-hit behavior was deleted rather than moved. The read/write split between `getCachedIdentityPermissions` and these functions is also easy to misuse.\n\nVerify there are no other callers. Otherwise keep a cache-aware wrapper.\n\nProposed fix:\n~~~go\n// Either document that getIdentityPermissions is \"force refresh\" only,\n// or provide getIdentityPermissionsCached() used by all non-Check callers.\n~~~\n\n## 6) Severity: LOW | Type: Test\nTitle: Explicit-deny test cannot prove the denial cache short-circuits\n\nAffected:\n- pkg/services/authz/rbac/service_test.go:981-982\n\nExplanation:\nThe comment says the permission cache is populated to \"Allow access … to prove this is not checked\". However, the map value is `false`, so the cached permissions do not grant access.\n\nWith the denial cache removed, `Check` would still fall back to the default store (no permissions) and deny. The test therefore passes regardless of the denial-cache logic.\n\nSet the value to `true` so that a passing test actually demonstrates the short-circuit. Also add a test asserting that a DB-backed deny populates `permDenialCache`.\n\nProposed fix:\n~~~go\ns.permCache.Set(ctx, userPermCacheKey(\"org-12\", \"test-uid\", \"dashboards:read\"), map[string]bool{\"dashboards:uid:dash1\": true})\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The Check operation exhibits asymmetric cache trust logic: cached permission grants are trusted and returned immediately, but cached denials from the same permission cache are ignored, leading to a fresh database lookup. This allows stale cached grants to provide access to revoked resources, posing a security risk. ",
+        "severity": "High",
+        "category": "security",
+        "matched_candidate": "Cached-deny path does duplicate work - when cached permissions exist but don't allow access, Check resolves user identifiers again, re-runs DB permission fetch, and evaluates checkPermission a second time",
+        "confidence": 0.85,
+        "reasoning": "The candidate issue identifies the same asymmetric cache behavior - that cached grants are trusted but cached denials trigger duplicate work (re-resolving identifiers, re-fetching from DB, re-evaluating permissions). While the candidate frames it as 'duplicate work' rather than explicitly calling out the security risk of stale cached grants, it's pointing to the exact same underlying code logic issue: the asymmetric treatment of cached permission grants vs denials."
+      },
+      {
+        "golden_comment": "The test comment says the cached permissions 'allow access', but the map stores false for dashboards:uid:dash1, so checkPermission will still treat this scope as not allowed.",
+        "severity": "Low",
+        "category": "doc_defect",
+        "matched_candidate": "Explicit-deny test cannot prove the denial cache short-circuits - the cached permission map value is false so the test passes regardless of denial-cache logic; should set value to true to demonstrate short-circuit",
+        "confidence": 0.95,
+        "reasoning": "Both comments identify the same issue: the test has a cached permission map with a 'false' value, which means the test doesn't actually prove what it claims to test. The golden comment notes that the map stores 'false' so checkPermission will treat the scope as not allowed (contradicting the comment about 'allow access'). The candidate issue says the same thing - the cached permission value is 'false' so the test passes regardless of the denial-cache logic, and suggests setting it to 'true' to properly demonstrate the short-circuit behavior. Both are pointing to the same fundamental problem with the test's logic."
+      },
+      {
+        "golden_comment": "The cache key construction in `userPermDenialCacheKey` uses simple string concatenation with underscores, which can lead to ambiguous keys and collision risks when any component contains underscores or is empty. This could result in incorrect denial cache hits, affecting user permissions.",
+        "severity": "Medium",
+        "category": "data",
+        "matched_candidate": "Denial cache key is ambiguous and omits identity type - using underscore separators when UIDs can contain underscores causes key collisions, and the key shares prefix with userPermCacheKey causing potential type mismatches between bool and map[string]bool",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same core problem as the golden comment: the cache key construction using underscore separators can lead to ambiguous keys and collision risks. The candidate specifically mentions that 'UIDs can contain underscores causes key collisions' which directly matches the golden comment's concern about 'simple string concatenation with underscores, which can lead to ambiguous keys and collision risks.' Both are pointing to the same underlying bug in the `userPermDenialCacheKey` function."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Denial cache hides newly granted permissions for the whole TTL - once a deny is cached, Check returns Allowed: false without consulting the permission cache or DB, causing users who were just granted access to still get 403 errors"
+      },
+      {
+        "candidate": "Denial cache keyed per resource name can grow without bound - cache size now scales with users × resources instead of users × actions, raising memory use and enabling memory inflation with arbitrary names"
+      },
+      {
+        "candidate": "Errors from getCachedIdentityPermissions are silently treated as cache miss - should distinguish cache.ErrNotFound from real errors like DB errors"
+      },
+      {
+        "candidate": "getUserPermissions and getAnonymousPermissions no longer read permCache, only write it - any caller of getIdentityPermissions other than Check and List now always hits the database"
+      },
+      {
+        "candidate": "Test case covering cache-hit behavior was deleted rather than moved"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 9,
+    "total_golden": 3,
+    "tp": 3,
+    "fp": 5,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.3333333333333333,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/103633"
+  },
+  "judgeUsage": {
+    "calls": 29,
+    "inputTokens": 9456,
+    "outputTokens": 3541,
+    "costUsd": 0.135805
+  }
+}

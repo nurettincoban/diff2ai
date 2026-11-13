@@ -1,0 +1,109 @@
+{
+  "id": "sentry-80168",
+  "goldenUrl": "https://github.com/getsentry/sentry/pull/80168",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "`MetricAlertDetectorHandler` is now abstract and cannot be instantiated",
+      "affected": [
+        "src/sentry/incidents/grouptype.py:11-12"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Expected occurrence is built with a different group key/value than the one under test",
+      "affected": [
+        "tests/sentry/workflow_engine/processors/test_detector.py:536-545",
+        "tests/sentry/workflow_engine/processors/test_detector.py:489-491",
+        "tests/sentry/workflow_engine/processors/test_detector.py:190-192"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Doc",
+      "title": "`evaluate` docstring still says it returns a list",
+      "affected": [
+        "src/sentry/workflow_engine/processors/detector.py:229-231"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 3,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoGwFP1yb43BgBHWSAs",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 14143,
+      "outputTokens": 2620,
+      "ms": 22375
+    }
+  ],
+  "costUsd": 0.108972,
+  "durationMs": 23384,
+  "promptSha256": "fc7bc0d70e065a6923b92b79add315ef254d6c297a7509748495ea2cb6521069",
+  "promptChars": 35315,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: `MetricAlertDetectorHandler` is now abstract and cannot be instantiated\n\nAffected:\n- src/sentry/incidents/grouptype.py:11-12\n\nExplanation:\n`MetricAlertDetectorHandler` now subclasses `StatefulDetectorHandler` but its body is only `pass`. `StatefulDetectorHandler` declares abstract methods:\n- `get_dedupe_value`\n- `get_group_key_values`\n- the new `build_occurrence_and_event_data`\n\n`Detector.detector_handler` builds the handler with `group_type.detector_handler(detector)`. For a metric-alert detector, that call will now raise `TypeError: Can't instantiate abstract class MetricAlertDetectorHandler`.\n\nThe old version was a concrete no-op stub that returned no results. After this change, any metric-alert detector passed to `process_detectors` will raise instead of quietly returning nothing. That aborts processing for every detector in the batch.\n\nFix options:\n- Keep a concrete stub that implements the abstract methods.\n- Or don't register the handler on the group type until it is implemented.\n\nProposed fix:\n~~~python\nclass MetricAlertDetectorHandler(StatefulDetectorHandler[QuerySubscriptionUpdate]):\n    def get_dedupe_value(self, data_packet: DataPacket[QuerySubscriptionUpdate]) -> int:\n        # TODO: Implement\n        return 0\n\n    def get_group_key_values(\n        self, data_packet: DataPacket[QuerySubscriptionUpdate]\n    ) -> dict[DetectorGroupKey, int]:\n        # TODO: Implement\n        return {}\n\n    def build_occurrence_and_event_data(\n        self, group_key: DetectorGroupKey, value: int, new_status: PriorityLevel\n    ) -> tuple[IssueOccurrence, dict[str, Any]]:\n        raise NotImplementedError\n~~~\n\n## 2) Severity: LOW | Type: Test\nTitle: Expected occurrence is built with a different group key/value than the one under test\n\nAffected:\n- tests/sentry/workflow_engine/processors/test_detector.py:536-545\n- tests/sentry/workflow_engine/processors/test_detector.py:489-491\n- tests/sentry/workflow_engine/processors/test_detector.py:190-192\n\nExplanation:\nIn `TestEvaluateGroupKeyValue.test_dedupe`, the expected result uses group key `\"group_key\"`. However, the expected occurrence is built with `\"val1\"`, so its fingerprint is `build_fingerprint(\"val1\")`.\n\nIf the handler is actually evaluated with `\"group_key\"`, the real occurrence's fingerprint will differ and the equality assertion should fail. The rest of the test is outside the visible hunk, so I can't confirm which key is used.\n\nOther tests pass a `value` that doesn't match the data packet:\n- `6` instead of `100` in `test_results_on_change`\n- `6` instead of `10` for `group_2`\n\nThese only pass because the mock ignores `value`. That hides bugs if the hook ever starts using it.\n\nProposed fix:\n~~~python\noccurrence, event_data = build_mock_occurrence_and_event(\n    handler, \"group_key\", 6, PriorityLevel.HIGH\n)\n# and use the actual values (100, 10) in the other tests\n~~~\n\n## 3) Severity: LOW | Type: Doc\nTitle: `evaluate` docstring still says it returns a list\n\nAffected:\n- src/sentry/workflow_engine/processors/detector.py:229-231\n\nExplanation:\n`evaluate` now returns a dict keyed by `DetectorGroupKey`, but the docstring still says \"returns a list of `DetectorEvaluationResult`\". This misleads anyone implementing a subclass.\n\nProposed fix:\n~~~python\n\"\"\"\nEvaluates a given data packet and returns a dict of `DetectorEvaluationResult` keyed by group key.\n...\n\"\"\"\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "MetricAlertDetectorHandler inherits from StatefulDetectorHandler but only contains pass, failing to implement its required abstract methods: counter_names (property), get_dedupe_value(), get_group_key_values(), and build_occurrence_and_event_data(). This will cause a TypeError at runtime when the class is instantiated.",
+        "severity": "High",
+        "category": "api",
+        "matched_candidate": "MetricAlertDetectorHandler is now abstract and cannot be instantiated because it subclasses StatefulDetectorHandler but only has 'pass' as its body, missing implementations for abstract methods get_dedupe_value, get_group_key_values, and build_occurrence_and_event_data",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same core problem as the golden comment: MetricAlertDetectorHandler subclasses StatefulDetectorHandler but only contains 'pass', failing to implement the required abstract methods. Both mention the missing implementations for get_dedupe_value, get_group_key_values, and build_occurrence_and_event_data. The candidate also correctly notes this will cause instantiation issues (calling it 'abstract' which is effectively the same as the golden's 'TypeError at runtime'). The only minor difference is the candidate doesn't explicitly mention the counter_names property, but it captures the essential issue."
+      },
+      {
+        "golden_comment": "Docstring says this returns a list of DetectorEvaluationResult, but the method now returns a dict keyed by DetectorGroupKey. Consider updating the docstring to match the new return type.",
+        "severity": "Low",
+        "category": "doc_defect",
+        "matched_candidate": "evaluate method docstring incorrectly states it returns a list when it now returns a dict keyed by DetectorGroupKey",
+        "confidence": 0.99,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment - that the evaluate method's docstring incorrectly states it returns a list when it actually returns a dict keyed by DetectorGroupKey. Both comments point to the same documentation/return type mismatch issue."
+      },
+      {
+        "golden_comment": "Wrong value `6` passed for `group_2` occurrence — the data packet specifies `\"group_2\": 10`. Should be `10` to accurately reflect the test scenario, which will ensure the test produces the correct occurrence data.",
+        "severity": "Medium",
+        "category": "test_gap",
+        "matched_candidate": "Test test_results_on_change passes value 6 instead of 100, and group_2 uses 6 instead of 10, which only passes because the mock ignores the value parameter",
+        "confidence": 0.9,
+        "reasoning": "The candidate issue identifies the same problem as the golden comment - that group_2 uses value 6 instead of 10. The candidate also mentions an additional issue (value 6 instead of 100), but it correctly identifies the group_2 discrepancy that the golden comment is pointing out. The core issue about group_2 being 6 instead of 10 is the same."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Expected occurrence in TestEvaluateGroupKeyValue.test_dedupe is built with group key 'val1' but the test uses group key 'group_key', causing fingerprint mismatch"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 4,
+    "total_golden": 3,
+    "tp": 3,
+    "fp": 1,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.75,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "getsentry/sentry",
+    "pr_url": "https://github.com/getsentry/sentry/pull/80168"
+  },
+  "judgeUsage": {
+    "calls": 20,
+    "inputTokens": 4800,
+    "outputTokens": 1473,
+    "costUsd": 0.060825
+  }
+}

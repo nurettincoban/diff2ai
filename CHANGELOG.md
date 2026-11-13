@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - Project website at <https://nurettincoban.github.io/diff2ai/> (static, in `site/`, deployed to GitHub Pages by `.github/workflows/pages.yml`); the npm `homepage` points to it.
+- Evaluation on Martian's Code Review Bench (offline set, 50 PRs), self-run and not independently scored: results, method and limitations in `EVAL.md`, with a reproducible harness in `eval/` (`npm run eval`). Not part of the npm package.
 
 ## [0.3.0] - 2026-10
 

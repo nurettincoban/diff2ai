@@ -1,0 +1,207 @@
+{
+  "id": "cal.com-14740",
+  "goldenUrl": "https://github.com/calcom/cal.com/pull/14740",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Use `||` so team admins can add guests",
+      "affected": [
+        "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:46-48"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Update calendars with the organizer's credentials, not the caller's",
+      "affected": [
+        "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:158-165"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Security",
+      "title": "Normalize case before blacklist and duplicate checks",
+      "affected": [
+        "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:70-78"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Security",
+      "title": "Limit guest count and restrict who can trigger the emails",
+      "affected": [
+        "packages/trpc/server/routers/viewer/bookings/addGuests.schema.ts:3-6",
+        "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:52-56"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Pass only the newly added guests to the email sender",
+      "affected": [
+        "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:168"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Security",
+      "title": "Respect seated-event settings for attendee privacy and seat limits",
+      "affected": [
+        "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:92-106",
+        "packages/emails/email-manager.ts:539-547"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Reliability",
+      "title": "Handle calendar update failures after the DB write",
+      "affected": [
+        "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:165"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Make the error toast fallback reachable",
+      "affected": [
+        "apps/web/components/dialog/AddGuestsDialog.tsx:42-45"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Reset the invalid-email error after success or edits",
+      "affected": [
+        "apps/web/components/dialog/AddGuestsDialog.tsx:36-41",
+        "apps/web/components/dialog/AddGuestsDialog.tsx:69-74"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Avoid a 500 error for bookings without a user",
+      "affected": [
+        "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:58-68"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 10,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoT9mzJcfVXi9XMDomd",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 15860,
+      "outputTokens": 3714,
+      "ms": 31812
+    }
+  ],
+  "costUsd": 0.13772,
+  "durationMs": 32867,
+  "promptSha256": "c88701e1adefb10fcbb5526ea3a9c59dbd062b648619091e2c5f61e8ca341612",
+  "promptChars": 35366,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Use `||` so team admins can add guests\n\nAffected:\n- packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:46-48\n\nExplanation:\n`isTeamAdminOrOwner` combines the two checks with `&&`, so a user must pass both `isTeamAdmin` and `isTeamOwner`. In practice only owners pass. Plain team admins get a FORBIDDEN error, even though the variable name says admins should be allowed.\n\nProposed fix:\n~~~ts\nconst teamId = booking.eventType?.teamId;\nconst isTeamAdminOrOwner =\n  !!teamId && ((await isTeamAdmin(user.id, teamId)) || (await isTeamOwner(user.id, teamId)));\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: Update calendars with the organizer's credentials, not the caller's\n\nAffected:\n- packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:158-165\n\nExplanation:\n`EventManager` is built from `ctx.user` and that user's credentials. Attendees and team admins are also allowed to call this handler. When they do, the code tries to update calendar references owned by the organizer using the caller's credentials. The update then either fails or touches the wrong calendar, so the organizer's calendar event never gets the new attendees.\n\nProposed fix:\n~~~ts\nconst organizerUser = await prisma.user.findUniqueOrThrow({ where: { id: booking.userId! }, select: credentialForCalendarServiceSelect /* + needed fields */ });\nconst credentials = await getUsersCredentials(organizerUser);\nconst eventManager = new EventManager({ ...organizerUser, credentials });\n~~~\n\n## 3) Severity: MEDIUM | Type: Security\nTitle: Normalize case before blacklist and duplicate checks\n\nAffected:\n- packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:70-78\n\nExplanation:\nThe blacklist entries are lowercased, but the guest emails are not.\n- A blacklisted address written with any uppercase letter (e.g. `Bad@x.com`) passes the check.\n- The duplicate check against existing attendees is also case-sensitive, so the same person can be added twice under different casing.\n\nThe input array is also never de-duplicated on the server. The uniqueness refine exists only in the client schema.\n\nProposed fix:\n~~~ts\nconst normalized = [...new Set(guests.map((g) => g.trim().toLowerCase()))];\nconst existing = new Set(booking.attendees.map((a) => a.email.toLowerCase()));\nconst uniqueGuests = normalized.filter((g) => !existing.has(g) && !blacklistedGuestEmails.includes(g));\n~~~\n\n## 4) Severity: MEDIUM | Type: Security\nTitle: Limit guest count and restrict who can trigger the emails\n\nAffected:\n- packages/trpc/server/routers/viewer/bookings/addGuests.schema.ts:3-6\n- packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:52-56\n\nExplanation:\nThe `guests` array has no maximum size. Any attendee, matched only by email, can add an unlimited number of arbitrary addresses. Each added address receives a booking email sent under the organizer's name. This can be abused for spam or bulk mailing through Cal.com's mail infrastructure. The handler also has no rate limit and does not check booking status (cancelled or past bookings).\n\nProposed fix:\n~~~ts\nguests: z.array(z.string().email()).min(1).max(10),\n// and in handler: reject if booking.status is CANCELLED/REJECTED or endTime < now; consider rate limiting\n~~~\n\n## 5) Severity: MEDIUM | Type: Bug\nTitle: Pass only the newly added guests to the email sender\n\nAffected:\n- packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:168\n\nExplanation:\n`sendAddGuestsEmails(evt, guests)` receives the raw input list instead of `uniqueGuests`. If the input contains someone who was already an attendee, that person is treated as new and gets a \"scheduled\" email instead of the \"guests added\" notice.\n\nProposed fix:\n~~~ts\nawait sendAddGuestsEmails(evt, uniqueGuests);\n~~~\n\n## 6) Severity: MEDIUM | Type: Security\nTitle: Respect seated-event settings for attendee privacy and seat limits\n\nAffected:\n- packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:92-106\n- packages/emails/email-manager.ts:539-547\n\nExplanation:\nFor seated events, the handler adds attendees without checking `seatsPerTimeSlot`. It then sends every attendee an email built from the full attendee list. When `seatsShowAttendees` is false, this exposes other attendees' details to everyone. The safest fix is to reject seated bookings, or to follow the seat-specific email paths.\n\nProposed fix:\n~~~ts\nif (booking.eventType?.seatsPerTimeSlot) {\n  throw new TRPCError({ code: \"BAD_REQUEST\", message: \"cannot_add_guests_to_seated_event\" });\n}\n~~~\n\n## 7) Severity: MEDIUM | Type: Reliability\nTitle: Handle calendar update failures after the DB write\n\nAffected:\n- packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:165\n\nExplanation:\nThe guests are already saved to the database before `updateCalendarAttendees` runs. If the calendar update throws, the mutation returns an error to the user even though the guests were added, and no emails are sent. If the user retries, the server rejects every guest as a duplicate.\n\nProposed fix:\n~~~ts\ntry {\n  await eventManager.updateCalendarAttendees(evt, booking);\n} catch (e) {\n  logger.error(\"Failed updating calendar attendees\", e);\n}\n~~~\n\n## 8) Severity: LOW | Type: Bug\nTitle: Make the error toast fallback reachable\n\nAffected:\n- apps/web/components/dialog/AddGuestsDialog.tsx:42-45\n\nExplanation:\n`message` is a template string, so it is never empty. The `t(\"unable_to_add_guests\")` fallback can therefore never be used. When `err.data` is missing, the toast shows something like \"undefined: ...\".\n\nProposed fix:\n~~~tsx\nconst message = err.message ? `${err.data?.code ?? \"ERROR\"}: ${t(err.message)}` : t(\"unable_to_add_guests\");\nshowToast(message, \"error\");\n~~~\n\n## 9) Severity: LOW | Type: Bug\nTitle: Reset the invalid-email error after success or edits\n\nAffected:\n- apps/web/components/dialog/AddGuestsDialog.tsx:36-41\n- apps/web/components/dialog/AddGuestsDialog.tsx:69-74\n\nExplanation:\n`isInvalidEmail` is only reset when the user clicks Cancel. After a successful add, or after the user fixes the input, the error message stays visible. Closing the dialog via the overlay or Escape also keeps the stale state.\n\nProposed fix:\n~~~tsx\nonSuccess: () => { setIsInvalidEmail(false); ... }\nsetValue={(v) => { setIsInvalidEmail(false); setMultiEmailValue(v); }}\n~~~\n\n## 10) Severity: LOW | Type: Bug\nTitle: Avoid a 500 error for bookings without a user\n\nAffected:\n- packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts:58-68\n\nExplanation:\nWhen `booking.userId` is null, the lookup uses `id: 0` and `findFirstOrThrow` throws an unhandled Prisma error. The client gets an internal server error instead of a meaningful one.\n\nProposed fix:\n~~~ts\nif (!booking.userId) throw new TRPCError({ code: \"BAD_REQUEST\", message: \"booking_has_no_organizer\" });\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The addGuests.handler.ts blacklist check uses blacklistedGuestEmails.includes(guest) after lowercasing the blacklist but not the input guest emails, allowing attackers to bypass BLACKLISTED_GUEST_EMAILS restrictions by submitting emails with uppercase characters.",
+        "severity": "High",
+        "category": "security",
+        "matched_candidate": "Guest emails are not normalized to lowercase before blacklist and duplicate checks, allowing blacklisted addresses with uppercase letters to pass and same person to be added twice with different casing",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same core problem as the golden comment: guest emails are not normalized to lowercase before the blacklist check, which allows bypassing the blacklist by using uppercase characters. The candidate also mentions the duplicate check issue, but the primary security concern about blacklist bypass is clearly identified and matches the golden comment."
+      },
+      {
+        "golden_comment": "The logic for checking team admin/owner permissions is incorrect. This condition uses AND (&&) which requires both isTeamAdmin AND isTeamOwner to be true, but it should use OR (||) since a user needs to be either an admin OR an owner to have permission.",
+        "severity": "Critical",
+        "category": "bug",
+        "matched_candidate": "isTeamAdminOrOwner uses && instead of ||, requiring users to be both admin AND owner, so team admins get FORBIDDEN error when they should be allowed",
+        "confidence": 1,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment: the isTeamAdminOrOwner check incorrectly uses && (AND) instead of || (OR), which means users must be both admin AND owner instead of either admin OR owner. Both comments point to the same logical operator bug and its consequence (team admins being incorrectly denied access)."
+      },
+      {
+        "golden_comment": "The sendAddGuestsEmails function in email-manager.ts passes the full calendarEvent.attendees array when determining which attendees receive AttendeeScheduledEmail vs AttendeeAddGuestsEmail, but checks if newGuests.includes(attendee.email) where newGuests is the input guests array.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "sendAddGuestsEmails receives raw input list instead of uniqueGuests, causing existing attendees to receive 'scheduled' email instead of 'guests added' notice",
+        "confidence": 0.9,
+        "reasoning": "The candidate issue identifies the same problem as the golden comment. Both are pointing out that sendAddGuestsEmails receives/uses the raw input guests list instead of the processed uniqueGuests, which causes incorrect email type determination - existing attendees would receive the wrong email type (scheduled vs guests added). The golden comment explains the mechanism (checking newGuests.includes(attendee.email) against the full attendees array), while the candidate describes the consequence (existing attendees receive wrong email type). They're identifying the same underlying bug."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "EventManager uses caller's credentials instead of organizer's credentials, causing calendar updates to fail or update wrong calendar when attendees or team admins call the handler"
+      },
+      {
+        "candidate": "No maximum size limit on guests array and no restriction on who can trigger emails, allowing any attendee to add unlimited addresses and abuse mail infrastructure for spam"
+      },
+      {
+        "candidate": "For seated events, handler adds attendees without checking seatsPerTimeSlot and exposes other attendees' details when seatsShowAttendees is false"
+      },
+      {
+        "candidate": "Calendar update failures after DB write cause mutation to return error even though guests were added, and no emails are sent; retries then reject guests as duplicates"
+      },
+      {
+        "candidate": "Error toast fallback t('unable_to_add_guests') is unreachable because message is a template string that is never empty"
+      },
+      {
+        "candidate": "isInvalidEmail state is only reset on Cancel click, not after success or input edits, leaving stale error message visible"
+      },
+      {
+        "candidate": "When booking.userId is null, lookup uses id: 0 and findFirstOrThrow throws unhandled Prisma error instead of meaningful error"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "uniqueGuests filters out existing attendees and blacklisted emails but does not deduplicate duplicates within the input; createMany can insert duplicate attendee rows if the client submits repeated emails.",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "Starting with an array containing an empty string may cause validation issues. Consider starting with an empty array [] and handling the empty state in the MultiEmail component instead.",
+        "severity": "Low",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "The `sendAddGuestsEmails` function does not check the `disableStandardEmails` flags in the `EventType` metadata, which may result in sending emails to hosts/attendees even when standard emails are disabled for the event type.",
+        "severity": "Medium",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 10,
+    "total_golden": 6,
+    "tp": 3,
+    "fp": 7,
+    "fn": 3,
+    "errors_count": 0,
+    "precision": 0.3,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "calcom/cal.com",
+    "pr_url": "https://github.com/calcom/cal.com/pull/14740"
+  },
+  "judgeUsage": {
+    "calls": 67,
+    "inputTokens": 17334,
+    "outputTokens": 6204,
+    "costUsd": 0.24176999999999998
+  }
+}

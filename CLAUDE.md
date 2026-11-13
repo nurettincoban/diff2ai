@@ -24,6 +24,7 @@ TypeScript ESM CLI (`commander`) that turns Git diffs into AI-ready code-review 
 - `src/orchestrator/` — consensus flow: `personas.ts`, `signals.ts`/`aiSelect.ts` (persona suggestions), `judge.ts`, `verify.ts` (mechanical check of judge findings), `run.ts` (parallel passes via `runPool`, failure policy: continue if ≥2 succeed, artifacts under `reviews/run_<timestamp>/`)
 - `src/integrations/` — `format.ts` (shared comment markdown), `github.ts` (gh: PR lookup, PR diff, review with inline comments + fallback), `gitlab.ts` (glab MR note)
 - `action.yml` — composite GitHub Action wrapping `review --pr`, `post`, `export`
+- `eval/` — evaluation harness for Martian's Code Review Bench (not in the npm package): `npm run eval` reviews benchmark PRs headlessly and runs the benchmark's own judge from a pinned checkout in `eval/.cache/`; results are committed under `eval/results/` and written up in `EVAL.md`. Real runs cost money and need `--approve-usd`/`--approve-estimate`; `--mock` and `tests/eval.*` make no API calls. Never edit committed results or `eval/EXPERIMENT.md` Part 1
 - `site/` — static project website (single `index.html`, no build, not in the npm package), deployed by `.github/workflows/pages.yml`; keep its examples in sync with real CLI output and the README
 
 ## Tests

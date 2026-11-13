@@ -1,0 +1,174 @@
+{
+  "id": "grafana-90045",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/90045",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Detach background legacy writes from the request context",
+      "affected": [
+        "pkg/apiserver/rest/dualwriter_mode3.go:50-57",
+        "pkg/apiserver/rest/dualwriter_mode3.go:108-114",
+        "pkg/apiserver/rest/dualwriter_mode3.go:134-141",
+        "pkg/apiserver/rest/dualwriter_mode3.go:161-167"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Fix metrics recorded against the wrong store or with the wrong label",
+      "affected": [
+        "pkg/apiserver/rest/dualwriter_mode3.go:45",
+        "pkg/apiserver/rest/dualwriter_mode3.go:106",
+        "pkg/apiserver/rest/dualwriter_mode3.go:129",
+        "pkg/apiserver/rest/dualwriter_mode3.go:166"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Propagate the unified-store result to the legacy update instead of re-applying objInfo",
+      "affected": [
+        "pkg/apiserver/rest/dualwriter_mode3.go:139"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Reliability",
+      "title": "Log failures of the asynchronous legacy writes",
+      "affected": [
+        "pkg/apiserver/rest/dualwriter_mode3.go:55-56",
+        "pkg/apiserver/rest/dualwriter_mode3.go:112-113",
+        "pkg/apiserver/rest/dualwriter_mode3.go:139-140",
+        "pkg/apiserver/rest/dualwriter_mode3.go:165-166"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Make the mode 3 unit tests separate the two stores and wait for the async legacy calls",
+      "affected": [
+        "pkg/apiserver/rest/dualwriter_mode3_test.go:28-44",
+        "pkg/apiserver/rest/dualwriter_mode3_test.go:305-325"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Remove duplicate go.work.sum entry",
+      "affected": [
+        "go.work.sum:408"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 6,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoL4QL4V9zNVryyg51B",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 20087,
+      "outputTokens": 3470,
+      "ms": 31712
+    }
+  ],
+  "costUsd": 0.149748,
+  "durationMs": 32731,
+  "promptSha256": "df6fe35e581b67db2c21d66b42e3ad06108ca5d767d16e2b6638e5f89b97465e",
+  "promptChars": 38633,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Detach background legacy writes from the request context\n\nAffected:\n- pkg/apiserver/rest/dualwriter_mode3.go:50-57\n- pkg/apiserver/rest/dualwriter_mode3.go:108-114\n- pkg/apiserver/rest/dualwriter_mode3.go:134-141\n- pkg/apiserver/rest/dualwriter_mode3.go:161-167\n\nExplanation:\nEach goroutine builds its timeout context from the incoming request `ctx`. The handler returns right after starting the goroutine. The apiserver then cancels the request context, so the legacy `Create`/`Update`/`Delete`/`DeleteCollection` is usually cancelled before or during execution.\n\nAs a result, legacy storage silently stops receiving writes in mode 3. This defeats the purpose of dual writing, and it will also make the new mode 3 integration tests flaky wherever they verify data through the legacy API. The 10s timeout only bounds the call; it does not extend the parent's lifetime.\n\nProposed fix:\n~~~go\ngo func(ctx context.Context) {\n    ctx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), 10*time.Second, errors.New(\"legacy create timeout\"))\n    defer cancel()\n    ...\n}(ctx)\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Fix metrics recorded against the wrong store or with the wrong label\n\nAffected:\n- pkg/apiserver/rest/dualwriter_mode3.go:45\n- pkg/apiserver/rest/dualwriter_mode3.go:106\n- pkg/apiserver/rest/dualwriter_mode3.go:129\n- pkg/apiserver/rest/dualwriter_mode3.go:166\n\nExplanation:\nSeveral metric calls are mislabelled:\n- **Create (line 45) and Update (line 129):** a failure in *unified storage* is recorded with `recordLegacyDuration`.\n- **DeleteCollection (line 166):** the *legacy* goroutine records with `recordStorageDuration`.\n- **Delete success (line 106):** `name` is passed as the `kind` label. This is wrong, and it also creates unbounded label cardinality, one series per object name.\n\nTogether these make the storage/legacy latency and error metrics wrong. The cardinality problem can also bloat Prometheus.\n\nProposed fix:\n~~~go\n// Create / Update error paths\nd.recordStorageDuration(true, mode3Str, options.Kind, method, startStorage)\n// Delete success\nd.recordStorageDuration(false, mode3Str, options.Kind, method, startStorage)\n// DeleteCollection goroutine\nd.recordLegacyDuration(err != nil, mode3Str, options.Kind, method, startLegacy)\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Propagate the unified-store result to the legacy update instead of re-applying objInfo\n\nAffected:\n- pkg/apiserver/rest/dualwriter_mode3.go:139\n\nExplanation:\nThe previous code passed the object returned by `Storage.Update` to legacy via `updateWrapper`. The new code passes the raw `objInfo` to `Legacy.Update`, so legacy recomputes the update against its own (possibly divergent) old object. Two problems follow:\n- The two stores can diverge.\n- Any preconditions or resourceVersion carried by `objInfo` that belong to the unified store can cause the legacy update to fail.\n\nThese failures are not logged (see issue 4).\n\n`objInfo` is also used concurrently in a goroutine after the request returns. Whether that is safe depends on the concrete implementation, which is outside this diff.\n\nProposed fix:\n~~~go\n_, _, errObjectSt := d.Legacy.Update(ctx, name, &updateWrapper{upstream: objInfo, updated: res},\n    createValidation, updateValidation, forceAllowCreate, options)\n~~~\n\n## 4) Severity: MEDIUM | Type: Reliability\nTitle: Log failures of the asynchronous legacy writes\n\nAffected:\n- pkg/apiserver/rest/dualwriter_mode3.go:55-56\n- pkg/apiserver/rest/dualwriter_mode3.go:112-113\n- pkg/apiserver/rest/dualwriter_mode3.go:139-140\n- pkg/apiserver/rest/dualwriter_mode3.go:165-166\n\nExplanation:\nThe old code logged legacy write failures. The new goroutines only bump a metric. Combined with the cancellation issue above, legacy drift becomes invisible and cannot be debugged. Also, Delete stores `d.Log` instead of the enriched `log` in the context (line 97), so downstream logs lose the name, kind and method values.\n\nProposed fix:\n~~~go\nif errObjectSt != nil {\n    log.Error(errObjectSt, \"unable to create object in legacy storage\")\n}\n// and in Delete:\nctx = klog.NewContext(ctx, log)\n~~~\n\n## 5) Severity: LOW | Type: Test\nTitle: Make the mode 3 unit tests separate the two stores and wait for the async legacy calls\n\nAffected:\n- pkg/apiserver/rest/dualwriter_mode3_test.go:28-44\n- pkg/apiserver/rest/dualwriter_mode3_test.go:305-325\n\nExplanation:\n`legacyStoreMock` and `storageMock` share the same `mock.Mock`, so the two stores cannot be told apart:\n- **Create error case:** this case is named \"unified store fails\" but only configures `setupLegacyFn`. The storage `Create` call is what actually matches that expectation.\n- **Update test:** the legacy and storage `Update` expectations are identical, so either one satisfies both calls.\n- **Legacy goroutines:** the test never waits for them or asserts them, so the legacy path is effectively untested.\n\nProposed fix:\n~~~text\nUse separate mocks for legacy and storage. Then use m.AssertExpectations\nwith assert.Eventually (or a sync hook) to verify the legacy call happens.\n~~~\n\n## 6) Severity: LOW | Type: Maintainability\nTitle: Remove duplicate go.work.sum entry\n\nAffected:\n- go.work.sum:408\n\nExplanation:\nLine 408 duplicates line 404 (`github.com/grafana/grafana/pkg/apimachinery v0.0.0-20240701135906-559738ce6ae1/go.mod`). This looks like a bad merge rather than a `go work sync` result. Regenerate the file instead of hand-merging.\n\nProposed fix:\n~~~text\ngo work sync   # or delete the duplicate line 408\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The context is being created with d.Log instead of the log variable that was initialized with additional context values (name, kind, method). This means those values won't be propagated to the logging context.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Delete stores d.Log instead of the enriched log in context, causing downstream logs to lose name, kind and method values",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the code is storing d.Log instead of the enriched 'log' variable in the context, which causes the additional context values (name, kind, method) to be lost for downstream logging. Both comments point to the same bug where context enrichment is not being propagated."
+      },
+      {
+        "golden_comment": "In DualWriterMode3's DeleteCollection method, when a storage operation fails, recordStorageDuration is incorrectly called with recordLegacyDuration instead.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "DeleteCollection legacy goroutine incorrectly records metrics with recordStorageDuration instead of recordLegacyDuration",
+        "confidence": 0.65,
+        "reasoning": "The candidate issue identifies a problem in DeleteCollection with metrics recording being swapped between storage and legacy. However, the candidate says 'legacy goroutine incorrectly records metrics with recordStorageDuration instead of recordLegacyDuration', while the golden comment says 'when a storage operation fails, recordStorageDuration is incorrectly called with recordLegacyDuration instead'. These are describing opposite problems - the golden says storage duration is called with legacy duration parameter, while the candidate says legacy is recorded with storage function. They're both about swapped metrics in DeleteCollection, but they're describing the swap in opposite directions. Looking more carefully: the golden says 'recordStorageDuration is incorrectly called with recordLegacyDuration' which means the storage recording function is being passed the legacy duration. The candidate says 'legacy goroutine incorrectly records metrics with recordStorageDuration instead of recordLegacyDuration' which means the legacy path is using the wrong recording function. These are actually describing different aspects of what could be the same underlying bug - a swap/confusion between storage and legacy metric recording in DeleteCollection."
+      },
+      {
+        "golden_comment": "Inconsistency: using name instead of options.Kind for metrics recording differs from other methods.",
+        "severity": "Medium",
+        "category": "api",
+        "matched_candidate": "Delete success metric passes 'name' as the 'kind' label, which is incorrect and creates unbounded label cardinality",
+        "confidence": 0.95,
+        "reasoning": "Both comments identify the same issue: in the Delete method, 'name' is being passed where 'kind' should be used for metrics recording. The golden comment frames it as an inconsistency with other methods (which use options.Kind), while the candidate frames it as incorrect usage causing unbounded cardinality. Both are pointing to the exact same bug - using 'name' instead of 'options.Kind' for the kind label in metrics."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Background legacy writes use request context which gets cancelled when handler returns, causing legacy storage to silently stop receiving writes in mode 3 - should use context.WithoutCancel to detach from request context"
+      },
+      {
+        "candidate": "Create and Update failure metrics for unified storage are incorrectly recorded with recordLegacyDuration instead of recordStorageDuration"
+      },
+      {
+        "candidate": "Legacy update receives raw objInfo instead of the unified-store result, causing legacy to recompute update against its own possibly divergent old object, leading to potential store divergence"
+      },
+      {
+        "candidate": "Preconditions or resourceVersion in objInfo belonging to unified store can cause legacy update to fail"
+      },
+      {
+        "candidate": "objInfo is used concurrently in a goroutine after request returns, which may not be safe depending on implementation"
+      },
+      {
+        "candidate": "Asynchronous legacy write failures are not logged, only metrics are bumped, making legacy drift invisible and hard to debug"
+      },
+      {
+        "candidate": "Mode 3 unit tests use shared mock.Mock for legacyStoreMock and storageMock, making the two stores indistinguishable"
+      },
+      {
+        "candidate": "Create error test case is named 'unified store fails' but only configures setupLegacyFn, with storage Create call matching that expectation instead"
+      },
+      {
+        "candidate": "Update test has identical legacy and storage Update expectations, so either one satisfies both calls"
+      },
+      {
+        "candidate": "Tests never wait for or assert legacy goroutines, leaving legacy path effectively untested"
+      },
+      {
+        "candidate": "Duplicate go.work.sum entry at line 408 duplicates line 404 for github.com/grafana/grafana/pkg/apimachinery"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 14,
+    "total_golden": 3,
+    "tp": 3,
+    "fp": 11,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.21428571428571427,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/90045"
+  },
+  "judgeUsage": {
+    "calls": 44,
+    "inputTokens": 11641,
+    "outputTokens": 5167,
+    "costUsd": 0.18738000000000002
+  }
+}

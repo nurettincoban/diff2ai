@@ -1,0 +1,116 @@
+{
+  "id": "grafana-80329",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/80329",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Performance",
+      "title": "Remove debug logging that dumps full ID lists at Error level",
+      "affected": [
+        "pkg/services/annotations/annotationsimpl/xorm_store.go:534-537",
+        "pkg/services/annotations/annotationsimpl/xorm_store.go:554-557",
+        "pkg/services/annotations/annotationsimpl/xorm_store.go:576-579"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Revert cleanup ticker interval change from 10 minutes to 1 minute",
+      "affected": [
+        "pkg/services/cleanup/cleanup.go:77-77"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Performance",
+      "title": "Build the inline SQLite IN-list in linear time",
+      "affected": [
+        "pkg/services/annotations/annotationsimpl/xorm_store.go:609-613"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Register DB cleanup before creating test data",
+      "affected": [
+        "pkg/services/annotations/annotationsimpl/cleanup_test.go:116-127"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoNUdet6LKpzpYETy6S",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 9730,
+      "outputTokens": 2720,
+      "ms": 25444
+    }
+  ],
+  "costUsd": 0.09332,
+  "durationMs": 26508,
+  "promptSha256": "071aeda4617fcd164531de90070e11fa7bc75c07f852487420150f9bd92957c6",
+  "promptChars": 20454,
+  "response": "## 1) Severity: HIGH | Type: Performance\nTitle: Remove debug logging that dumps full ID lists at Error level\n\nAffected:\n- pkg/services/annotations/annotationsimpl/xorm_store.go:534-537\n- pkg/services/annotations/annotationsimpl/xorm_store.go:554-557\n- pkg/services/annotations/annotationsimpl/xorm_store.go:576-579\n\nExplanation:\nThese six log calls look like leftover debugging, and they cause real harm in production:\n- **Wrong level.** Every batch logs at `Error` level, even on success. This floods error logs and can trigger error-rate alerting.\n- **Huge payloads.** Each call logs the entire `ids` slice, which can hold up to `AnnotationCleanupJobBatchSize` entries (the new test uses 32767). Each batch can therefore write hundreds of KB to the logs.\n- **Pointless field.** The pre-delete logs include `\"err\", err`, which is always nil at that point because the error was already checked above.\n\nRemove these calls, or downgrade them to `Debug` and log only counts.\n\nProposed fix:\n~~~go\nids, err := r.fetchIDs(ctx, \"annotation\", cond)\nif err != nil {\n    return 0, err\n}\nreturn r.deleteByIDs(ctx, \"annotation\", ids)\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Revert cleanup ticker interval change from 10 minutes to 1 minute\n\nAffected:\n- pkg/services/cleanup/cleanup.go:77-77\n\nExplanation:\nThe cleanup job interval drops from 10 minutes to 1 minute. No commit message explains this, and it looks like a leftover from local testing.\n\nThe change makes all cleanup jobs run 10x more often, not only the annotation cleanup. That includes snapshots, temp files, expired sessions and dashboard versions. The extra runs add DB load and lock contention, which works against the stated goal of avoiding MySQL deadlocks.\n\nIf a shorter interval is intended, make it configurable and justify it.\n\nProposed fix:\n~~~go\nticker := time.NewTicker(time.Minute * 10)\n~~~\n\n## 3) Severity: MEDIUM | Type: Performance\nTitle: Build the inline SQLite IN-list in linear time\n\nAffected:\n- pkg/services/annotations/annotationsimpl/xorm_store.go:609-613\n\nExplanation:\nThe SQLite inline path builds the ID list with a repeated `fmt.Sprintf(\"%s, %d\", values, v)`. Each iteration copies the whole string built so far, so the cost is O(n²).\n\nWith batch sizes in the tens of thousands, which this path exists to support, that means gigabytes of copying and heavy GC churn per batch.\n\nUse `strings.Builder` or `strings.Join` instead.\n\nProposed fix:\n~~~go\nparts := make([]string, len(ids))\nfor i, v := range ids {\n    parts[i] = strconv.FormatInt(v, 10)\n}\nsql = fmt.Sprintf(`DELETE FROM %s WHERE id IN (%s)`, table, strings.Join(parts, \",\"))\n~~~\n\n## 4) Severity: LOW | Type: Test\nTitle: Register DB cleanup before creating test data\n\nAffected:\n- pkg/services/annotations/annotationsimpl/cleanup_test.go:116-127\n\nExplanation:\n`t.Cleanup` is registered only after `createTestAnnotations` and the count assertions have run. If any of those calls `require`/`FailNow`, the cleanup never gets registered.\n\nAll subtests share one DB, and data is inserted with fixed IDs starting at 1. Leftover rows would therefore cause duplicate-key failures and wrong counts in every later subtest, hiding the original failure.\n\nRegister the cleanup first.\n\nProposed fix:\n~~~go\nt.Run(test.name, func(t *testing.T) {\n    t.Cleanup(func() { /* delete annotation + annotation_tag */ })\n    createTestAnnotations(t, fakeSQL, test.createAnnotationsNum, test.createOldAnnotationsNum)\n    ...\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The code uses Error log level for what appears to be debugging information. This will pollute error logs in production. Consider using Debug or Info level instead.",
+        "severity": "Low",
+        "category": "perf",
+        "matched_candidate": "Debug logging at Error level dumps full ID lists (up to 32767 entries) causing log flooding, false error alerts, and hundreds of KB written per batch",
+        "confidence": 0.95,
+        "reasoning": "Both comments identify the same core issue: using Error log level for debug/informational logging. The golden comment notes it's 'debugging information' at Error level that will 'pollute error logs in production.' The candidate issue identifies 'Debug logging at Error level' causing 'log flooding' and 'false error alerts.' Both are pointing to the same problem of inappropriate log level usage (Error instead of Debug/Info) and the negative consequences in production."
+      },
+      {
+        "golden_comment": "The cleanup job ticker was changed from 10 minutes to 1 minute, which can lead to increased database load and contention due to more frequent execution of cleanup tasks. This change should be reviewed to ensure it aligns with performance expectations.",
+        "severity": "Low",
+        "category": "perf",
+        "matched_candidate": "Cleanup ticker interval changed from 10 minutes to 1 minute without justification, causing 10x more frequent runs of all cleanup jobs and increased DB load/lock contention",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment: the cleanup job ticker interval was changed from 10 minutes to 1 minute, which will cause more frequent execution of cleanup tasks and increased database load/contention. Both comments express concern about this change and its performance implications."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Pre-delete logs include 'err' field that is always nil since error was already checked above"
+      },
+      {
+        "candidate": "SQLite inline IN-list building uses repeated fmt.Sprintf with string concatenation causing O(n²) time complexity and gigabytes of copying with large batch sizes"
+      },
+      {
+        "candidate": "t.Cleanup is registered after createTestAnnotations and assertions, so if those fail the cleanup never runs, leaving leftover rows that cause duplicate-key failures in subsequent subtests"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 5,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 3,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.4,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/80329"
+  },
+  "judgeUsage": {
+    "calls": 12,
+    "inputTokens": 3970,
+    "outputTokens": 1127,
+    "costUsd": 0.048025
+  }
+}

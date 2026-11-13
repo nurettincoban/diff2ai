@@ -401,6 +401,12 @@ Everything is written to `reviews/` at the repo root by default (override with `
 - **Inline comments fell back to one PR comment** — GitHub rejects a review when a comment points outside the PR diff; make sure the review was generated against the PR's base branch.
 - **Clipboard copy failed** — on headless Linux install `xsel`/`xclip`; with `--copy` alone diff2ai writes the prompt to a file instead so nothing is lost.
 
+## 📊 Evaluation
+
+Self-run, not independently scored: on the offline set of Martian's [Code Review Bench](https://github.com/withmartian/code-review-benchmark) (50 PRs, 173 expected review comments), a single diff2ai pass with `claude-opus-5-5` found 72.8% of the expected issues, at 26.8% precision and 39.2% F1 on the benchmark's default profile. diff2ai saw only the diff, so these numbers are not comparable with the benchmark's leaderboard.
+
+Method, exact versions, per-repository results, costs, one experiment (which did not beat the baseline) and the limitations are in [EVAL.md](EVAL.md).
+
 ## 🤝 Contributing
 
 PRs welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, project layout, and guidelines. Good first areas: new templates, runner presets, chunking heuristics, CLI UX.

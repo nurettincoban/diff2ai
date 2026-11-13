@@ -1,0 +1,24 @@
+Model: claude-opus-4-5-20251101
+Evaluations: results\claude-opus-4-5-20251101\evaluations.json
+Golden categories loaded: 173
+
+===========================================================================
+  Profile: STRICT  |  F1  |  Categories: api, bug, concurrency, data, security
+===========================================================================
+  Tool                     Prec  Recall     F1     F1    TP   FP   FN
+  ----------------------------------------------------------------------
+  diff2ai                 24.2%   71.9%  36.2%  36.2%   100  314   39
+
+===========================================================================
+  Profile: CORE  |  F1  |  Categories: api, bug, concurrency, data, doc_defect, perf, security, test_gap
+===========================================================================
+  Tool                     Prec  Recall     F1     F1    TP   FP   FN
+  ----------------------------------------------------------------------
+  diff2ai                 26.8%   72.8%  39.2%  39.2%   115  314   43
+
+===========================================================================
+  Profile: ALL  |  F1  |  Categories: api, bug, concurrency, data, doc_defect, perf, security, speculative, style, test_gap
+===========================================================================
+  Tool                     Prec  Recall     F1     F1    TP   FP   FN
+  ----------------------------------------------------------------------
+  diff2ai                 28.1%   71.1%  40.3%  40.3%   123  314   50

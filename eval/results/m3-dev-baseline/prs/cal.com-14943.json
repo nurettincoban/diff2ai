@@ -1,0 +1,132 @@
+{
+  "id": "cal.com-14943",
+  "goldenUrl": "https://github.com/calcom/cal.com/pull/14943",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Scope the retry-count purge to SMS reminders",
+      "affected": [
+        "packages/features/ee/workflows/api/scheduleSMSReminders.ts:29-45"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Reliability",
+      "title": "Guard the retry-count update inside the catch block",
+      "affected": [
+        "packages/features/ee/workflows/api/scheduleSMSReminders.ts:189-198"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Use an atomic increment instead of read-modify-write",
+      "affected": [
+        "packages/features/ee/workflows/api/scheduleSMSReminders.ts:179-186",
+        "packages/features/ee/workflows/api/scheduleSMSReminders.ts:190-197"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Performance",
+      "title": "Unindexed `retryCount` predicate in an `OR` delete on every cron run",
+      "affected": [
+        "packages/features/ee/workflows/api/scheduleSMSReminders.ts:31-43",
+        "packages/prisma/schema.prisma:1000"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Reminders are silently dropped after retries are exhausted",
+      "affected": [
+        "packages/features/ee/workflows/api/scheduleSMSReminders.ts:38-42"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgypVQVS7TNQAxnSZr8H3",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 2486,
+      "outputTokens": 2463,
+      "ms": 22622
+    }
+  ],
+  "costUsd": 0.059204,
+  "durationMs": 23770,
+  "promptSha256": "a24adac1e79482ec230f90f469fbb0303e9db8371510e6629c5a148db610f954",
+  "promptChars": 5855,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Scope the retry-count purge to SMS reminders\n\nAffected:\n- packages/features/ee/workflows/api/scheduleSMSReminders.ts:29-45\n\nExplanation:\nThe second `OR` branch (`retryCount > 1`) does not filter on `method`. This SMS cron job will therefore delete any `WorkflowReminder` with `retryCount > 1`, whatever its method (EMAIL, WHATSAPP, …).\n\n`retryCount` is a general column on the shared `WorkflowReminder` table. If any other scheduler starts incrementing it (or already does), this job will silently delete that scheduler's reminders.\n\nThe branch also ignores `scheduled` state. It could remove reminders that were later scheduled successfully, along with their `referenceId`, which breaks later cancellation of the provider-side message.\n\nProposed fix:\n~~~ts\nawait prisma.workflowReminder.deleteMany({\n  where: {\n    method: WorkflowMethods.SMS,\n    OR: [\n      { scheduledDate: { lte: dayjs().toISOString() } },\n      { retryCount: { gt: 1 }, scheduled: false },\n    ],\n  },\n});\n~~~\n\n## 2) Severity: MEDIUM | Type: Reliability\nTitle: Guard the retry-count update inside the catch block\n\nAffected:\n- packages/features/ee/workflows/api/scheduleSMSReminders.ts:189-198\n\nExplanation:\n`prisma.workflowReminder.update` is now awaited inside the `catch`. If that update throws, the exception escapes the per-reminder try/catch. Possible causes include:\n- a transient DB error (the original failure may itself have been DB-related),\n- the record being deleted concurrently, which gives `RecordNotFound`.\n\nWhen that happens, the whole loop is aborted, every remaining reminder is skipped for this run, and the handler ends with an unhandled error. Before this change, a single failure was only logged and processing continued.\n\nProposed fix:\n~~~ts\n} catch (error) {\n  console.log(`Error scheduling SMS with error ${error}`);\n  try {\n    await prisma.workflowReminder.update({\n      where: { id: reminder.id },\n      data: { retryCount: { increment: 1 } },\n    });\n  } catch (updateError) {\n    console.log(`Failed to increment retryCount for reminder ${reminder.id}: ${updateError}`);\n  }\n}\n~~~\n\n## 3) Severity: LOW | Type: Bug\nTitle: Use an atomic increment instead of read-modify-write\n\nAffected:\n- packages/features/ee/workflows/api/scheduleSMSReminders.ts:179-186\n- packages/features/ee/workflows/api/scheduleSMSReminders.ts:190-197\n\nExplanation:\nThe code writes `reminder.retryCount + 1`, using the value read at the start of the job. If cron invocations overlap, or the same reminder is processed twice, increments get lost. A failing reminder could then be retried more times than intended.\n\nPrisma's `{ increment: 1 }` is atomic and also removes the need for the extra `select`/cast.\n\nProposed fix:\n~~~ts\ndata: { retryCount: { increment: 1 } },\n~~~\n\n## 4) Severity: LOW | Type: Performance\nTitle: Unindexed `retryCount` predicate in an `OR` delete on every cron run\n\nAffected:\n- packages/features/ee/workflows/api/scheduleSMSReminders.ts:31-43\n- packages/prisma/schema.prisma:1000\n\nExplanation:\n`OR` with an unindexed `retryCount > 1` predicate prevents the planner from using only the existing indexes. The result is likely a sequential scan of the entire `WorkflowReminder` table on every cron invocation, and that table grows with every booking.\n\nFix options:\n- Scope the delete by `method` and `scheduled` (see issue 1).\n- Run the retry purge as a separate, narrower `deleteMany`.\n- Add an index, e.g. `@@index([method, retryCount])`, if the query stays.\n\nProposed fix:\n~~~prisma\n@@index([method, scheduled, retryCount])\n~~~\n\n## 5) Severity: LOW | Type: Maintainability\nTitle: Reminders are silently dropped after retries are exhausted\n\nAffected:\n- packages/features/ee/workflows/api/scheduleSMSReminders.ts:38-42\n\nExplanation:\nAfter two failed attempts, the reminder row is simply deleted on the next run. Nothing is logged and nothing marks it as failed, so the attendee never gets the SMS and there is no trace of why.\n\nThe threshold `1` is also a magic number, and with `gt: 1` the reminder gets only 2 attempts, which may not match the intent.\n\nThe fix: extract a named constant such as `MAX_SMS_RETRIES`, and log or flag reminders before purging them.\n\nProposed fix:\n~~~ts\nconst MAX_SMS_RETRY_COUNT = 2;\n// ...\n{ method: WorkflowMethods.SMS, scheduled: false, retryCount: { gte: MAX_SMS_RETRY_COUNT } }\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "Using retryCount: reminder.retryCount + 1 reads a possibly stale value and can lose increments under concurrency; consider an atomic increment via Prisma (increment: 1) to avoid race conditions (also applies to the similar update in the catch block).",
+        "severity": "High",
+        "category": "concurrency",
+        "matched_candidate": "Using reminder.retryCount + 1 instead of atomic increment causes lost increments when cron invocations overlap or the same reminder is processed twice",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: using reminder.retryCount + 1 instead of an atomic increment operation causes race conditions and lost increments when there's concurrent processing. Both comments point to the same underlying bug - the non-atomic increment of retryCount that can lose updates under concurrency."
+      },
+      {
+        "golden_comment": "The deletion logic in scheduleSMSReminders.ts incorrectly deletes non-SMS workflow reminders (e.g., Email, WhatsApp) that have retryCount > 1. This occurs because the retryCount condition within the OR clause for deletion lacks a method: WorkflowMethods.SMS filter, causing it to apply to all reminder types instead of only SMS reminders, which is the intended scope of this function.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "The retry-count purge in the SMS cron job deletes any WorkflowReminder with retryCount > 1 regardless of method, affecting EMAIL, WHATSAPP, and other reminder types",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the retry-count deletion logic in the SMS cron job incorrectly deletes all WorkflowReminder types (EMAIL, WHATSAPP, etc.) with retryCount > 1, instead of only SMS reminders. Both comments point to the missing method: WorkflowMethods.SMS filter in the retryCount condition."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "The retryCount > 1 branch ignores scheduled state, potentially removing reminders that were later scheduled successfully along with their referenceId, breaking later cancellation"
+      },
+      {
+        "candidate": "The prisma.workflowReminder.update inside the catch block can throw and abort the entire loop, skipping all remaining reminders for the run"
+      },
+      {
+        "candidate": "Unindexed retryCount predicate in OR delete causes sequential scan of entire WorkflowReminder table on every cron invocation"
+      },
+      {
+        "candidate": "Reminders are silently deleted after retries are exhausted with no logging or failure marking, so attendees never get SMS and there's no trace of why"
+      },
+      {
+        "candidate": "The retry threshold of 1 is a magic number and with gt: 1 the reminder only gets 2 attempts which may not match intent"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 7,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 5,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.2857142857142857,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "calcom/cal.com",
+    "pr_url": "https://github.com/calcom/cal.com/pull/14943"
+  },
+  "judgeUsage": {
+    "calls": 16,
+    "inputTokens": 5761,
+    "outputTokens": 1968,
+    "costUsd": 0.078005
+  }
+}

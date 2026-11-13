@@ -1,0 +1,576 @@
+{
+  "https://github.com/calcom/cal.com/pull/14943": {
+    "diff2ai": [
+      {
+        "text": "The retry-count purge in the SMS cron job deletes any WorkflowReminder with retryCount > 1 regardless of method, affecting EMAIL, WHATSAPP, and other reminder types",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The retryCount > 1 branch ignores scheduled state, potentially removing reminders that were later scheduled successfully along with their referenceId, breaking later cancellation",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The prisma.workflowReminder.update inside the catch block can throw and abort the entire loop, skipping all remaining reminders for the run",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Using reminder.retryCount + 1 instead of atomic increment causes lost increments when cron invocations overlap or the same reminder is processed twice",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unindexed retryCount predicate in OR delete causes sequential scan of entire WorkflowReminder table on every cron invocation",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Reminders are silently deleted after retries are exhausted with no logging or failure marking, so attendees never get SMS and there's no trace of why",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The retry threshold of 1 is a magic number and with gt: 1 the reminder only gets 2 attempts which may not match intent",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/22532": {
+    "diff2ai": [
+      {
+        "text": "updateManyByCredentialId passes an empty data object and relies on Prisma's @updatedAt to bump the timestamp, but Prisma only sets @updatedAt when it actually runs an update - with empty data it may run no update at all, so SelectedCalendar.updatedAt never changes",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The updateManyByCredentialId call adds an extra DB round-trip to every webhook-triggered cache refresh in the hot path of fetchAvailabilityAndSetCache, and a failure there makes the whole refresh reject after the cache was already written",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The UI reads CalendarCache.updatedAt via cacheUpdatedAt, not SelectedCalendar.updatedAt, so the write to SelectedCalendar appears to have no consumer",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Throwing plain Error instead of TRPCError in deleteCache handler surfaces as INTERNAL_SERVER_ERROR (500), hiding normal authorization or not-found outcomes as server faults and polluting error monitoring",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Delete cached data action is offered for delegation credentials and team-owned credentials, but the handler only accepts credentials where userId === user.id, so for delegation credentials the delete action always fails with an error toast",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Cache timestamp is formatted with hard-coded 'en-US' locale while the label is translated, causing non-US users to see ambiguous US date ordering (M/D/YY)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The handler always instantiates concrete CalendarCacheRepository instead of using the flag-aware factory, causing groupBy queries to run even when calendar-cache feature is disabled",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "sed -i '' in test-gcal-webhooks.sh only works with BSD/macOS sed, failing on GNU sed (Linux/CI)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "ENV_FILE='../.env' resolves against caller's current directory instead of script's location, potentially writing to wrong file or creating stray .env outside repo",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "cleanup function in test-gcal-webhooks.sh always exits 0 even on failure paths, so callers cannot detect failure",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "When reusing already-running tmole, the URL comes from /tmp/tmole.log which may be missing or stale",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "npx tsx fetches undeclared dependency at runtime if tsx is not in devDependencies, making dev tooling non-reproducible and requiring network access",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Migration contains misleading auto-generated comment saying column is added without default value when SQL actually uses DEFAULT NOW()",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/2": {
+    "diff2ai": [
+      {
+        "text": "unsubscribe_link interpolates %{unsubscribe_url} but other mailers that set add_unsubscribe_link (like digests) do not pass it, causing I18n::MissingInterpolationArgument and failing to send emails",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "TopicUser.find_by returns nil when user has no topic_users row for the topic, causing NoMethodError on tu.notification_level when clicking the email unsubscribe link",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unsubscribe action changes notification state on a plain GET request which is not idempotent - first hit drops to Regular, second hit drops to Muted, and lacks CSRF protection allowing silent topic muting via embedded images",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "tu.save! bypasses TopicUser.change which publishes notification_level_change on MessageBus, causing other open tabs to show stale notification state",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Confirmation text always says 'You will stop receiving notifications' but Tracking/Watching only lowers to Regular where users still get notified for replies and mentions, making the message misleading",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4": {
+    "diff2ai": [
+      {
+        "text": "Feed URL is not escaped before building HTML, allowing stored XSS via URLs containing special characters like quotes or angle brackets",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Article body from feeds is stored and rendered as unsanitized HTML, allowing script injection from feed content",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Kernel#open with user-influenced strings can execute shell commands (strings starting with |) or read local files",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "No timeout or size limit on remote fetches, allowing slow or huge responses to hang Sidekiq jobs",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Feed items without content field cause NoMethodError when calling nil.scrub, aborting the entire poll",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "ERB template has invalid 'end if' syntax with no condition, causing incorrect template behavior",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Unthrottled job enqueue on embed requests allows flooding Sidekiq with arbitrary embed_url values",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Throttle key uses non-atomic setnx followed by expire, risking permanent key lock if process dies between calls",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Missing guard for nil post when updating existing embed causes PostRevisor to raise on hard-deleted posts",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Protocol-relative URLs starting with // are incorrectly rewritten by absolutize_urls, breaking images and links",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Origin check uses substring match instead of exact comparison, accepting prefix-matching origins",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Embed view crashes with 500 error when post's user is nil (deleted users)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Migration with force: true silently drops existing table, risking data loss on rerun or rollback",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Disqus import lost category option and original created_at, causing topics to be uncategorized with wrong timestamps",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Controller spec expects TopicRetriever but controller enqueues a job, test may not work correctly",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/106778": {
+    "diff2ai": [
+      {
+        "text": "useAllAlertRuleAbilities now delegates to useAllRulerRuleAbilities which hard-codes isFederated = false, causing federated Mimir rule groups to incorrectly get Update, Delete and Pause abilities when they should be treated as immutable",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "GrafanaRuleListItem in FilterView is missing the key prop that was present on the previous GrafanaRuleLoader, causing React key warnings and potential state attachment to wrong rules when filtered list changes",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Pause/Restore/Export abilities are gated on prometheusRuleType.grafana.alertingRule instead of prometheusRuleType.grafana.rule, causing Grafana-managed recording rules to lose pause, restore and export capabilities",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "canPause and canDelete can be true from Prom-only abilities but the list view no longer passes rulerRule, and the test asserts exactly 4 menu items hiding that Delete and Pause actions are missing for permitted users",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "isProvisionedPromRule reads promRule.provenance but no backend change ensures the Prometheus API returns this field, potentially making provisioned rules appear mutable in the list view",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The returnTo parameter was dropped from the rule view link, causing navigation from list to rule detail and back to lose filter and scroll context",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "AlertRuleMenu passes a new array literal of actions on every render, making the useMemo ineffective since it depends on that array reference",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Every list item runs both ruler and Prom ability computations including useFolder and useIsRuleEditable, adding unnecessary work on large lists when no rulerRule is provided",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/grafana/grafana/pull/94942": {
+    "diff2ai": [
+      {
+        "text": "enableSqlExpressions returns false on both branches, making the FlagSqlExpressions check have no effect - the local variable 'enabled' holds the negated flag value making the code misleading",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The code still calls h.features.IsEnabledGlobally() which adds a possible nil-pointer panic if features can be nil, for no benefit since the flag check doesn't work",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Anyone who turns the flag on will still get 'not implemented' with nothing in the code explaining why",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The new gate only lives in ExpressionQueryReader.ReadQuery but SQL expression nodes can also be built through the legacy pipeline (nodes.go \u2192 UnmarshalSQLCommand \u2192 sql.TablesList) which doesn't go through this reader",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "On the legacy path, TablesList now always fails with a generic 'not implemented' from the stub DB.RunCommands, giving users an opaque error instead of a clear 'disabled' message",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "TablesList and QueryFramesInto now always return errors, so existing tests that exercise real parsing or execution will fail but none are updated in this change",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Tests should be skipped with a reason or changed to assert the disabled behaviour to keep CI green",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "TablesList still escapes quotes by hand and builds a DuckDB-specific json_serialize_sql statement then sends it to a stub that always errors - dead code left behind",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The new DB type has no doc comment saying it is a placeholder, so future readers may assume it is a working in-memory engine",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The string-interpolated SQL pattern in TablesList carries injection risk if the escaping is ever relied upon with a real engine",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/keycloak/keycloak/pull/37634": {
+    "diff2ai": [
+      {
+        "text": "The isAccessTokenId matcher uses wrong substring indices (3-5 instead of 4-6) to extract the grant shortcut, returning 'ta' instead of the expected value for 'onrtac'",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The isAccessTokenId matcher condition is inverted, returning false when the shortcut matches the expected value instead of when it doesn't match",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The isAccessTokenId matcher does not verify that the prefix is exactly 6 characters long",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Null check validates grantType twice instead of rawTokenId, allowing null rawTokenId to be accepted and produce token IDs like 'onrtac:null'",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Grant shortcuts are not validated for length - a custom OAuth2GrantTypeFactory returning a 3-letter shortcut produces token IDs that getTokenContextFromTokenId rejects",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Grant shortcuts containing a colon break parsing of the ':' separator in token IDs",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Null grant shortcut causes NPE in ConcurrentHashMap.put during postInit, blocking server startup",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Grant shortcut collision with 'na' is not clearly reported",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The new getShortcut() method is abstract with no default, causing existing third-party grant factories to fail to compile or link with AbstractMethodError",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "getShouldUseLightweightToken reads session.getContext().getClient() which may be null in admin or internal token generation paths, causing NPE",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "In token exchange flows, the context client can differ from the client the token is issued to, causing the encoded lightweight/regular flag to be wrong",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Public Context copy constructor was removed without deprecation, breaking code that clones a Context",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Main Context constructor calls formParams.getFirst() unconditionally, causing NPE when null formParams is passed",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "grantType is captured once in constructor and not recomputed in setFormParams, becoming stale if form params are replaced",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1": {
+    "diff2ai": [
+      {
+        "text": "UsernameForm calls isConditionalPasskeysEnabled() with no arguments but the method signature requires a UserModel user parameter, causing compilation failure",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "isConditionalPasskeysEnabled returns false when user is null, which prevents conditional passkeys UI from showing on the initial login page for unidentified users, breaking normal passkey login flow",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "During re-authentication, any discoverable passkey can be presented because allowCredentials is not restricted - need to verify that action() rejects credentials whose user differs from the pre-set context user",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Missing @Override annotation on shouldShowWebAuthnAuthenticators override method, which could cause silent failures if base signature changes",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "USER_SET_BEFORE_USERNAME_PASSWORD_AUTH constant was made public to allow AuthenticatorUtils to import it, creating an inappropriate dependency from util package to browser authenticator class and expanding public API surface",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test uses try/fail/catch(Exception) pattern instead of assertThrows, which could silently pass on unrelated failures like stale element or WebDriver errors",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Test comment at line 304 incorrectly states passkeys are hidden because user does not have passkey, when actual reason is passkeys are disabled for the realm",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/77754": {
+    "diff2ai": [
+      {
+        "text": "queued: datetime = timezone.now() runs once at module import, causing all AssignmentSource instances without explicit queued to share the same timestamp instead of getting the time they were actually queued",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "to_dict() returns a raw datetime for queued which is not JSON-serializable, causing failures or incorrect coercion when passed as Celery task kwargs with JSON serializer",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "from_dict() does no type conversion, so a round-tripped queued arrives as a string instead of datetime",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "The abstract sync_assignee_outbound signature was not updated to accept assignment_source parameter, but the task calls it with that argument - concrete implementations without **kwargs or assignment_source parameter will raise TypeError",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "sync_status_outbound was changed to accept assignment_source but nothing in the diff passes that parameter to it, suggesting wrong method was modified",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "When assignment_source_dict fails to parse, from_dict returns None with no logging, causing should_sync to treat the assignment as having no source and potentially recreating the sync cycle the PR is meant to prevent",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Subclass overrides of should_sync with the old one-argument signature will raise TypeError since the task now calls it with a second positional argument",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/80168": {
+    "diff2ai": [
+      {
+        "text": "MetricAlertDetectorHandler is now abstract and cannot be instantiated because it subclasses StatefulDetectorHandler without implementing required abstract methods (get_dedupe_value, get_group_key_values, build_occurrence_and_event_data), causing TypeError when detector_handler tries to instantiate it",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "evaluate docstring still says it returns a list of DetectorEvaluationResult but the method now returns dict[DetectorGroupKey, DetectorEvaluationResult]",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      },
+      {
+        "text": "Tests cannot detect wrong value being passed to occurrence hook because build_mock_occurrence_and_event ignores the value parameter, so tests pass with value=6 even when evaluated values differ (10, 100, 8)",
+        "path": null,
+        "line": null,
+        "source": "extracted"
+      }
+    ]
+  }
+}

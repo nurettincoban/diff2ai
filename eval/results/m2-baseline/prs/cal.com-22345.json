@@ -1,0 +1,128 @@
+{
+  "id": "cal.com-22345",
+  "goldenUrl": "https://github.com/calcom/cal.com/pull/22345",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Wrap returned SQL fragments in parentheses so top-level OR cannot bleed into caller predicates",
+      "affected": [
+        "packages/lib/server/service/insightsBooking.ts:72-80",
+        "packages/lib/server/service/insightsBooking.ts:105-107",
+        "packages/lib/server/service/insightsBooking.ts:171-174",
+        "packages/lib/server/service/insightsBooking.ts:204-207"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Remove unreachable branches in getBaseConditions",
+      "affected": [
+        "packages/lib/server/service/insightsBooking.ts:72-80"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Implementation",
+      "title": "Public `findMany` removed without visible migration of callers",
+      "affected": [
+        "packages/lib/server/service/insightsBooking.ts:68-81"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Caching tests deleted without replacement",
+      "affected": [
+        "packages/lib/server/service/__tests__/insightsBooking.integration-test.ts:426-435"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Loosened constructor type hides invalid option combinations",
+      "affected": [
+        "packages/lib/server/service/insightsBooking.ts:29-34",
+        "packages/lib/server/service/insightsBooking.ts:58"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoDn5Q3dMwC8CK8BNKV",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 10130,
+      "outputTokens": 3047,
+      "ms": 27321
+    }
+  ],
+  "costUsd": 0.10146,
+  "durationMs": 28296,
+  "promptSha256": "ed19ffaa5ed28e8858b913eb671b4741cb109e2de89e20807d8689b14381eb5f",
+  "promptChars": 24733,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Wrap returned SQL fragments in parentheses so top-level OR cannot bleed into caller predicates\n\nAffected:\n- packages/lib/server/service/insightsBooking.ts:72-80\n- packages/lib/server/service/insightsBooking.ts:105-107\n- packages/lib/server/service/insightsBooking.ts:171-174\n- packages/lib/server/service/insightsBooking.ts:204-207\n\nExplanation:\nThe org and team auth conditions are returned as a bare top-level `(A) OR (B)`. The single `eventTypeId` filter is also a bare `(...) OR (...)`.\n\n`getBaseConditions` only adds parentheses when it combines auth and filter conditions. When there are no filters, it returns `authConditions` as-is. The same applies to callers of `getAuthorizationConditions()` or `getFilterConditions()`.\n\nCallers will likely interpolate this into a larger query, for example `WHERE ${base} AND \"createdAt\" >= ${start}`. That produces `(A) OR (B) AND created...`. Because `AND` binds tighter than `OR`, this evaluates as `A OR (B AND created...)`. Rows matching `A` then skip every extra predicate the caller added, such as a date range or status filter.\n\nWith the Prisma object API, each `where` input was naturally scoped, so this is a regression in composability. It can return data outside the requested filters, and is a potential authorization leak if callers add further restrictions.\n\nProposed fix:\n~~~ts\n// Make every public fragment self-contained\nasync getBaseConditions(): Promise<Prisma.Sql> {\n  const authConditions = await this.getAuthorizationConditions();\n  const filterConditions = await this.getFilterConditions();\n  return filterConditions\n    ? Prisma.sql`((${authConditions}) AND (${filterConditions}))`\n    : Prisma.sql`(${authConditions})`;\n}\n// and in the builders: return Prisma.sql`(${acc}) OR (${condition})` wrapped, e.g.\nreturn Prisma.sql`(${conditions.reduce(...)} )`;\n~~~\n\n## 2) Severity: LOW | Type: Maintainability\nTitle: Remove unreachable branches in getBaseConditions\n\nAffected:\n- packages/lib/server/service/insightsBooking.ts:72-80\n\nExplanation:\n`getAuthorizationConditions()` always returns a non-null `Prisma.Sql` object, which is always truthy. As a result, the `else if (filterConditions)` branch can never run, and neither can the final `NOTHING_CONDITION` branch.\n\nThe dead code is misleading. It suggests that filter conditions alone could act as the base condition when authorization is missing, which would be a security hazard if it were ever reachable.\n\nProposed fix:\n~~~ts\nconst authConditions = await this.getAuthorizationConditions();\nconst filterConditions = await this.getFilterConditions();\nreturn filterConditions\n  ? Prisma.sql`((${authConditions}) AND (${filterConditions}))`\n  : Prisma.sql`(${authConditions})`;\n~~~\n\n## 3) Severity: LOW | Type: Implementation\nTitle: Public `findMany` removed without visible migration of callers\n\nAffected:\n- packages/lib/server/service/insightsBooking.ts:68-81\n\nExplanation:\n`findMany` was a public method and has been replaced by `getBaseConditions`, which has a different contract: it returns raw SQL instead of rows. Any existing callers, such as tRPC insights routers, would break at compile time. Callers that rely on `findManyArgs.where` merging would also lose behavior.\n\nThis diff does not show call-site updates. Verify that no callers remain outside these two files.\n\nProposed fix:\n~~~text\ngrep for `insightsBookingService.findMany` / `.findMany(` on InsightsBookingService instances and migrate them to $queryRaw with getBaseConditions(), or keep a compatibility wrapper.\n~~~\n\n## 4) Severity: LOW | Type: Test\nTitle: Caching tests deleted without replacement\n\nAffected:\n- packages/lib/server/service/__tests__/insightsBooking.integration-test.ts:426-435\n\nExplanation:\nThe \"Caching\" describe block was removed entirely. However, the caching logic (`cachedAuthConditions` and `cachedFilterConditions`) still exists and was retyped. It is no longer covered by any test.\n\nA trivial adaptation would keep the coverage: call the method twice and assert the same `Prisma.Sql` instance or an equal value. Ideally, also assert that the membership and team repositories are queried only once.\n\nProposed fix:\n~~~ts\nit(\"should cache authorization conditions\", async () => {\n  const c1 = await service.getAuthorizationConditions();\n  const c2 = await service.getAuthorizationConditions();\n  expect(c2).toBe(c1);\n});\n~~~\n\n## 5) Severity: LOW | Type: Maintainability\nTitle: Loosened constructor type hides invalid option combinations\n\nAffected:\n- packages/lib/server/service/insightsBooking.ts:29-34\n- packages/lib/server/service/insightsBooking.ts:58\n\nExplanation:\n`InsightsBookingServicePublicOptions` makes `teamId` optional for every scope. This means `{ scope: \"team\" }` without a `teamId` now type-checks.\n\nThe constructor presumably validates the options with the zod schema (that code is not shown in the diff). If so, invalid input silently falls back to `options = null`, and the service returns `NOTHING_CONDITION` (empty results) instead of failing at compile time. That makes misuse hard to diagnose.\n\nPrefer keeping the discriminated union type, or a discriminated public type, at the constructor boundary.\n\nProposed fix:\n~~~ts\nexport type InsightsBookingServicePublicOptions =\n  | { scope: \"user\" | \"org\"; userId: number; orgId: number }\n  | { scope: \"team\"; userId: number; orgId: number; teamId: number };\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "In getBaseConditions(), the else if (filterConditions) and final else branches are unreachable. This is because getAuthorizationConditions() always returns a non-null Prisma.Sql object, making authConditions always truthy, which means only the first two if/else if conditions are ever evaluated.",
+        "severity": "Low",
+        "category": "bug",
+        "matched_candidate": "Unreachable branches in getBaseConditions: getAuthorizationConditions() always returns a non-null Prisma.Sql object, making the else if (filterConditions) branch and final NOTHING_CONDITION branch dead code that misleadingly suggests filter conditions alone could act as base condition",
+        "confidence": 1,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment: the else if (filterConditions) branch and final else branch in getBaseConditions() are unreachable/dead code because getAuthorizationConditions() always returns a non-null Prisma.Sql object, making authConditions always truthy. Both comments point to the same underlying bug with the same root cause and affected code branches."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Returned SQL fragments are not wrapped in parentheses, causing top-level OR to bleed into caller predicates when combined with AND, potentially returning data outside requested filters and causing authorization leaks"
+      },
+      {
+        "candidate": "Public findMany method removed without visible migration of callers - replaced by getBaseConditions which returns raw SQL instead of rows, breaking any existing callers like tRPC insights routers"
+      },
+      {
+        "candidate": "Caching tests deleted without replacement while caching logic (cachedAuthConditions and cachedFilterConditions) still exists and is no longer covered by any test"
+      },
+      {
+        "candidate": "Loosened constructor type InsightsBookingServicePublicOptions makes teamId optional for every scope, allowing invalid combinations like { scope: 'team' } without teamId to type-check, making misuse hard to diagnose"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Fetching userIdsFromOrg only when teamsFromOrg.length > 0 can exclude org-level members for orgs without child teams; consider deriving from teamIds (which includes orgId) or removing the guard so org-only orgs still include member user bookings.",
+        "severity": "Medium",
+        "category": "speculative"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 5,
+    "total_golden": 2,
+    "tp": 1,
+    "fp": 4,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.2,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "calcom/cal.com",
+    "pr_url": "https://github.com/calcom/cal.com/pull/22345"
+  },
+  "judgeUsage": {
+    "calls": 12,
+    "inputTokens": 4876,
+    "outputTokens": 1407,
+    "costUsd": 0.059555000000000004
+  }
+}

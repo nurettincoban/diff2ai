@@ -83,3 +83,6 @@ desktop.ini
 # npm pack output
 *.tgz
 release-notes.md
+
+# Evaluation harness: cached clones, scratch output, mock runs
+eval/.cache/

@@ -1,0 +1,143 @@
+{
+  "id": "discourse-graphite-3",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Blocked-email lookup is case-sensitive, so the block can be bypassed",
+      "affected": [
+        "app/models/blocked_email.rb:11-19",
+        "db/migrate/20130724201552_create_blocked_emails.rb:4,10"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Validation has a write side effect, and the counter update can lose increments",
+      "affected": [
+        "app/models/blocked_email.rb:11-19",
+        "lib/validators/email_validator.rb:13-15"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Security",
+      "title": "Domain whitelist/blacklist regex is unanchored and treats the setting as a raw regex",
+      "affected": [
+        "lib/validators/email_validator.rb:18-22"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Any server-side email error permanently marks the email as \"invalid\" in the form",
+      "affected": [
+        "app/assets/javascripts/discourse/controllers/create_account_controller.js:69-74",
+        "app/assets/javascripts/discourse/controllers/create_account_controller.js:274-276"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Moved whitelist/blacklist logic has no tests in the new validator spec",
+      "affected": [
+        "spec/components/validators/email_validator_spec.rb:1-23"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoB9s16GZGUjcJ5xZLo",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 6063,
+      "outputTokens": 2959,
+      "ms": 26968
+    }
+  ],
+  "costUsd": 0.083432,
+  "durationMs": 27972,
+  "promptSha256": "a3b413d4d5286e6033c149ac546b2172bd6f0b533d441e007b8ff3032fb53268",
+  "promptChars": 14219,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Blocked-email lookup is case-sensitive, so the block can be bypassed\n\nAffected:\n- app/models/blocked_email.rb:11-19\n- db/migrate/20130724201552_create_blocked_emails.rb:4,10\n\nExplanation:\n`BlockedEmail.where(email: email)` is an exact, case-sensitive match on PostgreSQL. If `bad@spammers.org` is blocked, signing up as `Bad@Spammers.org` gets through. Nothing in this diff normalizes the email before storing or comparing it. The model's `uniqueness: true` and the unique index are also case-sensitive, so the same address can be stored twice with different casing.\n\nFix: downcase the email when saving it and when looking it up, or compare with `lower(email)`.\n\nProposed fix:\n~~~ruby\nbefore_validation { self.email = email.try(:downcase) }\n\ndef self.should_block?(email)\n  record = BlockedEmail.where(email: email.to_s.downcase).first\n  ...\nend\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Validation has a write side effect, and the counter update can lose increments\n\nAffected:\n- app/models/blocked_email.rb:11-19\n- lib/validators/email_validator.rb:13-15\n\nExplanation:\n`should_block?` runs inside a model validation, but it writes to the database. Every `valid?` / `save` attempt increments `match_count` and touches `last_match_at`. This includes repeated validation of the same record in one request and any availability-check endpoint that calls `valid?`. The statistics will therefore be inflated and do not reflect actual blocked signups.\n\nThe increment is also a read-modify-write (`match_count += 1; save`). Concurrent requests will lose updates.\n\nFix:\n- Increment atomically in SQL.\n- Consider separating the \"check\" from the \"record a match\" step.\n\nProposed fix:\n~~~ruby\ndef self.should_block?(email)\n  record = BlockedEmail.where(email: email).first\n  if record\n    BlockedEmail.where(id: record.id).update_all([\"match_count = match_count + 1, last_match_at = ?\", Time.zone.now])\n  end\n  record && record.action_type == actions[:block]\nend\n~~~\n\n## 3) Severity: MEDIUM | Type: Security\nTitle: Domain whitelist/blacklist regex is unanchored and treats the setting as a raw regex\n\nAffected:\n- lib/validators/email_validator.rb:18-22\n\nExplanation:\nThis code was moved here unchanged, but it now lives in a new validator, so it is worth fixing. The regex `@(example\\.com)` is not anchored at the end of the string, which causes two problems:\n- **Whitelist bypass:** with `example.com` whitelisted, `x@example.com.attacker.org` passes.\n- **Blacklist false positive:** with `spam.com` blacklisted, `x@spam.com.au` is rejected.\n\nIn addition, only `.` is escaped. Any other regex metacharacter in the setting is interpreted as regex syntax.\n\nFix: split the setting on `|`, escape each domain with `Regexp.escape`, and anchor the pattern with `\\z`.\n\nProposed fix:\n~~~ruby\ndef email_in_restriction_setting?(setting, value)\n  domains = setting.split('|').map { |d| Regexp.escape(d.strip) }.join('|')\n  value =~ Regexp.new(\"@(#{domains})\\\\z\", true)\nend\n~~~\n\n## 4) Severity: LOW | Type: Bug\nTitle: Any server-side email error permanently marks the email as \"invalid\" in the form\n\nAffected:\n- app/assets/javascripts/discourse/controllers/create_account_controller.js:69-74\n- app/assets/javascripts/discourse/controllers/create_account_controller.js:274-276\n\nExplanation:\nThe client adds the email to `rejectedEmails` whenever `result.errors.email` is present. That includes errors that have nothing to do with blocking, such as \"has already been taken\" or a transient domain-setting error. From then on the field shows the generic `user.email.invalid` message instead of the real reason.\n\nThere are two further problems:\n- `result.values.email` comes from the server's attributes. If the server normalizes the email (for example by downcasing it), it will not match what the user typed in `accountEmail`, so the client check never triggers.\n- `rejectedEmails: Em.A([])` is declared on the class prototype, so the array is shared across controller instances.\n\nFix:\n- Show the actual server error message rather than a generic \"invalid\".\n- Initialize the array in `init`.\n\nProposed fix:\n~~~js\ninit: function() {\n  this._super();\n  this.set('rejectedEmails', Em.A([]));\n},\n~~~\n\n## 5) Severity: LOW | Type: Test\nTitle: Moved whitelist/blacklist logic has no tests in the new validator spec\n\nAffected:\n- spec/components/validators/email_validator_spec.rb:1-23\n\nExplanation:\nThe spec only covers the blocked-email branch, and it does so with stubs. The domain whitelist/blacklist logic moved out of `User` into `EmailValidator` but has no coverage here. The spec also does not check that the blocked check is skipped when a domain error was already added.\n\nFix: add cases that stub `SiteSetting.email_domains_whitelist` and `SiteSetting.email_domains_blacklist`, and assert that `should_block?` is not called when a domain error already exists.\n\nProposed fix:\n~~~ruby\nit \"adds an error when domain not in whitelist\" do\n  SiteSetting.stubs(:email_domains_whitelist).returns(\"example.com\")\n  BlockedEmail.expects(:should_block?).never\n  validate\n  record.errors[:email].should be_present\nend\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "BlockedEmail.should_block_email? method has side effects during a read operation - it updates statistics even when just checking if an email should be blocked. This could cause race conditions in concurrent environments and makes the method name misleading.",
+        "severity": "Medium",
+        "category": "concurrency",
+        "matched_candidate": "should_block? method runs inside model validation but writes to database, causing inflated statistics from repeated validation calls and availability checks",
+        "confidence": 0.85,
+        "reasoning": "Both comments identify the same core issue: the should_block? method has side effects (writing to database/updating statistics) when it should be a read-only operation. The golden comment focuses on the misleading method name and race conditions, while the candidate focuses on inflated statistics from repeated validation calls. Both are pointing to the same fundamental problem - a method that appears to be a query/check operation is actually performing writes/updates, which is problematic."
+      },
+      {
+        "golden_comment": "The regex pattern @(#{domains}) in email_in_restriction_setting? method only matches domain suffixes, not full domains with proper boundary anchoring. An attacker can register evil.example.com to bypass a whitelist entry for example.com.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Domain whitelist/blacklist regex is unanchored, allowing whitelist bypass (x@example.com.attacker.org passes) and blacklist false positives (x@spam.com.au rejected when spam.com blacklisted)",
+        "confidence": 0.95,
+        "reasoning": "Both comments identify the same underlying security issue: the domain regex pattern is unanchored, allowing domain suffix matching instead of exact domain matching. The golden comment describes the attack as 'evil.example.com bypassing example.com whitelist' while the candidate describes it as 'example.com.attacker.org passing for example.com whitelist'. Both are describing the same regex anchoring vulnerability that allows whitelist bypass through domain manipulation, just with slightly different attack vector examples."
+      },
+      {
+        "golden_comment": "The case-sensitive email lookup in `BlockedEmail.should_block?` creates a bypass risk, allowing 'User@Example.com' to bypass a block on 'user@example.com'. This can lead to unauthorized access to blocked users.",
+        "severity": "Critical",
+        "category": "security",
+        "matched_candidate": "BlockedEmail.where(email: email) is case-sensitive on PostgreSQL, allowing bypass of email blocks by using different casing (e.g., Bad@Spammers.org bypasses bad@spammers.org block)",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the case-sensitive email lookup in BlockedEmail allows bypass of email blocks by using different casing. Both comments point to the same security vulnerability where users can circumvent email blocks by changing the case of their email address (e.g., 'User@Example.com' vs 'user@example.com' or 'Bad@Spammers.org' vs 'bad@spammers.org')."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "match_count increment uses read-modify-write pattern (match_count += 1; save) which loses updates under concurrent requests"
+      },
+      {
+        "candidate": "Client adds email to rejectedEmails for any server error (not just blocking), showing generic 'invalid' message instead of actual error like 'has already been taken'"
+      },
+      {
+        "candidate": "Server-normalized email (e.g., downcased) won't match user input in accountEmail, preventing client-side rejected email check from triggering"
+      },
+      {
+        "candidate": "rejectedEmails: Em.A([]) declared on class prototype causes array to be shared across controller instances"
+      },
+      {
+        "candidate": "Moved whitelist/blacklist logic has no tests in the new EmailValidator spec"
+      },
+      {
+        "candidate": "Spec doesn't verify that should_block? is skipped when a domain error already exists"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 10,
+    "total_golden": 3,
+    "tp": 3,
+    "fp": 6,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.3,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/discourse-graphite",
+    "pr_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3"
+  },
+  "judgeUsage": {
+    "calls": 40,
+    "inputTokens": 9526,
+    "outputTokens": 3576,
+    "costUsd": 0.13703
+  }
+}

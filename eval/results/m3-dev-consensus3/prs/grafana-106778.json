@@ -1,0 +1,214 @@
+{
+  "id": "grafana-106778",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/106778",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Make a skipped Grafana prom rule deny all abilities instead of granting Duplicate",
+      "affected": [
+        "public/app/features/alerting/unified/hooks/useAbilities.ts:287-318",
+        "public/app/features/alerting/unified/hooks/useAbilities.ts:349-356",
+        "public/app/features/alerting/unified/hooks/useAbilities.ts:397-406",
+        "public/app/features/alerting/unified/components/rule-viewer/AlertRuleMenu.tsx:67-92"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Restore federated-group immutability in useAllAlertRuleAbilities",
+      "affected": [
+        "public/app/features/alerting/unified/hooks/useAbilities.ts:222-229",
+        "public/app/features/alerting/unified/hooks/useAbilities.ts:242-250"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Use the ruler result as authoritative instead of OR-ing ruler and prom abilities",
+      "affected": [
+        "public/app/features/alerting/unified/components/rule-viewer/AlertRuleMenu.tsx:81-100",
+        "public/app/features/alerting/unified/rule-list/components/RuleActionsButtons.V2.tsx:53-61",
+        "public/app/features/alerting/unified/hooks/useAbilities.ts:296-310",
+        "public/app/types/unified-alerting-dto.ts:135"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Restore the `key` prop on GrafanaRuleListItem rendered in a list",
+      "affected": [
+        "public/app/features/alerting/unified/rule-list/FilterView.tsx:157-162"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Performance",
+      "title": "Avoid evaluating ability hook pipelines multiple times per rule row",
+      "affected": [
+        "public/app/features/alerting/unified/rule-list/components/RuleActionsButtons.V2.tsx:53-61",
+        "public/app/features/alerting/unified/components/rule-viewer/AlertRuleMenu.tsx:56-100",
+        "public/app/features/alerting/unified/hooks/useAbilities.ts:287-293"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Performance",
+      "title": "Hoist inline action arrays so ability-hook useMemo is effective",
+      "affected": [
+        "public/app/features/alerting/unified/components/rule-viewer/AlertRuleMenu.tsx:57-79",
+        "public/app/features/alerting/unified/hooks/useAbilities.ts:397-406"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Restore returnTo on the rule view link",
+      "affected": [
+        "public/app/features/alerting/unified/rule-list/GrafanaRuleListItem.tsx:40"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Performance",
+      "title": "Memoize Grafana prom abilities on stable fields rather than the polled rule object",
+      "affected": [
+        "public/app/features/alerting/unified/hooks/useAbilities.ts:295-334",
+        "public/app/features/alerting/unified/hooks/useAbilities.ts:349-378"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Assert Pause/Delete explicitly instead of a brittle exact menu-item count",
+      "affected": [
+        "public/app/features/alerting/unified/rule-list/GrafanaGroupLoader.test.tsx:171-207"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 9,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyq6Em1m2Uoc35emdkK4",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 33063,
+      "outputTokens": 3232,
+      "ms": 30171
+    },
+    {
+      "id": "msg_011Cgyq6EuSdV8bwR4zktiiV",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 33064,
+      "outputTokens": 3970,
+      "ms": 34522
+    },
+    {
+      "id": "msg_011Cgyq6EHVSA5uaBmZDEDBN",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 33056,
+      "outputTokens": 6173,
+      "ms": 55039
+    },
+    {
+      "id": "msg_011CgyqAJvAWtmxPPJHiDomC",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 39316,
+      "outputTokens": 5820,
+      "ms": 44225
+    }
+  ],
+  "costUsd": 0.9378960000000001,
+  "durationMs": 101275,
+  "promptSha256": "86b315252f641b6580ca6baab70f83dac0897e44760e6beef79dd0c7f2ed3e23",
+  "promptChars": 73056,
+  "response": "## 1) Severity: HIGH | Type: Bug\nConsensus: 2/3 reviewers\nTitle: Make a skipped Grafana prom rule deny all abilities instead of granting Duplicate\n\nAffected:\n- public/app/features/alerting/unified/hooks/useAbilities.ts:287-318\n- public/app/features/alerting/unified/hooks/useAbilities.ts:349-356\n- public/app/features/alerting/unified/hooks/useAbilities.ts:397-406\n- public/app/features/alerting/unified/components/rule-viewer/AlertRuleMenu.tsx:67-92\n\nExplanation:\n`AlertRuleMenu` passes `skipToken` when `promRule` is not a Grafana rule, for example cloud/Mimir/Loki rules or callers that pass no `promRule`. The hook then still produces a positive Duplicate ability:\n\n- `useAllGrafanaPromRuleAbilities` receives `undefined`.\n- `useIsGrafanaPromRuleEditable(undefined)` returns `loading: false`.\n- `MaybeSupported` becomes `AlwaysSupported`, and `duplicateSupported` is `AlwaysSupported`.\n- Duplicate becomes `toAbility(AlwaysSupported, getRulesPermissions('grafana').create)`.\n\n`AlertRuleMenu` combines the two checks with `canDuplicate = rulerDup || grafanaDup`. As a result, any user with Grafana rule-create permission sees \"Duplicate\" on data-source-managed rules. This happens even when the ruler-based check says the action is unsupported (ruler unavailable) or not permitted.\n\nThe skipped branch fails open. It should contribute `NotSupported` for every action.\n\nProposed fix:\n~~~ts\nconst abilities = useMemo<Abilities<AlertRuleAction>>(() => {\n  if (!rule) {\n    return Object.fromEntries(\n      Object.values(AlertRuleAction).map((a) => [a, [NotSupported, false]])\n    ) as Abilities<AlertRuleAction>;\n  }\n  ...\n}, [...]);\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nConsensus: 1/3 reviewers\nTitle: Restore federated-group immutability in useAllAlertRuleAbilities\n\nAffected:\n- public/app/features/alerting/unified/hooks/useAbilities.ts:222-229\n- public/app/features/alerting/unified/hooks/useAbilities.ts:242-250\n\nExplanation:\n`useAllAlertRuleAbilities(rule: CombinedRule)` previously computed `isFederated = isFederatedRuleGroup(rule.group)`. It now delegates to `useAllRulerRuleAbilities`, which hard-codes `isFederated = false`.\n\nLegacy callers that use `CombinedRule` (legacy list, rule details, viewer) will now report rules in Mimir federated groups as editable, deletable and pausable. This is a regression introduced by the refactor.\n\nPass the federation flag through to `useAllRulerRuleAbilities` and apply it.\n\nProposed fix:\n~~~ts\nexport function useAllAlertRuleAbilities(rule: CombinedRule): Abilities<AlertRuleAction> {\n  const groupIdentifierV2 = useMemo(() => groupIdentifier.fromCombinedRule(rule), [rule]);\n  return useAllRulerRuleAbilities(rule.rulerRule, groupIdentifierV2, isFederatedRuleGroup(rule.group));\n}\n\nexport function useAllRulerRuleAbilities(rule, groupIdentifier, isFederated = false) { ... }\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nConsensus: 2/3 reviewers\nTitle: Use the ruler result as authoritative instead of OR-ing ruler and prom abilities\n\nAffected:\n- public/app/features/alerting/unified/components/rule-viewer/AlertRuleMenu.tsx:81-100\n- public/app/features/alerting/unified/rule-list/components/RuleActionsButtons.V2.tsx:53-61\n- public/app/features/alerting/unified/hooks/useAbilities.ts:296-310\n- public/app/types/unified-alerting-dto.ts:135\n\nExplanation:\nWhen both `rulerRule` and a Grafana `promRule` are available, each capability is computed as `ruler || prom`. The prom path decides immutability from the newly added optional `GrafanaPromRuleDTO.provenance`. Nothing in the diff shows that the Prometheus-compatible API actually returns this field.\n\nIf the field is absent:\n- `isProvisionedPromRule` returns false.\n- The prom path marks provisioned rules as editable, deletable and pausable.\n- Because of the OR, this overrides the ruler path, which correctly marks them immutable.\n\nTo fix:\n- Use the prom-based check only as a fallback when no ruler rule is present.\n- Verify that the backend populates `provenance`.\n\nProposed fix:\n~~~ts\nconst useProm = !rulerRule && prometheusRuleType.grafana.rule(promRule);\nconst grafanaAbilities = useGrafanaPromRuleAbilities(useProm ? promRule : skipToken, MENU_ACTIONS);\nconst pick = (ruler: Ability, prom: Ability) => (useProm ? prom : ruler);\nconst [pauseSupported, pauseAllowed] = pick(rulerPauseAbility, grafanaPauseAbility);\nconst canPause = pauseSupported && pauseAllowed;\n// same for delete/duplicate/silence/export and edit in RuleActionsButtons\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nConsensus: 1/3 reviewers\nTitle: Restore the `key` prop on GrafanaRuleListItem rendered in a list\n\nAffected:\n- public/app/features/alerting/unified/rule-list/FilterView.tsx:157-162\n\nExplanation:\nThe previous `<GrafanaRuleLoader key={key} …/>` was replaced by `<GrafanaRuleListItem …/>` without a `key`. These items are rendered from a list.\n\nMissing keys have two effects:\n- React emits key warnings.\n- React reconciles by index, so component state can be reused across different rules as results stream in or reorder. Affected state includes open menus, delete modals and clone redirect state.\n\nProposed fix:\n~~~tsx\n<GrafanaRuleListItem\n  key={key}\n  rule={rule}\n  groupIdentifier={groupIdentifier}\n  namespaceName={ruleWithOrigin.namespaceName}\n  showLocation={true}\n/>\n~~~\n\n## 5) Severity: MEDIUM | Type: Performance\nConsensus: 1/3 reviewers\nTitle: Avoid evaluating ability hook pipelines multiple times per rule row\n\nAffected:\n- public/app/features/alerting/unified/rule-list/components/RuleActionsButtons.V2.tsx:53-61\n- public/app/features/alerting/unified/components/rule-viewer/AlertRuleMenu.tsx:56-100\n- public/app/features/alerting/unified/hooks/useAbilities.ts:287-293\n\nExplanation:\nEach row in the list view computes abilities several times:\n\n- **Ruler pipeline with no ruler rule.** `RuleActionsButtons` calls `useRulerRuleAbility`, and `AlertRuleMenu` calls `useRulerRuleAbilities`, even though `rule` is always undefined in the list view. Each call still runs `useIsRuleEditable`, `useAlertingAbility` and `useCanSilence`.\n- **Grafana prom pipeline twice with identical inputs.** `RuleActionsButtons` calls `useGrafanaPromRuleAbility`, and its child `AlertRuleMenu` calls `useGrafanaPromRuleAbilities`. Each one runs `useFolder`, `useGrafanaRulesSilenceSupport`, `useCanSilenceInFolder` and `useAlertingAbility`. The inline `// duplicate` comment at line 289 acknowledges this.\n\nPer row this is roughly four ability computations where one is needed. Subscriptions, memo recomputations and re-renders scale with the number of rows.\n\nTo fix:\n- Compute abilities once and pass the results down to `AlertRuleMenu`.\n- Add a skip path for the ruler hook when `rule` is undefined.\n\nProposed fix:\n~~~tsx\nconst rulerAbilities = useAllRulerRuleAbilities(rule ?? skipToken, groupIdentifier); // add skipToken support\nconst promAbilities = useAllGrafanaPromRuleAbilities(\n  prometheusRuleType.grafana.rule(promRule) ? promRule : undefined\n);\n// pass computed canPause/canDelete/... down to AlertRuleMenu\n~~~\n\n## 6) Severity: LOW | Type: Performance\nConsensus: 2/3 reviewers\nTitle: Hoist inline action arrays so ability-hook useMemo is effective\n\nAffected:\n- public/app/features/alerting/unified/components/rule-viewer/AlertRuleMenu.tsx:57-79\n- public/app/features/alerting/unified/hooks/useAbilities.ts:397-406\n\nExplanation:\n`useRulerRuleAbilities` and `useGrafanaPromRuleAbilities` memoize on `[abilities, actions]`. `AlertRuleMenu` passes a new array literal on every render. The memo therefore never hits, and a new `Ability[]` is allocated for every row on every render.\n\nHoist the action list to a module-level constant.\n\nProposed fix:\n~~~ts\nconst MENU_ACTIONS = [\n  AlertRuleAction.Pause,\n  AlertRuleAction.Delete,\n  AlertRuleAction.Duplicate,\n  AlertRuleAction.Silence,\n  AlertRuleAction.ModifyExport,\n];\nuseRulerRuleAbilities(rulerRule, groupIdentifier, MENU_ACTIONS);\nuseGrafanaPromRuleAbilities(isGrafanaPromRule ? promRule : skipToken, MENU_ACTIONS);\n~~~\n\n## 7) Severity: LOW | Type: Bug\nConsensus: 1/3 reviewers\nTitle: Restore returnTo on the rule view link\n\nAffected:\n- public/app/features/alerting/unified/rule-list/GrafanaRuleListItem.tsx:40\n\nExplanation:\nThe deleted implementation built `href` with `createRelativeUrl(..., { returnTo })`. The new component drops `returnTo`. Navigating to a rule's view page from the list therefore no longer returns the user to the filtered list state, which looks like an unintended regression.\n\nProposed fix:\n~~~tsx\nconst returnTo = createReturnTo();\n...\nhref: createRelativeUrl(`/alerting/grafana/${uid}/view`, { returnTo }),\n~~~\n\n## 8) Severity: LOW | Type: Performance\nConsensus: 1/3 reviewers\nTitle: Memoize Grafana prom abilities on stable fields rather than the polled rule object\n\nAffected:\n- public/app/features/alerting/unified/hooks/useAbilities.ts:295-334\n- public/app/features/alerting/unified/hooks/useAbilities.ts:349-378\n\nExplanation:\n`GrafanaGroupLoader` polls the Prometheus groups endpoint, and every poll produces new rule objects. Both `useAllGrafanaPromRuleAbilities` and `useIsGrafanaPromRuleEditable` include `rule` in their memo dependencies.\n\nAs a result, every poll invalidates the ability maps for all visible rows and re-renders the action components, even when permissions have not changed. Key the memos on the stable primitives the abilities actually depend on.\n\nProposed fix:\n~~~ts\nconst folderUid = rule?.folderUid;\nconst provenance = rule?.provenance;\nconst ruleType = rule?.type;\nconst pluginProvided = rule ? isPluginProvidedRule(rule) : false;\nconst abilities = useMemo(() => { /* use primitives */ },\n  [folderUid, provenance, ruleType, pluginProvided, loading, isEditable, isRemovable,\n   canSilenceInFolder, exportAllowed, silenceSupported]);\n~~~\n\n## 9) Severity: LOW | Type: Test\nConsensus: 1/3 reviewers\nTitle: Assert Pause/Delete explicitly instead of a brittle exact menu-item count\n\nAffected:\n- public/app/features/alerting/unified/rule-list/GrafanaGroupLoader.test.tsx:171-207\n\nExplanation:\nThe test grants `AlertingRuleUpdate` and `AlertingRuleDelete`, and the Edit button is expected to be present. Yet the test asserts exactly 4 menu items and never checks Pause or Delete.\n\nEither the count is fragile, or the test locks in a gap where Pause and Delete are not offered in the list view despite the permissions. Assert the expected items explicitly and drop the hard-coded count.\n\nProposed fix:\n~~~ts\nexpect(byRole('menuitem', { name: /pause/i }).get()).toBeInTheDocument();\nexpect(ui.menuItems.delete().get()).toBeInTheDocument();\n// remove expect(menuItems.length).toBe(4) or derive it from the asserted set\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "bc61525ca1ff1073617ac60c0157a17ec949d2133b3304a06fa8dfe1f30cb778",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The rendered GrafanaRuleListItem is missing the required key prop for React list items. This can cause rendering issues when the list order changes.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "GrafanaRuleListItem rendered in a list is missing the key prop, causing React key warnings and potential state reuse across different rules during reordering",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the GrafanaRuleListItem component rendered in a list is missing the required key prop. Both comments point out this is a React list rendering issue that can cause problems with state management and rendering when list order changes."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "useAllGrafanaPromRuleAbilities returns positive Duplicate ability when promRule is skipped (not a Grafana rule), causing any user with Grafana rule-create permission to see Duplicate on data-source-managed rules even when ruler-based check says action is unsupported"
+      },
+      {
+        "candidate": "useAllAlertRuleAbilities lost federated-group immutability check after refactor - isFederated is now hard-coded to false in useAllRulerRuleAbilities, causing rules in Mimir federated groups to incorrectly report as editable, deletable and pausable"
+      },
+      {
+        "candidate": "OR-ing ruler and prom abilities causes provisioned rules to be marked as editable/deletable/pausable when GrafanaPromRuleDTO.provenance field is absent, overriding the correct ruler path immutability check"
+      },
+      {
+        "candidate": "Ability hook pipelines are evaluated multiple times per rule row - ruler pipeline runs even when rule is undefined, and Grafana prom pipeline runs twice with identical inputs in RuleActionsButtons and AlertRuleMenu"
+      },
+      {
+        "candidate": "Inline action arrays passed to useRulerRuleAbilities and useGrafanaPromRuleAbilities cause useMemo to never hit cache since new array literal is created on every render"
+      },
+      {
+        "candidate": "returnTo parameter was dropped when replacing GrafanaRuleLoader with GrafanaRuleListItem, breaking navigation back to filtered list state from rule view page"
+      },
+      {
+        "candidate": "Grafana prom abilities memoization depends on polled rule object reference instead of stable primitive fields, causing unnecessary re-renders on every poll even when permissions haven't changed"
+      },
+      {
+        "candidate": "Test asserts exact count of 4 menu items instead of explicitly checking for Pause and Delete menu items, making test brittle and potentially masking missing functionality"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "RuleActionsButtons is invoked with only promRule, but SilenceGrafanaRuleDrawer inside RuleActionsButtons still depends on a Grafana Ruler rule being present, so for Grafana rules coming from list views the 'Silence notifications' menu entry (now driven by Grafana Prom abilities) will toggle showSilenceDrawer without ever rendering the drawer. This means clicking 'Silence notifications' for these rules has no visible effect, even when abilities indicate silencing is allowed.",
+        "severity": "High",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 9,
+    "total_golden": 2,
+    "tp": 1,
+    "fp": 8,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.1111111111111111,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/106778"
+  },
+  "judgeUsage": {
+    "calls": 20,
+    "inputTokens": 8709,
+    "outputTokens": 2623,
+    "costUsd": 0.10912000000000001
+  }
+}

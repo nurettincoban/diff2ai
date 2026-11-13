@@ -1,0 +1,122 @@
+{
+  "id": "cal.com-22345",
+  "goldenUrl": "https://github.com/calcom/cal.com/pull/22345",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Unparenthesized OR filter can break the AND composition when it is the first and only condition",
+      "affected": [
+        "packages/lib/server/service/insightsBooking.ts:104-123"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Empty teamIds array makes the org condition cast ambiguous",
+      "affected": [
+        "packages/lib/server/service/insightsBooking.ts:164"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Constructor accepts a loosened public options type that bypasses schema validation",
+      "affected": [
+        "packages/lib/server/service/insightsBooking.ts:29-34",
+        "packages/lib/server/service/insightsBooking.ts:58"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Tests lost caching coverage and assert on SQL internals",
+      "affected": [
+        "packages/lib/server/service/__tests__/insightsBooking.integration-test.ts:429-431"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqfzE6XVawuYSGutZbQ",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 10130,
+      "outputTokens": 1061,
+      "ms": 8016
+    }
+  ],
+  "costUsd": 0.03087,
+  "durationMs": 9127,
+  "promptSha256": "ed19ffaa5ed28e8858b913eb671b4741cb109e2de89e20807d8689b14381eb5f",
+  "promptChars": 24733,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Unparenthesized OR filter can break the AND composition when it is the first and only condition\n\nAffected:\n- packages/lib/server/service/insightsBooking.ts:104-123\n\nExplanation:\n`buildFilterConditions` returns `(\"eventTypeId\" = X) OR (\"eventParentId\" = X)` without outer parentheses when it is the only condition. A caller that embeds the result in a larger SQL string with its own AND, without wrapping it, gets the wrong precedence and leaks rows. `getBaseConditions` does wrap it, but `getFilterConditions` is public and may be used on its own. `buildAuthorizationConditions` has the same problem: its OR expression is returned unwrapped. Wrap each returned fragment in parentheses.\n\nProposed fix:\n~~~ts\nconditions.push(Prisma.sql`((\"eventTypeId\" = ${id}) OR (\"eventParentId\" = ${id}))`);\n// and wrap the returned org/team auth OR expressions: Prisma.sql`(${expr})`\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Empty teamIds array makes the org condition cast ambiguous\n\nAffected:\n- packages/lib/server/service/insightsBooking.ts:164\n\nExplanation:\n`\"teamId\" = ANY(${teamIds})` is passed as a bound parameter. If `teamIds` is empty, Prisma may serialize it in a way that Postgres cannot type, which can cause a runtime error such as \"cannot determine type of empty array\". The user-ID branch guards against an empty array, but the team branch does not. Guard against empty arrays, or cast explicitly with `::int[]`.\n\nProposed fix:\n~~~ts\nPrisma.sql`(\"teamId\" = ANY(${teamIds}::int[])) AND (\"isTeamBooking\" = true)`\n~~~\n\n## 3) Severity: LOW | Type: Maintainability\nTitle: Constructor accepts a loosened public options type that bypasses schema validation\n\nAffected:\n- packages/lib/server/service/insightsBooking.ts:29-34\n- packages/lib/server/service/insightsBooking.ts:58\n\nExplanation:\n`InsightsBookingServicePublicOptions` is a loose type, not a discriminated union. It allows `scope: \"team\"` without a `teamId`. The constructor presumably validates it with zod, and invalid input then silently yields `options = null` and the NOTHING condition. Callers get no compile-time feedback. Use a discriminated-union type instead.\n\n## 4) Severity: LOW | Type: Test\nTitle: Tests lost caching coverage and assert on SQL internals\n\nAffected:\n- packages/lib/server/service/__tests__/insightsBooking.integration-test.ts:429-431\n\nExplanation:\nThe caching tests were removed even though caching logic remains in the service. Most remaining tests compare exact `Prisma.sql` template structure, so they break on harmless formatting changes. Only one test actually runs the SQL against the database. Restore the caching tests and add execution-based assertions for the org and team scopes.\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [],
+    "false_positives": [
+      {
+        "candidate": "buildFilterConditions returns OR filter without outer parentheses, causing wrong SQL precedence when embedded in larger queries with AND conditions"
+      },
+      {
+        "candidate": "buildAuthorizationConditions returns OR expression unwrapped, same precedence problem as buildFilterConditions"
+      },
+      {
+        "candidate": "Empty teamIds array passed to ANY() can cause Postgres runtime error 'cannot determine type of empty array' - needs guard or explicit ::int[] cast"
+      },
+      {
+        "candidate": "Constructor accepts loosened InsightsBookingServicePublicOptions type that allows invalid combinations like scope: 'team' without teamId, bypassing compile-time validation"
+      },
+      {
+        "candidate": "Caching tests were removed even though caching logic remains in the service"
+      },
+      {
+        "candidate": "Tests compare exact Prisma.sql template structure, making them brittle to harmless formatting changes"
+      },
+      {
+        "candidate": "Only one test actually runs SQL against the database - need execution-based assertions for org and team scopes"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "In getBaseConditions(), the else if (filterConditions) and final else branches are unreachable. This is because getAuthorizationConditions() always returns a non-null Prisma.Sql object, making authConditions always truthy, which means only the first two if/else if conditions are ever evaluated.",
+        "severity": "Low",
+        "category": "bug"
+      },
+      {
+        "golden_comment": "Fetching userIdsFromOrg only when teamsFromOrg.length > 0 can exclude org-level members for orgs without child teams; consider deriving from teamIds (which includes orgId) or removing the guard so org-only orgs still include member user bookings.",
+        "severity": "Medium",
+        "category": "speculative"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 7,
+    "total_golden": 2,
+    "tp": 0,
+    "fp": 7,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0,
+    "recall": 0,
+    "tool": "diff2ai",
+    "repo_name": "calcom/cal.com",
+    "pr_url": "https://github.com/calcom/cal.com/pull/22345"
+  },
+  "judgeUsage": {
+    "calls": 18,
+    "inputTokens": 4964,
+    "outputTokens": 1751,
+    "costUsd": 0.06859499999999999
+  }
+}

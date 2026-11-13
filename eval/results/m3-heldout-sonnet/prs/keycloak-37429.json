@@ -1,0 +1,169 @@
+{
+  "id": "keycloak-37429",
+  "goldenUrl": "https://github.com/keycloak/keycloak/pull/37429",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Lithuanian totpStep1/loginTotpStep1 replaced with Italian text",
+      "affected": [
+        "themes/src/main/resources-community/theme/base/account/messages/messages_lt.properties:101-101",
+        "themes/src/main/resources-community/theme/base/login/messages/messages_lt.properties:71-71"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Simplified Chinese totpStep1 replaced with Traditional Chinese",
+      "affected": [
+        "themes/src/main/resources-community/theme/base/account/messages/messages_zh_CN.properties:112-112"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Verifier crashes when the English counterpart file is missing",
+      "affected": [
+        "misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:73-80"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Anchor check is order-dependent and replaces only the first occurrence",
+      "affected": [
+        "misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:150-162"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Mutable instance fields and unused/misspelled members",
+      "affected": [
+        "misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:58-63",
+        "misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:139-139"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Test fixtures are malformed or weak",
+      "affected": [
+        "misc/theme-verifier/src/test/resources/illegalHtmlTag_en.properties:17-17"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 6,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyqg6CGg6UX46cYVyCg4",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 42239,
+      "outputTokens": 1640,
+      "ms": 11440
+    }
+  ],
+  "costUsd": 0.100878,
+  "durationMs": 12559,
+  "promptSha256": "d644814f5fd61c5828ad669d3fe74b7d884a52d8a435c87b725861a09ebb5eaf",
+  "promptChars": 88418,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Lithuanian totpStep1/loginTotpStep1 replaced with Italian text\n\nAffected:\n- themes/src/main/resources-community/theme/base/account/messages/messages_lt.properties:101-101\n- themes/src/main/resources-community/theme/base/login/messages/messages_lt.properties:71-71\n\nExplanation:\nThe Lithuanian translation was replaced with an Italian string (\"Installa una delle seguenti applicazioni sul tuo cellulare:\"). Lithuanian users will see Italian text.\n\nProposed fix:\n~~~properties\ntotpStep1=Įdiekite vieną iš šių programėlių savo mobiliajame telefone:\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: Simplified Chinese totpStep1 replaced with Traditional Chinese\n\nAffected:\n- themes/src/main/resources-community/theme/base/account/messages/messages_zh_CN.properties:112-112\n\nExplanation:\nThe zh_CN file now contains a Traditional Chinese string (\"在您的手機上安裝以下應用程式之一：\"), which is the wrong locale. It should be Simplified Chinese.\n\nProposed fix:\n~~~properties\ntotpStep1=在您的手机上安装以下应用程序之一：\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Verifier crashes when the English counterpart file is missing\n\nAffected:\n- misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:73-80\n\nExplanation:\nThe English file path is derived by regex substitution on the absolute path. The regex `_[a-zA-Z-_]*\\.properties` can match earlier in the path, for example in directory names containing underscores. If the English file is missing, a RuntimeException is thrown instead of a reported message. Files already named `_en` that have no English sibling also fail. Additionally, `resources-community` to `resources` mapping does not cover the admin-ui `maven-resources-community` paths correctly, which works only by accident.\n\nProposed fix:\n~~~java\n// Derive the name only from the file name, and handle a missing file gracefully\nFile en = new File(file.getParentFile().getAbsolutePath().replace(\"resources-community\",\"resources\"),\n    file.getName().replaceAll(\"_[^_.]+(_[^_.]+)?\\\\.properties$\", \"_en.properties\"));\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: Anchor check is order-dependent and replaces only the first occurrence\n\nAffected:\n- misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:150-162\n\nExplanation:\nAnchors are matched positionally against the English anchors. A translation that reorders tags will be rejected. After validation, `replaceFirst` with a quoted string is fine, but any anchor tags left unmatched in English are never reported when the translation has fewer anchors. Also, the check validates only the tag text; `<a href=...>` attributes are allowed to be identical to English, which is intended, but `</?a[^>]*>` can span odd content. The `key` parameter is unused.\n\nProposed fix:\n~~~java\n// Compare multiset of anchors; also report when the English has anchors missing from the translation if desired.\n~~~\n\n## 5) Severity: LOW | Type: Maintainability\nTitle: Mutable instance fields and unused/misspelled members\n\nAffected:\n- misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:58-63\n- misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:139-139\n\nExplanation:\n`POLICY_*` and `HTML_TAGS` are non-static, non-final instance fields, so they are rebuilt for every file. The method name `santizeAnchors` is misspelled. The `commons-text` dependency is declared with a redundant `compile` scope.\n\nProposed fix:\n~~~java\nprivate static final PolicyFactory POLICY_SOME_HTML = ...;\nprivate static final Pattern HTML_TAGS = ...;\n~~~\n\n## 6) Severity: LOW | Type: Test\nTitle: Test fixtures are malformed or weak\n\nAffected:\n- misc/theme-verifier/src/test/resources/illegalHtmlTag_en.properties:17-17\n\nExplanation:\nThe fixture `Some <div>tag</div` has an unterminated closing tag. It exercises a malformed-HTML edge case rather than just a disallowed element. The test would be more meaningful with a well-formed `<div>`.\n\nProposed fix:\n~~~properties\nkey=Some <div>tag</div>\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The translation is in Italian instead of Lithuanian. This should be translated to Lithuanian to match the file's locale (messages_lt.properties).",
+        "severity": "Medium",
+        "category": "doc_defect",
+        "matched_candidate": "Lithuanian totpStep1/loginTotpStep1 translation was replaced with Italian text - Lithuanian users will see Italian text instead of Lithuanian",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - that Italian text was used instead of Lithuanian translation in what should be a Lithuanian locale file. Both comments point out that Lithuanian users will see Italian text, which is the core issue."
+      },
+      {
+        "golden_comment": "The totpStep1 value uses Traditional Chinese terms in the Simplified Chinese file (zh_CN), which is likely incorrect for this locale. Please verify the locale‑appropriate translation.",
+        "severity": "Medium",
+        "category": "doc_defect",
+        "matched_candidate": "Simplified Chinese (zh_CN) totpStep1 was replaced with Traditional Chinese text - wrong locale for the file",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment: the totpStep1 value in the Simplified Chinese (zh_CN) file contains Traditional Chinese text instead of Simplified Chinese, which is incorrect for that locale. Both comments point to the same localization/translation error."
+      },
+      {
+        "golden_comment": "The method name 'santizeAnchors' should be 'sanitizeAnchors' (missing 'i').",
+        "severity": "Low",
+        "category": "style",
+        "matched_candidate": "Method name santizeAnchors is misspelled (should be sanitizeAnchors)",
+        "confidence": 1,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment - the method name 'santizeAnchors' is misspelled and should be 'sanitizeAnchors' (missing the letter 'i'). Both comments point to the same typo in the same method name."
+      },
+      {
+        "golden_comment": "Field HTML_TAGS should be declared as 'private static final' following Java naming conventions for constants",
+        "severity": "Low",
+        "category": "style",
+        "matched_candidate": "POLICY_* and HTML_TAGS are non-static, non-final instance fields that get rebuilt for every file instead of being shared",
+        "confidence": 0.9,
+        "reasoning": "The golden comment identifies that HTML_TAGS should be declared as 'private static final' following Java naming conventions for constants. The candidate issue mentions that HTML_TAGS (along with POLICY_* fields) are 'non-static, non-final instance fields that get rebuilt for every file instead of being shared'. Both comments identify the same underlying problem - that HTML_TAGS should be static final but currently isn't. The candidate uses different wording (focusing on the performance/efficiency aspect of rebuilding) but points to the same code issue."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Verifier crashes when English counterpart file is missing - regex substitution on absolute path can match earlier in path (e.g., directory names with underscores), and missing files throw RuntimeException instead of reporting a message"
+      },
+      {
+        "candidate": "resources-community to resources mapping does not correctly cover admin-ui maven-resources-community paths"
+      },
+      {
+        "candidate": "Anchor check is order-dependent and replaces only the first occurrence - translations that reorder tags will be rejected incorrectly"
+      },
+      {
+        "candidate": "Anchor validation doesn't report when English has anchors that are missing from the translation (when translation has fewer anchors)"
+      },
+      {
+        "candidate": "The key parameter in anchor check method is unused"
+      },
+      {
+        "candidate": "commons-text dependency is declared with redundant compile scope"
+      },
+      {
+        "candidate": "Test fixture 'Some <div>tag</div' has unterminated closing tag - exercises malformed HTML rather than just disallowed element"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The anchor sanitization logic has a potential issue where it consumes English matcher groups without proper validation. If the translated text has more anchor tags than the English text, this could lead to incorrect validation results.",
+        "severity": "Low",
+        "category": "security"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 11,
+    "total_golden": 5,
+    "tp": 4,
+    "fp": 7,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.36363636363636365,
+    "recall": 0.8,
+    "tool": "diff2ai",
+    "repo_name": "keycloak/keycloak",
+    "pr_url": "https://github.com/keycloak/keycloak/pull/37429"
+  },
+  "judgeUsage": {
+    "calls": 62,
+    "inputTokens": 13706,
+    "outputTokens": 5542,
+    "costUsd": 0.20708000000000001
+  }
+}

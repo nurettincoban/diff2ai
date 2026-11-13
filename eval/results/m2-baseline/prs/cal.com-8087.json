@@ -1,0 +1,110 @@
+{
+  "id": "cal.com-8087",
+  "goldenUrl": "https://github.com/calcom/cal.com/pull/8087",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Performance",
+      "title": "Wrap app imports in thunks so the app store actually loads lazily",
+      "affected": [
+        "packages/app-store/index.ts:1-31"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Stop using `forEach(async …)`, which escapes the try/catch and leaves promises dangling",
+      "affected": [
+        "packages/app-store/vital/lib/reschedule.ts:125-131",
+        "packages/app-store/wipemycalother/lib/reschedule.ts:125-131",
+        "packages/trpc/server/routers/viewer/bookings.tsx:553-561"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "`getCalendarCredentials` now returns a Promise in `calendar`, which may break other callers",
+      "affected": [
+        "packages/core/CalendarManager.ts:28-32"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 3,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyo5ZaMBfaXV3MGjgZQf",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 10651,
+      "outputTokens": 2460,
+      "ms": 22889
+    }
+  ],
+  "costUsd": 0.091804,
+  "durationMs": 24195,
+  "promptSha256": "926d610752ce2a714297a368efa06ecd9b732e8ca622e6f27e4de8b3d2cf949a",
+  "promptChars": 25294,
+  "response": "## 1) Severity: MEDIUM | Type: Performance\nTitle: Wrap app imports in thunks so the app store actually loads lazily\n\nAffected:\n- packages/app-store/index.ts:1-31\n\nExplanation:\nEvery `import(\"./x\")` is a call that runs while the object literal is being built. All 29 app packages therefore start loading as soon as `@calcom/app-store` is imported. That is the same eager cost as the old static imports, so the stated goal of async loading is not met. It also makes things worse in two ways:\n\n- Each package is now split into its own async chunk, which adds bundling overhead.\n- If any app module fails to load (missing dependency, a throw at module evaluation), the rejected promise sits in the map. Until some code path happens to `await` that key, it is an unhandled rejection. In Node with default settings, that can crash the process even when the failing app is never used.\n\nProposed fix:\nStore factory functions and call them on demand. Bundlers and Node cache the module, so repeated calls are cheap.\n\n~~~ts\nconst appStore = {\n  applecalendar: () => import(\"./applecalendar\"),\n  caldavcalendar: () => import(\"./caldavcalendar\"),\n  // ...\n};\nexport default appStore;\n\n// usage\nconst loader = appStore[key as keyof typeof appStore];\nconst app = loader ? await loader() : undefined;\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Stop using `forEach(async …)`, which escapes the try/catch and leaves promises dangling\n\nAffected:\n- packages/app-store/vital/lib/reschedule.ts:125-131\n- packages/app-store/wipemycalother/lib/reschedule.ts:125-131\n- packages/trpc/server/routers/viewer/bookings.tsx:553-561\n\nExplanation:\n`forEach` ignores the promises its async callbacks return. Two consequences follow:\n\n- **Errors are not caught.** Anything thrown by `await getCalendar(...)`, `deleteEvent`, or `deleteMeeting` becomes an unhandled rejection. The surrounding `try { ... } catch` in the reschedule helpers no longer sees these errors, although it used to catch synchronous `getCalendar` failures.\n- **Nothing waits for the deletions.** The handler continues (emails, DB updates, response) before the calendar and video deletions have even started. This can produce race conditions and silently drop failures.\n\nProposed fix:\n~~~ts\nawait Promise.all(\n  bookingRefsFiltered.map(async (bookingRef) => {\n    if (!bookingRef.uid) return;\n    if (bookingRef.type.endsWith(\"_calendar\")) {\n      const calendar = await getCalendar(credentialsMap.get(bookingRef.type));\n      return calendar?.deleteEvent(bookingRef.uid, builder.calendarEvent);\n    } else if (bookingRef.type.endsWith(\"_video\")) {\n      return deleteMeeting(credentialsMap.get(bookingRef.type), bookingRef.uid);\n    }\n  })\n);\n~~~\nAlternatively, use `Promise.allSettled` if one failure should not block the others.\n\n## 3) Severity: LOW | Type: Bug\nTitle: `getCalendarCredentials` now returns a Promise in `calendar`, which may break other callers\n\nAffected:\n- packages/core/CalendarManager.ts:28-32\n\nExplanation:\n`getCalendar` is now async, so the `calendar` field returned by `getCalendarCredentials` is a `Promise<Calendar | null>`. `getConnectedCalendars` was updated to `await item.calendar`. However, any other consumer of `getCalendarCredentials` (outside this diff) that checks `if (calendar)` or calls `calendar.method()` will now always see a truthy Promise and fail at runtime.\n\nThere is a second problem: these promises are created eagerly. If one rejects and is never awaited, it becomes an unhandled rejection.\n\nI can't see all callers from this diff, so the severity is lowered.\n\nProposed fix:\nEither make `getCalendarCredentials` async and resolve the calendars inside it, or rename the field (e.g. `calendarPromise`) so every caller is forced to `await` it.\n\n~~~ts\nexport const getCalendarCredentials = async (credentials: Array<CredentialPayload>) => {\n  // ...\n  const calendar = await getCalendar(credential);\n  // ...\n};\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "Consider adding try-catch around the await to handle import failures gracefully",
+        "severity": "Low",
+        "category": "speculative",
+        "matched_candidate": "If any app module fails to load, the rejected promise sits in the map as an unhandled rejection, which can crash Node processes even when the failing app is never used",
+        "confidence": 0.9,
+        "reasoning": "Both comments identify the same underlying issue: the lack of error handling for the async import/load operation. The golden comment suggests adding try-catch to handle import failures gracefully, while the candidate issue points out that failed module loads result in unhandled rejections that can crash Node processes. Both are concerned with the same problem - missing error handling for potential import failures - just expressed differently."
+      },
+      {
+        "golden_comment": "The code uses forEach with async callbacks, which causes asynchronous operations (e.g., calendar/video event deletions, payment refunds) to run concurrently without being awaited. This 'fire-and-forget' behavior leads to unhandled promise rejections, race conditions, and incomplete cleanup, as surrounding try-catch blocks cannot properly handle errors from these unawaited promises. Replace forEach with for...of loops or Promise.all() with map() to ensure proper sequential execution and error handling.",
+        "severity": "Critical",
+        "category": "concurrency",
+        "matched_candidate": "Using forEach with async callbacks causes errors to escape the try/catch block, resulting in unhandled rejections from getCalendar, deleteEvent, or deleteMeeting calls",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same core problem as the golden comment: using forEach with async callbacks causes errors to escape the try/catch block, resulting in unhandled promise rejections. The candidate specifically mentions the same concern about async operations (getCalendar, deleteEvent, deleteMeeting) not being properly awaited and errors not being caught. While the golden comment provides more detail about consequences (race conditions, incomplete cleanup) and solutions (for...of or Promise.all with map), both identify the same fundamental bug."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "App imports are not wrapped in thunks, causing all 29 app packages to load eagerly when @calcom/app-store is imported instead of loading lazily as intended"
+      },
+      {
+        "candidate": "Each app package being split into its own async chunk adds bundling overhead"
+      },
+      {
+        "candidate": "Using forEach with async callbacks means nothing waits for calendar and video deletions to complete before the handler continues with emails, DB updates, and response, causing race conditions and silently dropped failures"
+      },
+      {
+        "candidate": "getCalendarCredentials now returns a Promise in the calendar field, which will break other callers that check if (calendar) or call calendar.method() since they will see a truthy Promise instead of the actual calendar object"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 7,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 4,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.2857142857142857,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "calcom/cal.com",
+    "pr_url": "https://github.com/calcom/cal.com/pull/8087"
+  },
+  "judgeUsage": {
+    "calls": 24,
+    "inputTokens": 5190,
+    "outputTokens": 1808,
+    "costUsd": 0.07115
+  }
+}

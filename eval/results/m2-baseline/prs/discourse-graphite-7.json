@@ -1,0 +1,129 @@
+{
+  "id": "discourse-graphite-7",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/7",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Restore swapped lightness values for gap link color",
+      "affected": [
+        "app/assets/stylesheets/desktop/topic-post.scss:291"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Restore inverted lightness for mobile custom-message-length",
+      "affected": [
+        "app/assets/stylesheets/mobile/modal.scss:102"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Preserve original 30% lightness for user-card name",
+      "affected": [
+        "app/assets/stylesheets/desktop/user.scss:522",
+        "app/assets/stylesheets/mobile/user.scss:497"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Preserve original 20% lightness for mobile topic-map h3",
+      "affected": [
+        "app/assets/stylesheets/mobile/topic-post.scss:182"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoMc4ciAfftgWZei1Cr",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 22266,
+      "outputTokens": 1547,
+      "ms": 14222
+    }
+  ],
+  "costUsd": 0.120004,
+  "durationMs": 15292,
+  "promptSha256": "f3e454b5add722e7037a93878e74bf23a936ddbd098e28e89cbe2e98519c9ebc",
+  "promptChars": 49180,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Restore swapped lightness values for gap link color\n\nAffected:\n- app/assets/stylesheets/desktop/topic-post.scss:291\n\nExplanation:\nThe original light-theme value was `scale-color($primary, $lightness: 30%)`. The new code changes the light branch to 70% and the dark branch to 30%, which swaps the two values.\n\n- On light themes, these bold links become much lighter than before, so contrast drops and the look changes. This was not the intent of the commit.\n- On dark themes, the link gets the opposite of the intended emphasis.\n\nEvery other line in this change keeps the original primary percentage and uses `100 - X` for the secondary.\n\nProposed fix:\n~~~scss\ncolor: dark-light-choose(scale-color($primary, $lightness: 30%), scale-color($secondary, $lightness: 70%));\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Restore inverted lightness for mobile custom-message-length\n\nAffected:\n- app/assets/stylesheets/mobile/modal.scss:102\n\nExplanation:\nThe original value was `scale-color($primary, $lightness: 70%)`, a muted hint color. The new code uses 30% for primary and 70% for secondary. This is inverted:\n\n- On light themes, the hint becomes dark and prominent instead of muted.\n- On dark themes, it becomes bright instead of muted.\n\nIt also differs from the desktop version of the same rule in `desktop/modal.scss:94`, which uses 70%/30%.\n\nProposed fix:\n~~~scss\ncolor: dark-light-choose(scale-color($primary, $lightness: 70%), scale-color($secondary, $lightness: 30%));\n~~~\n\n## 3) Severity: LOW | Type: Bug\nTitle: Preserve original 30% lightness for user-card name\n\nAffected:\n- app/assets/stylesheets/desktop/user.scss:522\n- app/assets/stylesheets/mobile/user.scss:497\n\nExplanation:\nThe original value was `scale-color($primary, $lightness: 30%)`. The new code uses 50%/50%. That lightens the name on light themes and makes it the same color as the adjacent `.title`, which is also 50%. As a result, the name and title can no longer be told apart visually. This change only meant to add dark-theme support and should not have altered the light-theme rendering.\n\nProposed fix:\n~~~scss\ncolor: dark-light-choose(scale-color($primary, $lightness: 30%), scale-color($secondary, $lightness: 70%));\n~~~\n\n## 4) Severity: LOW | Type: Bug\nTitle: Preserve original 20% lightness for mobile topic-map h3\n\nAffected:\n- app/assets/stylesheets/mobile/topic-post.scss:182\n\nExplanation:\nThe original value was `scale-color($primary, $lightness: 20%)`. The new code uses 50%/50%. This changes the light-theme heading color and makes it the same as the `h4` below it. It also differs from the desktop version in `desktop/topic-post.scss:321`, which uses 20%/80%.\n\nProposed fix:\n~~~scss\ncolor: dark-light-choose(scale-color($primary, $lightness: 20%), scale-color($secondary, $lightness: 80%));\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "In .topic-meta-data h5 a, the original code had color: scale-color($primary, $lightness: 30%) but was changed to dark-light-choose(scale-color($primary, $lightness: 70%), scale-color($secondary, $lightness: 30%)). The lightness for the light theme changed from 30% to 70%, which is a dramatic inversion",
+        "severity": "Low",
+        "category": "style",
+        "matched_candidate": "Gap link color has swapped lightness values - light theme uses 70% instead of original 30%, and dark theme uses 30% instead of 70%, reducing contrast on light themes and inverting emphasis on dark themes",
+        "confidence": 0.85,
+        "reasoning": "The candidate issue identifies the same problem - the lightness values being swapped/inverted between light and dark themes. The golden comment specifically mentions the light theme changing from 30% to 70% lightness, and the candidate correctly identifies this same issue, noting that 'light theme uses 70% instead of original 30%'. Both are pointing to the same dramatic inversion of lightness values, though the candidate is discussing '.gap-link' while the golden mentions '.topic-meta-data h5 a'. However, the core issue identified (lightness values being inverted from 30% to 70% for light theme) is the same underlying problem."
+      },
+      {
+        "golden_comment": "This change for desktop/user.css changes $primary from 30% to 50% for the light theme; most other changes preserve the original $primary value and move the complement to $secondary for dark. Consider reviewing this (also applies to a similar .name change in the mobile variant).",
+        "severity": "Low",
+        "category": "speculative",
+        "matched_candidate": "User-card name lightness changed from original 30% to 50%/50%, making the name the same color as the adjacent .title element so they can no longer be visually distinguished",
+        "confidence": 0.9,
+        "reasoning": "The candidate issue identifies the same core problem as the golden comment - that the lightness value for the user-card name was changed from 30% to 50% in the light theme. The golden comment notes this change from 30% to 50% for $primary in the light theme and suggests reviewing it. The candidate adds additional context about the visual consequence (same color as .title element), but both are pointing to the same underlying issue of the lightness value change from 30% to 50%."
+      },
+      {
+        "golden_comment": "In topic-post.css the original code used $lightness: 70% but the replacement uses $lightness: 30% for the light theme. This makes the text significantly darker than intended.",
+        "severity": "Low",
+        "category": "bug",
+        "matched_candidate": "Mobile custom-message-length has inverted lightness values - uses 30% for primary and 70% for secondary instead of original 70%/30%, making hint text dark and prominent on light themes instead of muted, and differs from desktop version",
+        "confidence": 0.85,
+        "reasoning": "The candidate issue identifies the same core problem - inverted lightness values where 30% is used instead of 70% for light themes, making text darker than intended. While the candidate mentions 'custom-message-length' and the golden mentions 'topic-post.css', both are identifying the same bug pattern: the lightness values were swapped/inverted, causing text to be significantly darker (30% instead of 70%) on light themes."
+      },
+      {
+        "golden_comment": "The light theme color for `.topic-meta-data h5 a` was changed from `scale-color($primary, $lightness: 30%)` to `scale-color($primary, $lightness: 70%)`, which may unintentionally reduce contrast and affect readability. This change should be reviewed to ensure it aligns with design intentions.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Gap link color has swapped lightness values - light theme uses 70% instead of original 30%, and dark theme uses 30% instead of 70%, reducing contrast on light themes and inverting emphasis on dark themes",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same underlying problem as the golden comment - the lightness values for link colors were swapped between light and dark themes. The golden comment specifically mentions the light theme change from 30% to 70% lightness, and the candidate also identifies this exact change (light theme using 70% instead of 30%). Both comments express concern about reduced contrast on light themes. The candidate additionally mentions the dark theme swap, which is related context. They are pointing to the same code issue."
+      },
+      {
+        "golden_comment": "In mobile/user.scss line 497, the lightness value for dark themes should be inverted to 70% instead of being changed to 50%. This change may lead to unintended visual regressions in light themes.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Mobile topic-map h3 lightness changed from original 20% to 50%/50%, altering light-theme heading color to match h4 below it, and differs from desktop version which uses 20%/80%",
+        "confidence": 0.85,
+        "reasoning": "Both comments address the same issue - the lightness value change in mobile/user.scss for the topic-map h3 element. The golden comment specifically mentions line 497 and that the dark theme lightness should be 70% instead of 50%, warning about visual regressions in light themes. The candidate comment identifies the same problem - that the lightness was changed from 20% to 50%/50%, which differs from the desktop version (20%/80%), and notes this alters the light-theme heading color. Both are pointing to the same underlying issue about incorrect lightness values that could cause visual regressions, though the candidate focuses more on the light theme while the golden focuses on the dark theme value."
+      }
+    ],
+    "false_positives": [],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 4,
+    "total_golden": 5,
+    "tp": 5,
+    "fp": 0,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 1.25,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/discourse-graphite",
+    "pr_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/7"
+  },
+  "judgeUsage": {
+    "calls": 24,
+    "inputTokens": 6967,
+    "outputTokens": 2912,
+    "costUsd": 0.10763500000000001
+  }
+}

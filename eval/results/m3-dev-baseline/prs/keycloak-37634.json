@@ -1,0 +1,162 @@
+{
+  "id": "keycloak-37634",
+  "goldenUrl": "https://github.com/keycloak/keycloak/pull/37634",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Test",
+      "title": "Fix the `isAccessTokenId` matcher, which accepts almost any token ID",
+      "affected": [
+        "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/AssertEvents.java:476-492"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Null check validates `grantType` twice instead of `rawTokenId`",
+      "affected": [
+        "services/src/main/java/org/keycloak/protocol/oidc/encode/AccessTokenContext.java:73"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Grant shortcuts are not validated, so custom grants can produce token IDs that cannot be decoded",
+      "affected": [
+        "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderFactory.java:70-85",
+        "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderFactory.java:106-119",
+        "server-spi-private/src/main/java/org/keycloak/protocol/oidc/grants/OAuth2GrantTypeFactory.java:29-33"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Token type is derived from the session context client, not the token's client",
+      "affected": [
+        "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java:54-55",
+        "services/src/main/java/org/keycloak/protocol/oidc/mappers/AbstractOIDCProtocolMapper.java:84-87"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Removal of the public `Context(Context)` copy constructor and a new NPE risk in the constructor",
+      "affected": [
+        "server-spi-private/src/main/java/org/keycloak/protocol/oidc/grants/OAuth2GrantType.java:87-103"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgypVQVgCXPAWKv9yfQPW",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 28970,
+      "outputTokens": 3932,
+      "ms": 37480
+    }
+  ],
+  "costUsd": 0.19452,
+  "durationMs": 38664,
+  "promptSha256": "79a19bd9669921a259cdf66b899877688eef487a792933969d3b9df56808ac97",
+  "promptChars": 64320,
+  "response": "## 1) Severity: MEDIUM | Type: Test\nTitle: Fix the `isAccessTokenId` matcher, which accepts almost any token ID\n\nAffected:\n- testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/AssertEvents.java:476-492\n\nExplanation:\nThe encoded prefix has three 2-character parts: session type, token type, then grant type. The grant shortcut therefore sits at indices 4–6, not 3–5. For `onrtac`, `substring(3, 5)` returns `\"ta\"`.\n\nThe condition is also inverted. It returns `false` when the shortcut *matches* the expected value.\n\nTogether, these two bugs mean the matcher passes for almost any `xxxxxx:<uuid>` value. The updated `expectCodeToToken`, `expectRefresh`, `expectDeviceCodeToToken` and `expectAuthReqIdToToken` assertions therefore never check the grant type. A wrong grant encoding would go unnoticed. The check also does not verify that the prefix is 6 characters long.\n\nProposed fix:\n~~~java\nString[] items = item.split(\":\");\nif (items.length != 2 || items[0].length() != 6) return false;\nif (!items[0].substring(4, 6).equals(expectedGrantShortcut)) return false;\nreturn isUUID().matches(items[1]);\n~~~\n\n## 2) Severity: LOW | Type: Bug\nTitle: Null check validates `grantType` twice instead of `rawTokenId`\n\nAffected:\n- services/src/main/java/org/keycloak/protocol/oidc/encode/AccessTokenContext.java:73\n\nExplanation:\nThis line has the message \"Null rawTokenId not allowed\" but checks `grantType` a second time. A null `rawTokenId` is accepted without error, so `encodeTokenId` can later produce an ID like `onrtac:null`.\n\nProposed fix:\n~~~java\nObjects.requireNonNull(rawTokenId, \"Null rawTokenId not allowed\");\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Grant shortcuts are not validated, so custom grants can produce token IDs that cannot be decoded\n\nAffected:\n- services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderFactory.java:70-85\n- services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderFactory.java:106-119\n- server-spi-private/src/main/java/org/keycloak/protocol/oidc/grants/OAuth2GrantTypeFactory.java:29-33\n\nExplanation:\nThe decoder requires the context prefix to be exactly 6 characters, with a 2-character grant shortcut. The `getShortcut()` Javadoc only says \"usually like 3-letters\", which invites wrong implementations. Nothing enforces the actual rules, so several failures are possible:\n\n- **Wrong length:** a custom `OAuth2GrantTypeFactory` returning a 3-letter shortcut produces token IDs that `getTokenContextFromTokenId` rejects with `IllegalArgumentException`.\n- **Colon in the shortcut:** this breaks parsing of the `:` separator.\n- **Null shortcut:** this causes an NPE in `ConcurrentHashMap.put` during `postInit`, which blocks server startup.\n- **Collision with `\"na\"`:** this is not clearly reported.\n\nThe new method is also abstract with no default. Every existing third-party grant factory will fail to compile or link (`AbstractMethodError`) until it is updated.\n\nProposed fix:\n- In `postInit` and in the lazy-refresh paths, validate that each shortcut is non-null, exactly 2 characters, contains no `:`, and is not `\"na\"`. Fail with a clear message.\n- Correct the Javadoc to say \"2 characters\".\n- Consider a `default` implementation of `getShortcut()` so existing extensions keep working.\n\n## 4) Severity: LOW | Type: Bug\nTitle: Token type is derived from the session context client, not the token's client\n\nAffected:\n- services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java:54-55\n- services/src/main/java/org/keycloak/protocol/oidc/mappers/AbstractOIDCProtocolMapper.java:84-87\n\nExplanation:\n`getShouldUseLightweightToken` reads `session.getContext().getClient()`. Before this change it ran only inside mappers. It now runs for every access token created through `initToken`.\n\nThat includes paths where the context client may be null, such as admin or internal token generation. I have not verified these paths against code outside the diff. In that case the call throws an NPE and token issuance fails.\n\nIn flows like token exchange, the context client can also differ from the client the token is issued to. The encoded lightweight/regular flag would then be wrong.\n\nProposed fix:\nPass the token's client explicitly and null-check it:\n~~~java\nClientModel client = clientSessionContext.getClientSession().getClient();\nboolean lw = Boolean.parseBoolean(client.getAttribute(Constants.USE_LIGHTWEIGHT_ACCESS_TOKEN_ENABLED))\n        || Boolean.TRUE.equals(session.getAttribute(Constants.USE_LIGHTWEIGHT_ACCESS_TOKEN_ENABLED));\n~~~\n\n## 5) Severity: LOW | Type: Maintainability\nTitle: Removal of the public `Context(Context)` copy constructor and a new NPE risk in the constructor\n\nAffected:\n- server-spi-private/src/main/java/org/keycloak/protocol/oidc/grants/OAuth2GrantType.java:87-103\n\nExplanation:\n**Copy constructor removed:** the public copy constructor was deleted without deprecation. Any code that clones a `Context` will break, including extensions or other modules not shown here.\n\n**NPE in the main constructor:** it now calls `formParams.getFirst(...)` unconditionally. Any caller passing null `formParams` will get an NPE.\n\n**Stale grant type:** `grantType` is captured once and is not recomputed in `setFormParams`. It can go stale if form params are replaced.\n\nProposed fix:\n- Keep the copy constructor, also copying `grantType`, or deprecate it first.\n- Guard against null: `this.grantType = formParams == null ? null : formParams.getFirst(OAuth2Constants.GRANT_TYPE);`\n- Update `grantType` in `setFormParams`.\n",
+  "belowMinSeverity": 0,
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "In AccessTokenContext constructor, the fourth Objects.requireNonNull validates grantType twice instead of validating rawTokenId, allowing null rawTokenId values to pass validation.",
+        "severity": "Critical",
+        "category": "bug",
+        "matched_candidate": "Null check validates grantType twice instead of rawTokenId, allowing null rawTokenId to be accepted and produce token IDs like 'onrtac:null'",
+        "confidence": 1,
+        "reasoning": "The candidate issue identifies exactly the same bug as the golden comment: the fourth Objects.requireNonNull validates grantType twice instead of validating rawTokenId, which allows null rawTokenId values to pass validation. The candidate even adds the consequence detail about producing token IDs like 'onrtac:null', but it's describing the same underlying issue."
+      },
+      {
+        "golden_comment": "In isAccessTokenId, the substring for the grant shortcut and the equality check look inverted: the grant shortcut occupies indices 4–5 (substring(4,6)), and a match should return true (combined with UUID check), not false.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "The isAccessTokenId matcher condition is inverted, returning false when the shortcut matches the expected value instead of when it doesn't match",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies that the isAccessTokenId matcher condition is inverted, returning false when it should return true (when the shortcut matches). This is exactly the same issue as the golden comment, which states that 'a match should return true... not false.' Both are pointing to the same inverted boolean logic bug in the isAccessTokenId function."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "The isAccessTokenId matcher does not verify that the prefix is exactly 6 characters long"
+      },
+      {
+        "candidate": "Grant shortcuts are not validated for length - a custom OAuth2GrantTypeFactory returning a 3-letter shortcut produces token IDs that getTokenContextFromTokenId rejects"
+      },
+      {
+        "candidate": "Grant shortcuts containing a colon break parsing of the ':' separator in token IDs"
+      },
+      {
+        "candidate": "Null grant shortcut causes NPE in ConcurrentHashMap.put during postInit, blocking server startup"
+      },
+      {
+        "candidate": "Grant shortcut collision with 'na' is not clearly reported"
+      },
+      {
+        "candidate": "The new getShortcut() method is abstract with no default, causing existing third-party grant factories to fail to compile or link with AbstractMethodError"
+      },
+      {
+        "candidate": "getShouldUseLightweightToken reads session.getContext().getClient() which may be null in admin or internal token generation paths, causing NPE"
+      },
+      {
+        "candidate": "In token exchange flows, the context client can differ from the client the token is issued to, causing the encoded lightweight/regular flag to be wrong"
+      },
+      {
+        "candidate": "Public Context copy constructor was removed without deprecation, breaking code that clones a Context"
+      },
+      {
+        "candidate": "Main Context constructor calls formParams.getFirst() unconditionally, causing NPE when null formParams is passed"
+      },
+      {
+        "candidate": "grantType is captured once in constructor and not recomputed in setFormParams, becoming stale if form params are replaced"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Javadoc mentions \"usually like 3-letters shortcut\" but some implementations use 2-letter shortcuts (\"ac\", \"cc\", \"rt\", \"te\", \"pc\", \"ci\", \"ro\"). Consider updating documentation to reflect actual usage pattern.",
+        "severity": "Low",
+        "category": "doc_defect"
+      },
+      {
+        "golden_comment": " Catching generic RuntimeException is too broad. The implementation throws IllegalArgumentException specifically - catch that instead for more precise testing.",
+        "severity": "Low",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 14,
+    "total_golden": 4,
+    "tp": 2,
+    "fp": 11,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.14285714285714285,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "keycloak/keycloak",
+    "pr_url": "https://github.com/keycloak/keycloak/pull/37634"
+  },
+  "judgeUsage": {
+    "calls": 58,
+    "inputTokens": 14953,
+    "outputTokens": 5914,
+    "costUsd": 0.22261499999999992
+  }
+}

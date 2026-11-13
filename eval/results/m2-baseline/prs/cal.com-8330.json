@@ -1,0 +1,144 @@
+{
+  "id": "cal.com-8330",
+  "goldenUrl": "https://github.com/calcom/cal.com/pull/8330",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "type": "Bug",
+      "title": "Skip of the busy-time check on days with a date override",
+      "affected": [
+        "packages/trpc/server/routers/viewer/slots.ts:133-135"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Slots rejected on days with more than one override or working-hours range",
+      "affected": [
+        "packages/trpc/server/routers/viewer/slots.ts:105-131",
+        "packages/trpc/server/routers/viewer/slots.ts:138-151"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "\"Unavailable all day\" check compares Dayjs objects by reference",
+      "affected": [
+        "packages/trpc/server/routers/viewer/slots.ts:114"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Slot end time ignored in the override and working-hours checks",
+      "affected": [
+        "packages/trpc/server/routers/viewer/slots.ts:123",
+        "packages/trpc/server/routers/viewer/slots.ts:141-143"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Override day matched by UTC calendar date, not the organizer's local date",
+      "affected": [
+        "packages/trpc/server/routers/viewer/slots.ts:107-111",
+        "packages/trpc/server/routers/viewer/slots.ts:140"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Override shifted to the invitee time zone can wrap past midnight",
+      "affected": [
+        "packages/lib/slots.ts:211-225"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 6,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoJyxf2aArpgoPPJmBe",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 5623,
+      "outputTokens": 3810,
+      "ms": 36058
+    }
+  ],
+  "costUsd": 0.098692,
+  "durationMs": 37056,
+  "promptSha256": "9c482b20b2e42dcd5821ca66970711738252dc393a86e4d8b4a78f553a6680cd",
+  "promptChars": 12926,
+  "response": "## 1) Severity: CRITICAL | Type: Bug\nTitle: Skip of the busy-time check on days with a date override\n\nAffected:\n- packages/trpc/server/routers/viewer/slots.ts:133-135\n\nExplanation:\nWhen a slot falls on a day that has a date override and inside its range, the function returns `true` straight away. The `busy.every(...)` check never runs. Existing bookings and busy events from external calendars are ignored on those days, so the host can be double-booked.\n\nThe override check should only rule slots out. If the slot passes, the code should still fall through to the busy check.\n\nProposed fix:\n~~~ts\nif (dateOverrideExist) {\n  // within override: skip working-hours check, but still check busy times\n  return busy.every(isNotOverlapping);\n}\n// or restructure: only skip the workingHours block when dateOverrideExist\nif (!dateOverrideExist && workingHours.some(/* outside */)) return false;\nreturn busy.every(...);\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: Slots rejected on days with more than one override or working-hours range\n\nAffected:\n- packages/trpc/server/routers/viewer/slots.ts:105-131\n- packages/trpc/server/routers/viewer/slots.ts:138-151\n\nExplanation:\nBoth checks use `find`, which rejects the slot as soon as any single range on that day does not contain it. A day can have several ranges, for example 09:00–12:00 and 13:00–17:00. A 14:00 slot lies outside the first range, so it is rejected even though the second range contains it.\n\nThe logic should be: reject only when the slot is outside every range for that day.\n\nProposed fix:\n~~~ts\nconst overridesForDay = dateOverrides.filter(d => sameDay(d, slotStartTime));\nif (overridesForDay.length) {\n  const inside = overridesForDay.some(d =>\n    !start(d).isSame(end(d)) &&\n    !slotStartTime.isBefore(start(d)) && !slotEndTime.isAfter(end(d)));\n  if (!inside) return false;\n} else {\n  const hoursForDay = workingHours.filter(w => w.days.includes(slotStartTime.day()));\n  const inside = hoursForDay.some(w => startMin >= w.startTime && endMin <= w.endTime);\n  if (!inside) return false;\n}\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: \"Unavailable all day\" check compares Dayjs objects by reference\n\nAffected:\n- packages/trpc/server/routers/viewer/slots.ts:114\n\nExplanation:\n`dayjs(a) === dayjs(b)` compares two newly created objects, so it is always `false`. A full-day-off override (start equals end) is therefore never detected here. Such overrides are only partly caught by the later checks. A slot starting exactly at the override start is neither before the start nor after the end, so it is still offered.\n\nProposed fix:\n~~~ts\nif (dayjs(date.start).isSame(dayjs(date.end))) return true;\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: Slot end time ignored in the override and working-hours checks\n\nAffected:\n- packages/trpc/server/routers/viewer/slots.ts:123\n- packages/trpc/server/routers/viewer/slots.ts:141-143\n\nExplanation:\nIn the working-hours check, `end` is computed from `slotStartTime`, not `slotEndTime`. A slot that starts inside working hours but runs past the end is accepted.\n\nThe override check has the same problem. It tests `slotStartTime.isAfter(date.end)`, so a slot that starts inside the override but ends after it is accepted.\n\nProposed fix:\n~~~ts\nconst end = slotEndTime.hour() * 60 + slotEndTime.minute();\n...\nif (slotEndTime.isAfter(dayjs(date.end).add(utcOffset, \"minutes\"))) return true;\n~~~\n\n## 5) Severity: MEDIUM | Type: Bug\nTitle: Override day matched by UTC calendar date, not the organizer's local date\n\nAffected:\n- packages/trpc/server/routers/viewer/slots.ts:107-111\n- packages/trpc/server/routers/viewer/slots.ts:140\n\nExplanation:\nThe override start is converted to real UTC, and only its UTC date (`YYYY MM DD`) is compared with the slot's UTC date. For organizers far from UTC, one local day spans two UTC dates. Slots on the other UTC date are not recognised as belonging to the override day. They fall through to the working-hours check and may be offered or blocked incorrectly.\n\nThe working-hours check has a related risk: it uses `slotStartTime.day()` and hours in UTC. That is only correct if the `workingHours` passed in are expressed in UTC. That depends on code outside this diff.\n\nA better approach is to compare the slot against the override's full UTC interval rather than its date string.\n\nProposed fix:\n~~~ts\nconst overrideDayStart = dayjs.tz(date.start, organizerTimeZone).startOf(\"day\");\nconst sameDay = slotStartTime.tz(organizerTimeZone).isSame(overrideDayStart, \"day\");\n~~~\n\n## 6) Severity: MEDIUM | Type: Bug\nTitle: Override shifted to the invitee time zone can wrap past midnight\n\nAffected:\n- packages/lib/slots.ts:211-225\n\nExplanation:\n`startTime` and `endTime` are minutes-of-day taken after adding the invitee offset. When the shift crosses midnight (for example, organizer 20:00–23:00 shifted by +6h), `startTime` becomes greater than `endTime`, giving an invalid range. The override's slots are lost or produced on the wrong day.\n\nThere are two further problems:\n- When `override.timeZone` is undefined (it is optional in `TimeRange`), `dayjs(...).tz(undefined)` falls back to the default or server time zone. That can produce a wrong offset.\n- `dayjs(override.start.toString())` parses the non-ISO `Date.toString()` output, which is fragile. Use `dayjs(override.start)` instead.\n\nProposed fix:\n~~~ts\nconst organizerTz = override.timeZone ?? \"UTC\";\nconst start = dayjs(override.start).utc().add(offset, \"minute\");\nconst end = dayjs(override.end).utc().add(offset, \"minute\");\n// handle cross-midnight: split into two ranges or keep absolute datetimes instead of minutes-of-day\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "Incorrect end time calculation using slotStartTime instead of slotEndTime",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Slot end time ignored in the override and working-hours checks - in the working-hours check end is computed from slotStartTime not slotEndTime, and the override check tests slotStartTime.isAfter(date.end), so slots that start inside but run past the end are incorrectly accepted",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue directly identifies the same problem as the golden comment - that the end time calculation incorrectly uses slotStartTime instead of slotEndTime in the working-hours check. The candidate provides additional context about the override check as well, but the core issue about incorrect end time calculation using slotStartTime instead of slotEndTime is clearly identified."
+      },
+      {
+        "golden_comment": "Using === for dayjs object comparison will always return false as it compares object references, not values. Use .isSame() method instead: dayjs(date.start).add(utcOffset, 'minutes').isSame(dayjs(date.end).add(utcOffset, minutes))",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Unavailable all day check compares Dayjs objects by reference - dayjs(a) === dayjs(b) compares two newly created objects so it is always false, meaning a full-day-off override is never detected and slots starting exactly at the override start are still offered",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: comparing Dayjs objects using === compares object references rather than values, which will always return false. Both comments point to the same bug where dayjs(a) === dayjs(b) creates two new objects that are compared by reference, not by their date values. The candidate also correctly identifies the consequence (full-day-off override is never detected)."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Skip of the busy-time check on days with a date override - when a slot falls on a day that has a date override and inside its range, the function returns true straight away and the busy.every(...) check never runs, causing existing bookings and busy events from external calendars to be ignored and allowing double-booking"
+      },
+      {
+        "candidate": "Slots rejected on days with more than one override or working-hours range - both checks use find which rejects the slot as soon as any single range on that day does not contain it, but a day can have several ranges and a slot should only be rejected when outside every range for that day"
+      },
+      {
+        "candidate": "Override day matched by UTC calendar date not the organizer's local date - the override start is converted to real UTC and only its UTC date is compared with the slot's UTC date, but for organizers far from UTC one local day spans two UTC dates causing slots to be offered or blocked incorrectly"
+      },
+      {
+        "candidate": "Override shifted to the invitee time zone can wrap past midnight - when the shift crosses midnight startTime becomes greater than endTime giving an invalid range and losing or misplacing the override's slots"
+      },
+      {
+        "candidate": "When override.timeZone is undefined, dayjs(...).tz(undefined) falls back to the default or server time zone which can produce a wrong offset"
+      },
+      {
+        "candidate": "dayjs(override.start.toString()) parses the non-ISO Date.toString() output which is fragile - should use dayjs(override.start) instead"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 8,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 6,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.25,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "calcom/cal.com",
+    "pr_url": "https://github.com/calcom/cal.com/pull/8330"
+  },
+  "judgeUsage": {
+    "calls": 18,
+    "inputTokens": 6594,
+    "outputTokens": 2134,
+    "costUsd": 0.08632
+  }
+}

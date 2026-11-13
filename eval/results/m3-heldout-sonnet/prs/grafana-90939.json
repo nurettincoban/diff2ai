@@ -1,0 +1,86 @@
+{
+  "id": "grafana-90939",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/90939",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Missing re-check after acquiring write lock, and the diff may leave unlocked writes or stale reads",
+      "affected": [
+        "pkg/api/webassets/webassets.go:41-49"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 1,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqghK99WSYP7S6cJhxS",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 1441,
+      "outputTokens": 506,
+      "ms": 4834
+    }
+  ],
+  "costUsd": 0.007942,
+  "durationMs": 5911,
+  "promptSha256": "3de65a27b7e0b70b9ed6341a71558cb0711c78fee7911e35fd67c1e3807eaca6",
+  "promptChars": 3264,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Missing re-check after acquiring write lock, and the diff may leave unlocked writes or stale reads\n\nAffected:\n- pkg/api/webassets/webassets.go:41-49\n\nExplanation:\nThe write lock is taken after the read lock is released, and the cache is not re-checked once it is held. Concurrent callers that all see a nil cache will each take the lock in turn and recompute the assets, repeating file I/O and JSON parsing. Correctness is preserved, but the double-checked pattern is incomplete.\n\nIn Dev mode, `Lock()` is taken on every call. This serializes all requests that fetch web assets for the whole function body, which includes file reads. That is a performance regression compared with before, though it is limited to dev environments.\n\nThe rest of the function is outside the diff, so I cannot confirm that the later assignment to `entryPointAssetsCache` happens while the lock is held. It should be, because the lock is held by `defer`. Any early return paths must also not bypass it.\n\nAlso, `ret` is a shared pointer returned to callers. If any caller mutates the returned struct, a data race remains. That is a risk only if callers mutate it.\n\nProposed fix:\n~~~go\nentryPointAssetsCacheMu.Lock()\ndefer entryPointAssetsCacheMu.Unlock()\nif cfg.Env != setting.Dev && entryPointAssetsCache != nil {\n    return entryPointAssetsCache, nil\n}\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The GetWebAssets function implements an incomplete double-checked locking pattern for caching web assets. The function first checks if the cache is populated using a read lock (RLock), and if the cache is empty, it acquires a write lock to populate it. However, it fails to re-check whether the cache was populated by another goroutine while waiting to acquire the write lock.",
+        "severity": "Medium",
+        "category": "concurrency",
+        "matched_candidate": "Missing re-check after acquiring write lock - concurrent callers that see nil cache will each recompute assets, repeating file I/O and JSON parsing",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - the missing re-check after acquiring the write lock in a double-checked locking pattern. Both comments point out that without re-checking the cache after acquiring the write lock, multiple goroutines that saw an empty cache will each recompute/populate the assets, leading to redundant work (file I/O and JSON parsing). This is the same underlying concurrency bug."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "In Dev mode, Lock() is taken on every call which serializes all requests that fetch web assets including file reads, causing performance regression"
+      },
+      {
+        "candidate": "Cannot confirm that assignment to entryPointAssetsCache happens while lock is held - early return paths must not bypass the lock"
+      },
+      {
+        "candidate": "Returned pointer 'ret' is shared between callers - if any caller mutates the returned struct, a data race remains"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "In addition to the missing double-check, the function has a critical flaw in its error handling: it unconditionally assigns the fetch result to the cache (line 69: entryPointAssetsCache = result) regardless of whether the fetch succeeded or failed. When an error occurs during asset fetching, result is nil, and this nil value overwrites any previously valid cache entry.",
+        "severity": "High",
+        "category": "bug"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 4,
+    "total_golden": 2,
+    "tp": 1,
+    "fp": 3,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.25,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/90939"
+  },
+  "judgeUsage": {
+    "calls": 10,
+    "inputTokens": 3238,
+    "outputTokens": 1081,
+    "costUsd": 0.043215
+  }
+}

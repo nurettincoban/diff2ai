@@ -1,0 +1,115 @@
+{
+  "id": "keycloak-greptile-1",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Compile error: `UsernameForm` calls `isConditionalPasskeysEnabled()` with no arguments",
+      "affected": [
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernameForm.java:47-47"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Passkeys no longer set up on the initial login form when no user is set",
+      "affected": [
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:114-117",
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:137-140",
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:160-162"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Missing `@Override` on `shouldShowWebAuthnAuthenticators` in `WebAuthnConditionalUIAuthenticator`",
+      "affected": [
+        "services/src/main/java/org/keycloak/authentication/authenticators/browser/WebAuthnConditionalUIAuthenticator.java:64-67"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Test try/catch swallows the assertion failure",
+      "affected": [
+        "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java:291-296",
+        "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java:312-317"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgypizxUQksMTZXfpzpzo",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 17837,
+      "outputTokens": 1417,
+      "ms": 9980
+    }
+  ],
+  "costUsd": 0.049844,
+  "durationMs": 11135,
+  "promptSha256": "4b890c180494339f221539e429ff18e85b91e42d1562d4cae81bf8da6e04a861",
+  "promptChars": 42076,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Compile error: `UsernameForm` calls `isConditionalPasskeysEnabled()` with no arguments\n\nAffected:\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernameForm.java:47-47\n\nExplanation:\nThe second commit changed the signature to `isConditionalPasskeysEnabled(UserModel user)`. `UsernameForm` still calls the no-argument form, so the module will not compile. The condition should be `isConditionalPasskeysEnabled(context.getUser())`. Since `context.getUser() != null` is already checked first, passing the user also makes the helper's own `user != null` check redundant.\n\nProposed fix:\n~~~java\nif (context.getUser() != null && !isConditionalPasskeysEnabled(context.getUser())) {\n~~~\n\n## 2) Severity: HIGH | Type: Bug\nTitle: Passkeys no longer set up on the initial login form when no user is set\n\nAffected:\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:114-117\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:137-140\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java:160-162\n\nExplanation:\n`isConditionalPasskeysEnabled(user)` returns false when `user == null`. In the regular first-visit login, the user is null, so `fillContextForm` is never called. That removes conditional UI and passkey login from the main login page, which is the primary use case. The previous code explicitly handled `user == null`. The helper should not require a non-null user. The same applies to the error `challenge` path. It also breaks `UsernameForm`, where the user is null on first display.\n\nProposed fix:\n~~~java\nprotected boolean isConditionalPasskeysEnabled() {\n    return webauthnAuth != null && webauthnAuth.isPasskeysEnabled();\n}\n// callers: if (isConditionalPasskeysEnabled()) { webauthnAuth.fillContextForm(context); }\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Missing `@Override` on `shouldShowWebAuthnAuthenticators` in `WebAuthnConditionalUIAuthenticator`\n\nAffected:\n- services/src/main/java/org/keycloak/authentication/authenticators/browser/WebAuthnConditionalUIAuthenticator.java:64-67\n\nExplanation:\nThe method overrides a protected method of the parent class but lacks `@Override`, so a signature mismatch would not be caught by the compiler. Add `@Override`.\n\nProposed fix:\n~~~java\n@Override\nprotected boolean shouldShowWebAuthnAuthenticators(AuthenticationFlowContext context) { return false; }\n~~~\n\n## 4) Severity: LOW | Type: Test\nTitle: Test try/catch swallows the assertion failure\n\nAffected:\n- testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java:291-296\n- testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java:312-317\n\nExplanation:\n`catch (Exception)` does not catch `AssertionError`, so that part is fine. However, `fail(...)` throws `AssertionError`, which is an `Error`, so it propagates correctly. The real problem is that the pattern is convoluted: `findElement` throws `NoSuchElementException` and the `nullValue()` assertion is never reached. Use `Assert.assertThrows(NoSuchElementException.class, ...)` or `findElements(...).isEmpty()` instead.\n\nProposed fix:\n~~~java\nAssert.assertTrue(driver.findElements(By.xpath(\"//form[@id='webauth']\")).isEmpty());\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "In UsernameForm.authenticate(), isConditionalPasskeysEnabled() is called without passing the required UserModel parameter.",
+        "severity": "Medium",
+        "category": "api",
+        "matched_candidate": "Compile error: UsernameForm calls isConditionalPasskeysEnabled() with no arguments, but the signature was changed to require a UserModel parameter",
+        "confidence": 1,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment: the isConditionalPasskeysEnabled() method is being called without arguments in UsernameForm, but the method signature requires a UserModel parameter. Both comments point to the same bug - a method call missing a required parameter."
+      },
+      {
+        "golden_comment": "With isConditionalPasskeysEnabled(UserModel user) requiring user != null, authenticate(...) will not call webauthnAuth.fillContextForm(context) on the initial login page where context.getUser() is still null, so conditional passkey UI will not be set up for first-time passkey login. Consider whether this should also be enabled when no user has been selected yet so ID-less passkey authentication on the initial login form continues to work.",
+        "severity": "Medium",
+        "category": "speculative",
+        "matched_candidate": "Passkeys no longer set up on the initial login form when no user is set - isConditionalPasskeysEnabled(user) returns false when user is null, breaking the main login page passkey functionality",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: when user is null, isConditionalPasskeysEnabled(user) returns false, which prevents the conditional passkey UI from being set up on the initial login form. Both comments point out that this breaks passkey functionality on the main login page where no user has been selected yet."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Missing @Override annotation on shouldShowWebAuthnAuthenticators method in WebAuthnConditionalUIAuthenticator, which could miss signature mismatches"
+      },
+      {
+        "candidate": "Test try/catch pattern is convoluted - findElement throws NoSuchElementException and the nullValue() assertion is never reached; should use Assert.assertThrows or findElements(...).isEmpty() instead"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 4,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 2,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.5,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/keycloak-greptile",
+    "pr_url": "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1"
+  },
+  "judgeUsage": {
+    "calls": 10,
+    "inputTokens": 3583,
+    "outputTokens": 1102,
+    "costUsd": 0.04546499999999999
+  }
+}

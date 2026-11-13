@@ -1,0 +1,126 @@
+{
+  "id": "keycloak-37038",
+  "goldenUrl": "https://github.com/keycloak/keycloak/pull/37038",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Security",
+      "title": "V2 `canManage()` for groups grants manage on the VIEW scope",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java:64-71"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Group view filtering is now applied to users and groups without a precheck",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/UsersResource.java:448-453",
+        "rest/admin-ui-ext/src/main/java/org/keycloak/admin/ui/rest/BruteForceUsersResource.java:147-152"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "V2 `getGroupIdsWithViewPermission` is invoked unconditionally and is expensive",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java:106-128",
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java:130-165"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "V1 `canList` no longer includes the VIEW_USERS and MANAGE_USERS roles, contradicting its Javadoc",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissions.java:148-150"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Removed `AdminRoles.ADMIN` check from V2 user permissions",
+      "affected": [
+        "services/src/main/java/org/keycloak/services/resources/admin/permissions/UserPermissionsV2.java:48-57"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyqf4kgL5wFQL1zi3fP6",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 32959,
+      "outputTokens": 1685,
+      "ms": 12784
+    }
+  ],
+  "costUsd": 0.082768,
+  "durationMs": 13855,
+  "promptSha256": "cb1f92ee0cd2ecc665050565f43400238e30798674e8099c3930b8eaddd59a5c",
+  "promptChars": 76697,
+  "response": "## 1) Severity: HIGH | Type: Security\nTitle: V2 `canManage()` for groups grants manage on the VIEW scope\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java:64-71\n\nExplanation:\n`canManage()` falls back to `hasPermission(null, VIEW, MANAGE)`. An admin with only an all-groups VIEW permission therefore passes `canManage()` and `requireManage()`. These checks guard group creation (GroupsResource) and other realm-level group management. The Javadoc says \"VIEW or MANAGE\", which suggests this is deliberate, but it is a privilege escalation from read-only to write access. Only the MANAGE scope should be accepted.\n\nProposed fix:\n~~~java\nreturn hasPermission(null, AdminPermissionsSchema.MANAGE);\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Group view filtering is now applied to users and groups without a precheck\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/UsersResource.java:448-453\n- rest/admin-ui-ext/src/main/java/org/keycloak/admin/ui/rest/BruteForceUsersResource.java:147-152\n\nExplanation:\nThe `.filter(usersEvaluator::canView)` call was removed from the user search in `UsersResource`. The `canView` check is no longer in the stream, and nothing in the diff shows `toRepresentation` re-applying it. If `toRepresentation` does not filter, users that were matched only through the `UserModel.GROUPS` session attribute are returned without a per-user check. This also drops the filter for admins who hold per-user VIEW permissions but no group permissions. Those admins used to see their permitted users, and now the search may return everyone or no one. The correctness of the search depends on code outside the diff.\n\nProposed fix:\n~~~java\n// keep the per-user filter\nsession.users().searchForUserStream(...).filter(usersEvaluator::canView)\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: V2 `getGroupIdsWithViewPermission` is invoked unconditionally and is expensive\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java:106-128\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java:130-165\n\nExplanation:\nFor every group resource of the type, the code runs a full policy evaluation (`root.evaluatePermission`), so the cost is O(groups). Callers now invoke it on every user search. In addition, `hasPermission` is passed `groupResource.getId()` and then looks it up with `findByName(server, groupId)`. The resource id and the resource name are different values. `getOrCreateResource` names the resource by `group.getId()`, so the lookup by resource id will likely return null, and every group falls back to the type-level resource. The result is that every group is granted whenever the all-groups permission exists. The code should use `groupResource.getName()`.\n\nProposed fix:\n~~~java\nif (hasPermission(groupResource.getName(), VIEW_MEMBERS, MANAGE_MEMBERS)) granted.add(groupResource.getName());\n~~~\n\n## 4) Severity: LOW | Type: Bug\nTitle: V1 `canList` no longer includes the VIEW_USERS and MANAGE_USERS roles, contradicting its Javadoc\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissions.java:148-150\n\nExplanation:\n`canList` is now `hasOneAdminRole(QUERY_GROUPS) || canView()`. The V1 `canView()` is the role check for MANAGE_USERS and VIEW_USERS, so the roles still pass. However, the V1 per-group fine-grained view permission was previously part of `canView()` for other checks. The behavior change in `canView`/`canManage` (no longer delegating to the user permissions) should be verified.\n\nProposed fix:\nConfirm that V1 behavior is unchanged with the existing V1 tests.\n\n## 5) Severity: LOW | Type: Maintainability\nTitle: Removed `AdminRoles.ADMIN` check from V2 user permissions\n\nAffected:\n- services/src/main/java/org/keycloak/services/resources/admin/permissions/UserPermissionsV2.java:48-57\n\nExplanation:\nThe `ADMIN` role was dropped from the `canView` and `canManage` checks. This is fine only if `hasOneAdminRole` implicitly includes ADMIN. If it does not, realm admins lose access. Verify this against `MgmtPermissions.hasOneAdminRole`.\n\nProposed fix:\nConfirm that `hasOneAdminRole` implicitly accepts the `ADMIN` role.\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "In GroupPermissionsV2.canManage(), the permission fallback checks for both VIEW and MANAGE scopes (hasPermission(null, AdminPermissionsSchema.VIEW, AdminPermissionsSchema.MANAGE)), but canManage() should only grant access for MANAGE scope, not VIEW. This means users with only VIEW permission on groups can pass the canManage() check, granting them write access they should not have. The canView() method correctly checks both VIEW and MANAGE, but canManage() should only check MANAGE.",
+        "severity": "High",
+        "category": "bug",
+        "matched_candidate": "V2 canManage() for groups grants manage on the VIEW scope - canManage() falls back to hasPermission(null, VIEW, MANAGE), allowing admins with only VIEW permission to pass canManage() and requireManage() checks, causing privilege escalation from read-only to write access",
+        "confidence": 0.99,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment: in GroupPermissionsV2.canManage(), the fallback check includes VIEW scope (hasPermission(null, VIEW, MANAGE)), which allows users with only VIEW permission to pass canManage() checks, resulting in privilege escalation from read-only to write access. Both comments point to the same bug, same method, same root cause, and same security consequence."
+      },
+      {
+        "golden_comment": "In getGroupIdsWithViewPermission, hasPermission is called with groupResource.getId() and the same groupResource.getId() is added to granted, but hasPermission resolves resources by name (treating the argument as a group id) and the GroupPermissionEvaluator contract says this method returns group IDs that are later used as UserModel.GROUPS and in getUsersCount group filters. This mismatch means per-group VIEW_MEMBERS/MANAGE_MEMBERS permissions may not yield the expected group IDs for filtering and counts, and evaluation may effectively only look at the type-level 'all-groups' resource; consider revisiting whether this should operate on the underlying group ids (resource names) instead so it aligns with the JPA queries and the interface contract.",
+        "severity": "High",
+        "category": "api",
+        "matched_candidate": "V2 getGroupIdsWithViewPermission is invoked unconditionally and is expensive - runs full policy evaluation for every group resource O(groups), and hasPermission uses groupResource.getId() but findByName expects resource name, causing lookup to return null and fall back to type-level resource",
+        "confidence": 0.92,
+        "reasoning": "The candidate issue identifies the same core problem as the golden comment: in getGroupIdsWithViewPermission, hasPermission uses groupResource.getId() but the underlying lookup (findByName) expects a resource name, not the resource ID. Both comments point out that this mismatch causes the lookup to fail and fall back to type-level resource evaluation, which means per-group permissions won't work as expected. The candidate also mentions the performance concern (O(groups) evaluation), which is additional context but the fundamental bug identified is the same."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Group view filtering is now applied to users and groups without a precheck - the .filter(usersEvaluator::canView) call was removed from user search in UsersResource, potentially returning users without per-user permission checks"
+      },
+      {
+        "candidate": "V1 canList no longer includes the VIEW_USERS and MANAGE_USERS roles, contradicting its Javadoc - behavior change in canView/canManage no longer delegating to user permissions needs verification"
+      },
+      {
+        "candidate": "Removed AdminRoles.ADMIN check from V2 user permissions - ADMIN role was dropped from canView and canManage checks, which may cause realm admins to lose access if hasOneAdminRole does not implicitly include ADMIN"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 5,
+    "total_golden": 2,
+    "tp": 2,
+    "fp": 3,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.4,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "keycloak/keycloak",
+    "pr_url": "https://github.com/keycloak/keycloak/pull/37038"
+  },
+  "judgeUsage": {
+    "calls": 12,
+    "inputTokens": 5404,
+    "outputTokens": 1608,
+    "costUsd": 0.06722
+  }
+}

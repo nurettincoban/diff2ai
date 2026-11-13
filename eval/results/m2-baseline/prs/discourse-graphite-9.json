@@ -1,0 +1,116 @@
+{
+  "id": "discourse-graphite-9",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/9",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Fallback locales are loaded only in the web request path, not in jobs, mailers or console",
+      "affected": [
+        "app/controllers/application_controller.rb:158-159",
+        "lib/freedom_patches/translate_accelerator.rb:62-68"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "The translation cache key ignores the site default locale, so fallback results leak or go stale",
+      "affected": [
+        "config/initializers/i18n.rb:13-18"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Make the fallback list robust to a nil default locale and to string locales",
+      "affected": [
+        "config/initializers/i18n.rb:17"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "The Hash subclass only partly implements the I18n::Locale::Fallbacks interface",
+      "affected": [
+        "config/initializers/i18n.rb:12-24"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoRdv6Epu6h1i54kNUi",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 3152,
+      "outputTokens": 3782,
+      "ms": 35190
+    }
+  ],
+  "costUsd": 0.088248,
+  "durationMs": 36195,
+  "promptSha256": "da73cdcc2fa24ba7b468a1f827460c8c352150ac07031e8e69e781f57722b96b",
+  "promptChars": 7577,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Fallback locales are loaded only in the web request path, not in jobs, mailers or console\n\nAffected:\n- app/controllers/application_controller.rb:158-159\n- lib/freedom_patches/translate_accelerator.rb:62-68\n\nExplanation:\n`translate` still loads only `config.locale` (line 68). The fallback locales (the site default and `:en`) are loaded only when `I18n.fallbacks.ensure_loaded!` runs, and that call exists only in the controller's locale setup.\n\nCode that sets `I18n.locale` outside a controller never makes that call. This includes Sidekiq jobs, mailers, rake tasks and the console. In those paths the `Fallbacks` backend walks `[user, site, :en]`, but the extra locales were never loaded. The result is \"translation missing\" instead of the intended fallback.\n\nThis is fragile because every new entry point must remember to call `ensure_loaded!`.\n\nThe fix is to load the whole fallback chain inside `translate`, or inside `load_locale`, instead of relying on callers.\n\nProposed fix:\n~~~ruby\ndef translate(key, *args)\n  I18n.fallbacks[config.locale].each do |l|\n    load_locale(l) unless @loaded_locales.include?(l)\n  end\n  ...\nend\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: The translation cache key ignores the site default locale, so fallback results leak or go stale\n\nAffected:\n- config/initializers/i18n.rb:13-18\n\nExplanation:\n`FallbackLocaleList#[]` now makes the result of a lookup depend on `SiteSetting.default_locale`. That value is per-site in multisite, and admins can change it at runtime.\n\nThe translate_accelerator cache is outside this diff. As far as I know, it is keyed only on key, `config.locale` and backend. If so, two problems follow:\n- A fallback string computed for site A (default `fr`) can be served to site B (default `de`) when both have a user with the same missing locale.\n- After an admin changes the default locale, the old fallback strings stay cached.\n\nSeverity is reduced because this depends on cache-key code not shown in the diff. The fix is to include the full fallback chain, or at least `SiteSetting.default_locale`, in the cache key. Alternatively, clear the cache when the default locale changes.\n\nProposed fix:\n~~~ruby\nk = \"#{key}#{I18n.fallbacks[config.locale].join(',')}#{config.backend.object_id}\"\n~~~\n\n## 3) Severity: LOW | Type: Bug\nTitle: Make the fallback list robust to a nil default locale and to string locales\n\nAffected:\n- config/initializers/i18n.rb:17\n\nExplanation:\nThere are two problems on this line:\n- **Nil default locale:** `SiteSetting.default_locale.to_sym` raises `NoMethodError` if the setting is nil. This can happen early in boot, during asset precompile without a DB, or during tests. The `.compact` call comes too late to help.\n- **String locales:** `locale` can be passed as a String, for example via `I18n.t(..., locale: \"en\")`. In that case `.uniq` does not dedupe `\"en\"` against `:en`. The duplicate locale then gets checked twice, and `@loaded_locales.include?` checks may be inconsistent.\n\nThe fix is to normalize to symbols and compact before calling `uniq`.\n\nProposed fix:\n~~~ruby\ndef [](locale)\n  [locale, SiteSetting.default_locale, :en].compact.map(&:to_sym).uniq\nend\n~~~\n\n## 4) Severity: LOW | Type: Maintainability\nTitle: The Hash subclass only partly implements the I18n::Locale::Fallbacks interface\n\nAffected:\n- config/initializers/i18n.rb:12-24\n\nExplanation:\n`FallbackLocaleList` subclasses `Hash` and overrides only `[]`. Some libraries, and newer i18n versions, may call other `I18n::Locale::Fallbacks` methods such as `defaults`, `defaults=` or `map`. Rails' own i18n railtie does this when `config.i18n.fallbacks` is configured. Those calls would fail or silently do nothing.\n\nIt is safer to subclass `I18n::Locale::Fallbacks` and override `[]` and `compute`. That keeps API compatibility.\n\nProposed fix:\n~~~ruby\nclass FallbackLocaleList < I18n::Locale::Fallbacks\n  def [](locale)\n    [locale, SiteSetting.default_locale, :en].compact.map(&:to_sym).uniq\n  end\n  ...\nend\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "Consider normalizing the input locale (e.g., to a symbol) when checking/loading here to avoid double-loading if the same locale is passed as a String vs Symbol (also applies to other locations in the PR).",
+        "severity": "Low",
+        "category": "perf",
+        "matched_candidate": "locale can be passed as a String but .uniq does not dedupe string 'en' against symbol :en, causing duplicate locale checks and inconsistent @loaded_locales.include? behavior",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the exact same underlying problem as the golden comment: that locale can be passed as either a String or Symbol, and without normalization, this causes issues with deduplication (.uniq won't dedupe 'en' vs :en) and inconsistent behavior with @loaded_locales.include? checks. Both comments point to the need for normalizing locale input to avoid these string/symbol comparison problems."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Fallback locales are loaded only in the web request path, not in jobs, mailers or console - translate still loads only config.locale, and I18n.fallbacks.ensure_loaded! is only called in the controller's locale setup, causing 'translation missing' errors in Sidekiq jobs, mailers, rake tasks and console"
+      },
+      {
+        "candidate": "The translation cache key ignores the site default locale, so fallback results can leak between sites in multisite or go stale when admin changes the default locale - cache is keyed only on key, config.locale and backend but not the fallback chain"
+      },
+      {
+        "candidate": "SiteSetting.default_locale.to_sym raises NoMethodError if the setting is nil, which can happen early in boot, during asset precompile without a DB, or during tests"
+      },
+      {
+        "candidate": "FallbackLocaleList subclasses Hash and overrides only [], but some libraries and newer i18n versions may call other I18n::Locale::Fallbacks methods like defaults, defaults= or map which would fail or silently do nothing"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The @loaded_locales instance variable in translate_accelerator.rb is lazily initialized and accessed by multiple concurrent threads without synchronization.",
+        "severity": "Low",
+        "category": "concurrency"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 5,
+    "total_golden": 2,
+    "tp": 1,
+    "fp": 4,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.2,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/discourse-graphite",
+    "pr_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/9"
+  },
+  "judgeUsage": {
+    "calls": 12,
+    "inputTokens": 4474,
+    "outputTokens": 1338,
+    "costUsd": 0.055819999999999995
+  }
+}

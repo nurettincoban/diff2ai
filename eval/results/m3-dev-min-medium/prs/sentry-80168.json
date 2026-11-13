@@ -1,0 +1,112 @@
+{
+  "id": "sentry-80168",
+  "goldenUrl": "https://github.com/getsentry/sentry/pull/80168",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "type": "Bug",
+      "title": "Make `MetricAlertDetectorHandler` concrete before using it as a handler",
+      "affected": [
+        "src/sentry/incidents/grouptype.py:11-12"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Guard the conversion from `DetectorPriorityLevel` to `PriorityLevel`",
+      "affected": [
+        "src/sentry/workflow_engine/processors/detector.py:298-301"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Make the mock occurrence depend on the inputs it receives",
+      "affected": [
+        "tests/sentry/workflow_engine/processors/test_detector.py:244-275",
+        "tests/sentry/workflow_engine/processors/test_detector.py:190-192",
+        "tests/sentry/workflow_engine/processors/test_detector.py:489-491",
+        "tests/sentry/workflow_engine/processors/test_detector.py:509-511",
+        "tests/sentry/workflow_engine/processors/test_detector.py:536-545"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "INFO",
+      "type": "Doc",
+      "title": "Update the stale `evaluate` docstring",
+      "affected": [
+        "src/sentry/workflow_engine/processors/detector.py:229-231"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 1,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgypuLTX2nAWTLGoCwdYH",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 14143,
+      "outputTokens": 3037,
+      "ms": 25287
+    }
+  ],
+  "costUsd": 0.117312,
+  "durationMs": 26363,
+  "promptSha256": "fc7bc0d70e065a6923b92b79add315ef254d6c297a7509748495ea2cb6521069",
+  "promptChars": 35315,
+  "response": "## 1) Severity: HIGH | Type: Bug\nTitle: Make `MetricAlertDetectorHandler` concrete before using it as a handler\n\nAffected:\n- src/sentry/incidents/grouptype.py:11-12\n\nExplanation:\n`MetricAlertDetectorHandler` now subclasses `StatefulDetectorHandler` with only `pass`. `StatefulDetectorHandler` has abstract methods: `get_dedupe_value`, `get_group_key_values`, and the new `build_occurrence_and_event_data`. That makes `MetricAlertDetectorHandler` an abstract class.\n\n`Detector.detector_handler` instantiates `group_type.detector_handler(self)`. For any detector whose type is the metric alert group type, that call will raise `TypeError: Can't instantiate abstract class`. The exception escapes `process_detectors` and aborts processing of every detector in the batch.\n\nBefore this change, the class was a safe no-op that returned `[]`.\n\nFix options:\n- Keep a concrete stub until the real implementation exists, or\n- Implement the three abstract methods with safe no-op defaults.\n\nProposed fix:\n~~~python\nclass MetricAlertDetectorHandler(StatefulDetectorHandler[QuerySubscriptionUpdate]):\n    def get_dedupe_value(self, data_packet: DataPacket[QuerySubscriptionUpdate]) -> int:\n        return 0  # TODO\n\n    def get_group_key_values(\n        self, data_packet: DataPacket[QuerySubscriptionUpdate]\n    ) -> dict[DetectorGroupKey, int]:\n        return {}  # TODO\n\n    def build_occurrence_and_event_data(\n        self, group_key: DetectorGroupKey, value: int, new_status: PriorityLevel\n    ) -> tuple[IssueOccurrence, dict[str, Any]]:\n        raise NotImplementedError\n~~~\n\n## 2) Severity: LOW | Type: Bug\nTitle: Guard the conversion from `DetectorPriorityLevel` to `PriorityLevel`\n\nAffected:\n- src/sentry/workflow_engine/processors/detector.py:298-301\n\nExplanation:\n`PriorityLevel(new_status)` relies on every non-OK `DetectorPriorityLevel` value having an exact numeric match in `PriorityLevel`. The definition of `DetectorPriorityLevel` is not in this diff, so I could not confirm this. If the two enums diverge (for example, a new detector level is added), the call raises `ValueError` mid-evaluation, after `enqueue_state_update` has already been called. Use an explicit mapping, or at least a clear error.\n\nProposed fix:\n~~~python\n_DETECTOR_TO_ISSUE_PRIORITY = {\n    DetectorPriorityLevel.LOW: PriorityLevel.LOW,\n    DetectorPriorityLevel.MEDIUM: PriorityLevel.MEDIUM,\n    DetectorPriorityLevel.HIGH: PriorityLevel.HIGH,\n}\n...\nresult, event_data = self.build_occurrence_and_event_data(\n    group_key, value, _DETECTOR_TO_ISSUE_PRIORITY[new_status]\n)\n~~~\n\n## 3) Severity: LOW | Type: Test\nTitle: Make the mock occurrence depend on the inputs it receives\n\nAffected:\n- tests/sentry/workflow_engine/processors/test_detector.py:244-275\n- tests/sentry/workflow_engine/processors/test_detector.py:190-192\n- tests/sentry/workflow_engine/processors/test_detector.py:489-491\n- tests/sentry/workflow_engine/processors/test_detector.py:509-511\n- tests/sentry/workflow_engine/processors/test_detector.py:536-545\n\nExplanation:\n`build_mock_occurrence_and_event` ignores `value`, so the tests pass even though they compute expectations with the wrong value:\n- `6` is used where the real value is `10`, `100`, or `8`.\n\nAs a result, the tests cannot detect the handler passing the wrong value to the hook.\n\nIn `TestEvaluateGroupKeyValue.test_dedupe`, the occurrence is built for group key `\"val1\"` (which affects the fingerprint), but `expected_result` uses `\"group_key\"`. The expectations are inconsistent; whether this fails depends on test code outside the shown hunk.\n\nFix:\n- Have the mock encode `value` (for example, in `evidence_data`).\n- Build expectations with the actual group key and value.\n\nProposed fix:\n~~~python\noccurrence = IssueOccurrence(\n    ...,\n    evidence_data={\"value\": value},\n    ...\n)\n# and in tests:\nbuild_mock_occurrence_and_event(detector.detector_handler, \"group_2\", 10, PriorityLevel.HIGH)\nbuild_mock_occurrence_and_event(handler, \"group_key\", <actual value>, PriorityLevel.HIGH)\n~~~\n\n## 4) Severity: INFO | Type: Doc\nTitle: Update the stale `evaluate` docstring\n\nAffected:\n- src/sentry/workflow_engine/processors/detector.py:229-231\n\nExplanation:\nThe docstring still says `evaluate` \"returns a list of `DetectorEvaluationResult`\". It now returns a dict keyed by group key. Update the docstring to match the new contract.\n\nProposed fix:\n~~~python\n\"\"\"\nEvaluates a given data packet and returns a dict of `DetectorGroupKey` -> `DetectorEvaluationResult`.\n...\n\"\"\"\n~~~\n",
+  "belowMinSeverity": 3,
+  "configHash": "2db5d28d38193561cb3373bb643bd7b58bdab1770ac62b9be17d232892b946e8",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "MetricAlertDetectorHandler inherits from StatefulDetectorHandler but only contains pass, failing to implement its required abstract methods: counter_names (property), get_dedupe_value(), get_group_key_values(), and build_occurrence_and_event_data(). This will cause a TypeError at runtime when the class is instantiated.",
+        "severity": "High",
+        "category": "api",
+        "matched_candidate": "Instantiating MetricAlertDetectorHandler for any detector with metric alert group type will raise TypeError: Can't instantiate abstract class, which escapes process_detectors and aborts processing of every detector in the batch",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment - that MetricAlertDetectorHandler cannot be instantiated because it's an abstract class (inherits from StatefulDetectorHandler but doesn't implement required abstract methods). The candidate specifically mentions 'TypeError: Can't instantiate abstract class' which is the same runtime error the golden comment describes. Both identify that this will cause a TypeError at runtime when trying to instantiate the class."
+      }
+    ],
+    "false_positives": [],
+    "false_negatives": [
+      {
+        "golden_comment": "Docstring says this returns a list of DetectorEvaluationResult, but the method now returns a dict keyed by DetectorGroupKey. Consider updating the docstring to match the new return type.",
+        "severity": "Low",
+        "category": "doc_defect"
+      },
+      {
+        "golden_comment": "Wrong value `6` passed for `group_2` occurrence — the data packet specifies `\"group_2\": 10`. Should be `10` to accurately reflect the test scenario, which will ensure the test produces the correct occurrence data.",
+        "severity": "Medium",
+        "category": "test_gap"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 3,
+    "total_golden": 3,
+    "tp": 1,
+    "fp": 0,
+    "fn": 2,
+    "errors_count": 0,
+    "precision": 0.3333333333333333,
+    "recall": 0.3333333333333333,
+    "tool": "diff2ai",
+    "repo_name": "getsentry/sentry",
+    "pr_url": "https://github.com/getsentry/sentry/pull/80168"
+  },
+  "judgeUsage": {
+    "calls": 11,
+    "inputTokens": 3547,
+    "outputTokens": 1099,
+    "costUsd": 0.04521
+  }
+}

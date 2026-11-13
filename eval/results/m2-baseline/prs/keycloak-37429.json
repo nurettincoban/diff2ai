@@ -1,0 +1,165 @@
+{
+  "id": "keycloak-37429",
+  "goldenUrl": "https://github.com/keycloak/keycloak/pull/37429",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Restore the Lithuanian `totpStep1` translations, which were replaced with Italian",
+      "affected": [
+        "themes/src/main/resources-community/theme/base/account/messages/messages_lt.properties:101-101",
+        "themes/src/main/resources-community/theme/base/login/messages/messages_lt.properties:71-71"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Use Simplified Chinese, not Traditional Chinese, in `messages_zh_CN`",
+      "affected": [
+        "themes/src/main/resources-community/theme/base/account/messages/messages_zh_CN.properties:112-112"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Check that `{0}` and choice syntax work in the React (i18next) bundles before switching from `{{0}}`",
+      "affected": [
+        "js/apps/account-ui/maven-resources/theme/keycloak.v3/account/messages/messages_en.properties:188-188",
+        "js/apps/admin-ui/maven-resources/theme/keycloak.v2/admin/messages/messages_en.properties:3138-3138"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Guard the diff-trimming logic against overlapping prefix and suffix",
+      "affected": [
+        "misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:101-111"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Implementation",
+      "title": "Fail with a clear message when no English counterpart exists, using the Mojo exception type",
+      "affected": [
+        "misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:66-80"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Maintainability",
+      "title": "Include the key and file in the anchor-mismatch message",
+      "affected": [
+        "misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:157-157"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Implementation",
+      "title": "Make `ANCHOR_PATTERN` match only real `<a>` tags",
+      "affected": [
+        "misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:145-145"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 7,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoL6QPabB6UmWxL8iQ9",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 42239,
+      "outputTokens": 6734,
+      "ms": 66535
+    }
+  ],
+  "costUsd": 0.303636,
+  "durationMs": 67547,
+  "promptSha256": "d644814f5fd61c5828ad669d3fe74b7d884a52d8a435c87b725861a09ebb5eaf",
+  "promptChars": 88418,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Restore the Lithuanian `totpStep1` translations, which were replaced with Italian\n\nAffected:\n- themes/src/main/resources-community/theme/base/account/messages/messages_lt.properties:101-101\n- themes/src/main/resources-community/theme/base/login/messages/messages_lt.properties:71-71\n\nExplanation:\nThe Lithuanian `totpStep1` and `loginTotpStep1` values now contain Italian text: \"Installa una delle seguenti applicazioni sul tuo cellulare:\". Lithuanian users will see a sentence in the wrong language on the OTP setup page. The other locales in this change got proper translations, so this looks like a copy/paste mistake.\n\nProposed fix:\n~~~properties\ntotpStep1=Įdiekite vieną iš šių programėlių savo mobiliajame telefone:\nloginTotpStep1=Įdiekite vieną iš šių programėlių savo mobiliajame telefone:\n~~~\n\n## 2) Severity: LOW | Type: Bug\nTitle: Use Simplified Chinese, not Traditional Chinese, in `messages_zh_CN`\n\nAffected:\n- themes/src/main/resources-community/theme/base/account/messages/messages_zh_CN.properties:112-112\n\nExplanation:\nThe new `zh_CN` value \"在您的手機上安裝以下應用程式之一：\" is written in Traditional Chinese (手機, 應用程式), which is the `zh_TW` wording. The `zh_CN` bundle should use Simplified characters, like the rest of the file.\n\nProposed fix:\n~~~properties\ntotpStep1=在您的手机上安装以下应用程序之一：\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Check that `{0}` and choice syntax work in the React (i18next) bundles before switching from `{{0}}`\n\nAffected:\n- js/apps/account-ui/maven-resources/theme/keycloak.v3/account/messages/messages_en.properties:188-188\n- js/apps/admin-ui/maven-resources/theme/keycloak.v2/admin/messages/messages_en.properties:3138-3138\n\nExplanation:\nThese bundles are used by the React UIs, which translate with i18next. The previous value used i18next interpolation (`{{0}}`). The new value uses `java.text.MessageFormat` syntax: `{0}` and `{2,choice,0#values|1#value|1<values}`.\n\nUnless the server converts these strings for the JS apps (that code is not visible in this diff), the UI will show the raw text, e.g. \"Attribute {0} must have at least {1} ... {2,choice,...}\". It seems the change was made to satisfy the new verifier, because the `{{` placeholders produced `<!-- -->` artifacts in the sanitizer.\n\nFix: confirm how these bundles are interpolated at runtime. If it is i18next, keep `{{0}}` placeholders and plain pluralization (or i18next plurals) for these files, and adjust the verifier instead.\n\nProposed fix:\n~~~properties\nerror-invalid-multivalued-size=Attribute {{0}} must have at least {{1}} and at most {{2}} value(s).\n~~~\n\n## 4) Severity: LOW | Type: Bug\nTitle: Guard the diff-trimming logic against overlapping prefix and suffix\n\nAffected:\n- misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:101-111\n\nExplanation:\n`start` and `end` are computed independently. When the common prefix and suffix overlap in the shorter string, `start > sanitized.length() - end` (or the same for `value`). `substring` then throws `StringIndexOutOfBoundsException`. This crashes the build instead of reporting the HTML problem.\n\nFix: limit `end` so that `start + end` never exceeds the length of either string.\n\nProposed fix:\n~~~java\nint end = 0;\nint max = Math.min(value.length(), sanitized.length()) - start;\nwhile (end < max && value.charAt(value.length() - end - 1) == sanitized.charAt(sanitized.length() - end - 1)) {\n    end++;\n}\n~~~\n\n## 5) Severity: LOW | Type: Implementation\nTitle: Fail with a clear message when no English counterpart exists, using the Mojo exception type\n\nAffected:\n- misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:66-80\n\nExplanation:\nThe English file path is derived from the absolute path with two regex replacements. If no English file exists for a bundle, `verifySafeHtml` throws a raw `RuntimeException`. This aborts the whole plugin run with a stack trace, instead of adding a message or throwing `MojoExecutionException` like the rest of `verify()`.\n\nFix:\n- Propagate `MojoExecutionException`, or add a readable message to `messages`.\n- Derive the path from the file name instead of regex-rewriting the full absolute path.\n\nProposed fix:\n~~~java\nprivate void verifySafeHtml() throws MojoExecutionException {\n    ...\n    } catch (IOException e) {\n        throw new MojoExecutionException(\"Can not read English source file \" + englishFile + \" for \" + file, e);\n    }\n~~~\n\n## 6) Severity: LOW | Type: Maintainability\nTitle: Include the key and file in the anchor-mismatch message\n\nAffected:\n- misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:157-157\n\nExplanation:\n\"Didn't find anchor tag ... in original string\" does not say which file or key failed. Across dozens of locale files, this makes failures hard to locate. The `key` parameter is passed into the method but never used.\n\nProposed fix:\n~~~java\nmessages.add(\"Didn't find anchor tag \" + matcher.group() + \" in original string for key \" + key + \" in file \" + file);\n~~~\n\n## 7) Severity: LOW | Type: Implementation\nTitle: Make `ANCHOR_PATTERN` match only real `<a>` tags\n\nAffected:\n- misc/theme-verifier/src/main/java/org/keycloak/themeverifier/VerifyMessageProperties.java:145-145\n\nExplanation:\n`</?a[^>]*>` also matches tags that merely start with \"a\", such as `<abbr>`, `<area>`, `<audio ...>` and `<aside>`. Matching tags are stripped before sanitization. As a result, such tags copied from the English source are exempt from the sanitizer policy, and they are treated as anchors in the error output.\n\nProposed fix:\n~~~java\nprivate static final Pattern ANCHOR_PATTERN = Pattern.compile(\"</?a(\\\\s[^>]*)?>\");\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The translation is in Italian instead of Lithuanian. This should be translated to Lithuanian to match the file's locale (messages_lt.properties).",
+        "severity": "Medium",
+        "category": "doc_defect",
+        "matched_candidate": "Lithuanian totpStep1 and loginTotpStep1 translations were replaced with Italian text instead of proper Lithuanian translations",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment - that Lithuanian translations were incorrectly replaced with Italian text. Both comments point out that Italian text was used instead of proper Lithuanian translations in what should be a Lithuanian locale file."
+      },
+      {
+        "golden_comment": "The totpStep1 value uses Traditional Chinese terms in the Simplified Chinese file (zh_CN), which is likely incorrect for this locale. Please verify the locale‑appropriate translation.",
+        "severity": "Medium",
+        "category": "doc_defect",
+        "matched_candidate": "zh_CN locale file uses Traditional Chinese characters instead of Simplified Chinese for totpStep1",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies exactly the same problem as the golden comment: the zh_CN (Simplified Chinese) locale file contains Traditional Chinese characters in the totpStep1 value. Both comments point to the same localization bug where the wrong Chinese character set is being used for the Simplified Chinese locale."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "React/i18next bundles changed from {{0}} interpolation syntax to Java MessageFormat {0} syntax, which may cause raw text to display in the UI"
+      },
+      {
+        "candidate": "Diff-trimming logic doesn't guard against overlapping prefix and suffix, causing StringIndexOutOfBoundsException when they overlap"
+      },
+      {
+        "candidate": "Missing English counterpart file throws raw RuntimeException instead of MojoExecutionException with a clear message"
+      },
+      {
+        "candidate": "Anchor-mismatch error message doesn't include the key and file information, making failures hard to locate"
+      },
+      {
+        "candidate": "ANCHOR_PATTERN regex matches tags that start with 'a' (like abbr, area, audio, aside) instead of only matching actual anchor tags"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "The anchor sanitization logic has a potential issue where it consumes English matcher groups without proper validation. If the translated text has more anchor tags than the English text, this could lead to incorrect validation results.",
+        "severity": "Low",
+        "category": "security"
+      },
+      {
+        "golden_comment": "The method name 'santizeAnchors' should be 'sanitizeAnchors' (missing 'i').",
+        "severity": "Low",
+        "category": "style"
+      },
+      {
+        "golden_comment": "Field HTML_TAGS should be declared as 'private static final' following Java naming conventions for constants",
+        "severity": "Low",
+        "category": "style"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 7,
+    "total_golden": 5,
+    "tp": 2,
+    "fp": 5,
+    "fn": 3,
+    "errors_count": 0,
+    "precision": 0.2857142857142857,
+    "recall": 0.4,
+    "tool": "diff2ai",
+    "repo_name": "keycloak/keycloak",
+    "pr_url": "https://github.com/keycloak/keycloak/pull/37429"
+  },
+  "judgeUsage": {
+    "calls": 37,
+    "inputTokens": 9818,
+    "outputTokens": 3572,
+    "costUsd": 0.13838999999999999
+  }
+}

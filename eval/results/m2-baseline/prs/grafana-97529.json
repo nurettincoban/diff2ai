@@ -1,0 +1,122 @@
+{
+  "id": "grafana-97529",
+  "goldenUrl": "https://github.com/grafana/grafana/pull/97529",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Guard concurrent BuildIndex calls for the same key after removing the function-wide lock",
+      "affected": [
+        "pkg/storage/unified/search/bleve.go:88-140"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Performance",
+      "title": "Avoid blocking the constructor on the full search index build",
+      "affected": [
+        "pkg/storage/unified/resource/server.go:258-262"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Handlers no longer guard against a server that was never initialized",
+      "affected": [
+        "pkg/storage/unified/resource/server.go:452-455",
+        "pkg/storage/unified/resource/server.go:916-935"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Test",
+      "title": "Track or fix the Postgres integration test skip instead of disabling it",
+      "affected": [
+        "pkg/server/module_server_test.go:35-38"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 4,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyoTaG8tYbqEe7Jd59Ar",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 6499,
+      "outputTokens": 3145,
+      "ms": 30360
+    }
+  ],
+  "costUsd": 0.088896,
+  "durationMs": 31391,
+  "promptSha256": "989165e69371dcea7cf7555a46878e76a5d6e8ebec1dc2a296ab457755a812df",
+  "promptChars": 13786,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Guard concurrent BuildIndex calls for the same key after removing the function-wide lock\n\nAffected:\n- pkg/storage/unified/search/bleve.go:88-140\n\nExplanation:\n`cacheMu` used to be held for the whole of `BuildIndex`. Now it only protects the final `b.cache[key] = idx` write. That makes builds faster, but it removes mutual exclusion for builds of the same `NamespacedResource`.\n\nTwo goroutines can now build the same key at the same time, for example:\n- the startup `init` goroutines and a `getOrCreateIndex` call, or\n- two concurrent requests for the same key.\n\nThe consequences are:\n- **File-backed indexes (`size > FileThreshold`):** both calls run `bleve.New(dir, mapper)` on the same directory. The second call fails with \"path already exists\", or the two writers interfere with each other.\n- **In-memory indexes:** both build the full index. The last write wins, and the losing index is never closed, so it leaks resources and duplicates expensive work.\n\nWhether this can happen depends on locking in `searchSupport.getOrCreateIndex`, which is not in the diff. If that function does not serialize per key, this is a real race.\n\nTo fix it, use per-key locking or singleflight, so that different keys still build in parallel but the same key builds only once.\n\nProposed fix:\n~~~go\n// in bleveBackend\nbuildGroup singleflight.Group\n\nfunc (b *bleveBackend) BuildIndex(ctx context.Context, key resource.NamespacedResource, size int64, rv int64, fields resource.SearchableDocumentFields, builder func(resource.ResourceIndex) (int64, error)) (resource.ResourceIndex, error) {\n\tv, err, _ := b.buildGroup.Do(key.String(), func() (any, error) {\n\t\tb.cacheMu.RLock()\n\t\tif idx, ok := b.cache[key]; ok {\n\t\t\tb.cacheMu.RUnlock()\n\t\t\treturn idx, nil\n\t\t}\n\t\tb.cacheMu.RUnlock()\n\t\treturn b.buildIndex(ctx, key, size, rv, fields, builder)\n\t})\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\treturn v.(resource.ResourceIndex), nil\n}\n~~~\n\n## 2) Severity: MEDIUM | Type: Performance\nTitle: Avoid blocking the constructor on the full search index build\n\nAffected:\n- pkg/storage/unified/resource/server.go:258-262\n\nExplanation:\n`NewResourceServer` now calls `s.Init(ctx)` synchronously. `Init` runs `s.search.init`, which builds every index above the size threshold. On large deployments this delays startup by the full indexing time, and any constructor caller that has a deadline (module startup, wire DI) is blocked too.\n\nBecause the lazy `Init` calls were removed from every handler, there are only two outcomes:\n- the server is never returned until indexing finishes, or\n- the constructor fails outright, and an indexing failure now prevents the storage server from existing at all, even for plain CRUD.\n\nThe context also matters. The `ctx` used here is defined outside the diff, and `search.init` starts a long-lived watch goroutine with it. If that ctx is short-lived or gets cancelled after construction, the event-indexing goroutine stops silently.\n\nConsider:\n- building indexes in the background and having health checks report readiness, or\n- at minimum, making sure the ctx passed here lives for the whole server lifetime.\n\n`Init` already logs the error, so the extra `s.log.Error` here logs it twice.\n\nProposed fix:\n~~~go\n// ensure ctx is the long-lived server context, not a request/startup-timeout ctx\nif err := s.Init(ctx); err != nil {\n\treturn nil, err // Init already logs\n}\n~~~\n\n## 3) Severity: LOW | Type: Bug\nTitle: Handlers no longer guard against a server that was never initialized\n\nAffected:\n- pkg/storage/unified/resource/server.go:452-455\n- pkg/storage/unified/resource/server.go:916-935\n\nExplanation:\nAll `s.Init(ctx)` calls were removed from the handlers, so they now depend entirely on `NewResourceServer` having run `Init`. Some code paths can bypass that:\n- any `server` built directly (tests, or other constructors in the package), or\n- a call to `Init` that was skipped.\n\nOn those paths `Watch` would run with a nil broadcaster, and search would run without an index.\n\n`Init` is guarded by `sync.Once`, so leaving the cheap call in place (or at least returning `s.initErr`) costs almost nothing and keeps the old safety. Separately, `History` and `Origin` dereference `s.search` without the nil check that `Search` has.\n\nProposed fix:\n~~~go\nfunc (s *server) History(ctx context.Context, req *HistoryRequest) (*HistoryResponse, error) {\n\tif s.search == nil {\n\t\treturn nil, fmt.Errorf(\"search index not configured\")\n\t}\n\treturn s.search.History(ctx, req)\n}\n~~~\n\n## 4) Severity: LOW | Type: Test\nTitle: Track or fix the Postgres integration test skip instead of disabling it\n\nAffected:\n- pkg/server/module_server_test.go:35-38\n\nExplanation:\nThe integration test is now skipped for Postgres because it \"only fails in Drone\". This failure appeared together with eager initialization. It may be a real regression, such as slower startup or a timing dependency on metrics, rather than an environment quirk. Skipping it hides the problem.\n\nInvestigate the cause, or at least link a tracking issue so the skip does not become permanent.\n\nProposed fix:\n~~~go\n// TODO(<issue-link>): eager init makes storage-server startup slow on postgres in CI\nif dbType == \"postgres\" {\n\tt.Skip(\"skipping - see <issue-link>\")\n}\n~~~\n",
+  "configHash": "5935c17b5b37bc36502b7a055beef37f94a820630e686ba95d92da813af963a0",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "A race condition in BuildIndex allows multiple goroutines to concurrently build the same expensive index for the same key. This is caused by moving the b.cacheMu lock from protecting the entire function to only protecting the final cache assignment. ",
+        "severity": "High",
+        "category": "concurrency",
+        "matched_candidate": "Concurrent BuildIndex calls for the same key are no longer guarded after removing the function-wide lock, causing race conditions where two goroutines can build the same key simultaneously, leading to file-backed index failures or in-memory index resource leaks",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the race condition in BuildIndex caused by removing the function-wide lock (b.cacheMu), which allows multiple goroutines to concurrently build the same index for the same key. Both comments point to the same underlying bug - the lock was moved from protecting the entire function to only protecting the final cache assignment, creating a race condition."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "NewResourceServer blocks synchronously on full search index build during construction, delaying startup on large deployments and potentially causing constructor failures that prevent the storage server from existing even for plain CRUD operations"
+      },
+      {
+        "candidate": "The context passed to Init may be short-lived or cancelled after construction, which would silently stop the event-indexing goroutine"
+      },
+      {
+        "candidate": "Init error is logged twice - once in Init itself and again in the constructor"
+      },
+      {
+        "candidate": "Handlers no longer guard against a server that was never initialized since all s.Init(ctx) calls were removed, causing potential nil pointer dereferences for servers built directly or when Init was skipped"
+      },
+      {
+        "candidate": "History and Origin methods dereference s.search without the nil check that Search has"
+      },
+      {
+        "candidate": "Postgres integration test is skipped without a tracking issue, potentially hiding a real regression related to eager initialization causing slower startup or timing dependencies"
+      }
+    ],
+    "false_negatives": [
+      {
+        "golden_comment": "Calling s.search.TotalDocs() here may race with concurrent index creation: TotalDocs iterates b.cache without synchronization, and the event watcher goroutine started just above could trigger BuildIndex writes concurrently, potentially causing a concurrent map read/write panic.",
+        "severity": "High",
+        "category": "concurrency"
+      }
+    ],
+    "errors": [],
+    "total_candidates": 7,
+    "total_golden": 2,
+    "tp": 1,
+    "fp": 6,
+    "fn": 1,
+    "errors_count": 0,
+    "precision": 0.14285714285714285,
+    "recall": 0.5,
+    "tool": "diff2ai",
+    "repo_name": "grafana/grafana",
+    "pr_url": "https://github.com/grafana/grafana/pull/97529"
+  },
+  "judgeUsage": {
+    "calls": 16,
+    "inputTokens": 5682,
+    "outputTokens": 1778,
+    "costUsd": 0.07286
+  }
+}

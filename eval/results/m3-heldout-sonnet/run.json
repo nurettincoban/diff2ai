@@ -1,0 +1,183 @@
+{
+  "runId": "m3-heldout-sonnet",
+  "label": "self-run, not independently scored",
+  "mock": false,
+  "startedAt": "2026-11-12T22:40:17.167Z",
+  "finishedAt": "2026-11-12T22:48:58.380Z",
+  "wallMs": 521213,
+  "prs": [
+    "cal.com-10600",
+    "cal.com-10967",
+    "cal.com-11059",
+    "cal.com-14740",
+    "cal.com-22345",
+    "cal.com-7232",
+    "cal.com-8087",
+    "cal.com-8330",
+    "discourse-graphite-1",
+    "discourse-graphite-10",
+    "discourse-graphite-3",
+    "discourse-graphite-5",
+    "discourse-graphite-6",
+    "discourse-graphite-7",
+    "discourse-graphite-8",
+    "discourse-graphite-9",
+    "grafana-103633",
+    "grafana-107534",
+    "grafana-76186",
+    "grafana-79265",
+    "grafana-80329",
+    "grafana-90045",
+    "grafana-90939",
+    "grafana-97529",
+    "keycloak-32918",
+    "keycloak-33832",
+    "keycloak-36880",
+    "keycloak-36882",
+    "keycloak-37038",
+    "keycloak-37429",
+    "keycloak-38446",
+    "keycloak-40940",
+    "sentry-67876",
+    "sentry-80528",
+    "sentry-93824",
+    "sentry-95633",
+    "sentry-greptile-1",
+    "sentry-greptile-2",
+    "sentry-greptile-3",
+    "sentry-greptile-5"
+  ],
+  "configFile": "eval/config/sonnet.json",
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "config": {
+    "name": "sonnet",
+    "budgetUsd": 200,
+    "benchmark": {
+      "repo": "https://github.com/withmartian/code-review-benchmark.git",
+      "commit": "e616e849755441da38f18bf3adba2c9583b03803"
+    },
+    "tool": "diff2ai",
+    "reviewer": {
+      "runner": "eval-api",
+      "model": "claude-sonnet-5-5",
+      "effort": "medium",
+      "maxTokens": 64000,
+      "reviewArgs": []
+    },
+    "judge": {
+      "model": "claude-opus-4-5-20251101",
+      "baseUrl": "https://api.anthropic.com/v1/",
+      "apiKeyEnv": "ANTHROPIC_API_KEY"
+    },
+    "split": {
+      "seed": 20261112,
+      "devPerSource": 2
+    },
+    "pricingUsdPerMTok": {
+      "claude-opus-5-5": {
+        "input": 4,
+        "output": 20
+      },
+      "claude-sonnet-5-5": {
+        "input": 2,
+        "output": 10
+      },
+      "claude-haiku-5-5": {
+        "input": 0.1,
+        "output": 0.5
+      },
+      "claude-fable-5-2": {
+        "input": 8,
+        "output": 40
+      },
+      "claude-opus-4-5-20251101": {
+        "input": 5,
+        "output": 25
+      }
+    },
+    "estimate": {
+      "basis": "eval/results/m1-smoke (3 PRs): 2.1-2.5 prompt chars per input token, 2.7k-6.0k output tokens per review, 6-13 candidates per PR, 242 in / 103 out per judge call",
+      "promptCharsPerToken": {
+        "low": 2.7,
+        "high": 2
+      },
+      "reviewerOutputTokens": {
+        "low": 2500,
+        "high": 8000
+      },
+      "candidatesPerPr": {
+        "low": 6,
+        "high": 14
+      },
+      "judgeCallTokens": {
+        "input": 250,
+        "output": 105
+      },
+      "extractDedupTokens": {
+        "input": 2500,
+        "output": 400
+      }
+    }
+  },
+  "diff2ai": {
+    "commit": "4c8a0b6a165aed28e4b5ad68c47f6c52081d1c2e",
+    "uncommittedChanges": []
+  },
+  "benchmarkCommit": "e616e849755441da38f18bf3adba2c9583b03803",
+  "approvedUsd": 13.2,
+  "estimate": {
+    "prs": 40,
+    "reviewerInputTokens": {
+      "low": 556695.5555555555,
+      "high": 751539
+    },
+    "reviewerUsd": {
+      "low": 2.113391111111111,
+      "high": 4.703078
+    },
+    "judgeUsd": {
+      "low": 4.155,
+      "high": 8.495
+    },
+    "totalUsd": {
+      "low": 6.268391111111111,
+      "high": 13.198077999999999
+    }
+  },
+  "stoppedByCostCap": false,
+  "judge": {
+    "ok": true,
+    "steps": [
+      {
+        "name": "extract",
+        "code": 0,
+        "ms": 14448,
+        "tail": "Processing 40 extractions in batches of 50... | Error for diff2ai: JSON parse failed: Expecting ',' delimiter: line 2 column 9 (char 21) | Done! | Successful: 39 | Errors: 1 | Data saved to results\\claude-opus-4-5-20251101\\candidates.json"
+      },
+      {
+        "name": "dedup",
+        "code": 0,
+        "ms": 6867,
+        "tail": "Reviews to deduplicate: 39 | Done! | Succeeded : 39 | Fallbacks : 0  (all-singletons, no dedup applied) | Errors    : 0 | Saved to  : results\\claude-opus-4-5-20251101\\dedup_groups.json"
+      },
+      {
+        "name": "judge",
+        "code": 0,
+        "ms": 384104,
+        "tail": "Results saved to: results\\claude-opus-4-5-20251101\\evaluations.json | Aggregate metrics by tool: | Tool          Precision     Recall         F1  Reviews   Errors | ------------------------------------------------------------ | diff2ai           24.8%      65.7%      36.0%       40        0 | Judging:   0%|          | 0/40 [00:00<?, ?review/s]\rJudging:   0%|          | 0/40 [00:00<?, ?review/s, eval=0, skip=0, timeout=0, tool=diff2ai]\rJudging:   2%|▎         | 1/40 [00:18<12:03, 18.56s/review, eval=0, skip=0, timeout=0, tool=diff2ai]\rJudging:   2%|▎         | 1/40 [00:18<12:03, 18.56s/review, eval=1, skip=0, timeout=0, tool=diff2ai]\rJudging:   5%|▌         | 2/40 [00:38<12:22, 19.54s/review, eval=1, skip=0, timeout=0, tool=diff2ai]\rJudging:   5%|▌         | 2/40 [00:38<12:22, 19.54s/review, eval=2, skip=0, timeout=0, tool=diff2ai]\rJudging:   8%|▊         | 3/40 [01:25<19:41, 31.92s/review, eval=2, skip=0, timeout=0, tool=diff2ai]\rJudging:   8%|▊         | 3/40 [01:25<19:41, 31.92s/review, eval=3, skip=0, timeout=0, tool=diff2ai]\rJudging:  10%|█         | 4/40 [01:51<17:42, 29.53s/review, eval=3, skip=0, timeout=0, tool=diff2ai]\rJudging:  10%|█         | 4/40 [01:51<17:42, 29.53s/review, eval=4, skip=0, timeout=0, tool=diff2ai]\rJudging:  12%|█▎        | 5/40 [01:54<11:39, 19.97s/review, eval=4, skip=0, timeout=0, tool=diff2ai]\rJudging:  12%|█▎        | 5/40 [01:54<11:39, 19.97s/review, eval=5, skip=0, timeout=0, tool=diff2ai]\rJudging:  15%|█▌        | 6/40 [02:06<09:48, 17.30s/review, eval=5, skip=0, timeout=0, tool=diff2ai]\rJudging:  15%|█▌        | 6/40 [02:06<09:48, 17.30s/review, eval=6, skip=0, timeout=0, tool=diff2ai]\rJudging:  18%|█▊        | 7/40 [02:09<07:01, 12.78s/review, eval=6, skip=0, timeout=0, tool=diff2ai]\rJudging:  18%|█▊        | 7/40 [02:09<07:01, 12.78s/review, eval=7, skip=0, timeout=0, tool=diff2ai]\rJudging:  20%|██        | 8/40 [02:16<05:43, 10.74s/review, eval=7, skip=0, timeout=0, tool=diff2ai]\rJudging:  20%|██        | 8/40 [02:16<05:43, 10.74s/review, eval=8, skip=0, timeout=0, tool=diff2ai]\rJudging:  22%|██▎       | 9/40 [02:24<05:13, 10.10s/review, eval=8, skip=0, timeout=0, tool=diff2ai]\rJudging:  22%|██▎       | 9/40 [02:24<05:13, 10.10s/review, eval=9, skip=0, timeout=0, tool=diff2ai]\rJudging:  25%|██▌       | 10/40 [02:53<07:54, 15.81s/review, eval=9, skip=0, timeout=0, tool=diff2ai]\rJudging:  25%|██▌       | 10/40 [02:53<07:54, 15.81s/review, eval=10, skip=0, timeout=0, tool=diff2ai]\rJudging:  28%|██▊       | 11/40 [03:01<06:26, 13.33s/review, eval=10, skip=0, timeout=0, tool=diff2ai]\rJudging:  28%|██▊       | 11/40 [03:01<06:26, 13.33s/review, eval=11, skip=0, timeout=0, tool=diff2ai]\rJudging:  30%|███       | 12/40 [03:08<05:20, 11.44s/review, eval=11, skip=0, timeout=0, tool=diff2ai]\rJudging:  30%|███       | 12/40 [03:08<05:20, 11.44s/review, eval=12, skip=0, timeout=0, tool=diff2ai]\rJudging:  32%|███▎      | 13/40 [03:11<04:04,  9.04s/review, eval=12, skip=0, timeout=0, tool=diff2ai]\rJudging:  32%|███▎      | 13/40 [03:11<04:04,  9.04s/review, eval=13, skip=0, timeout=0, tool=diff2ai]\rJudging:  35%|███▌      | 14/40 [03:21<03:56,  9.10s/review, eval=13, skip=0, timeout=0, tool=diff2ai]\rJudging:  35%|███▌      | 14/40 [03:21<03:56,  9.10s/review, eval=14, skip=0, timeout=0, tool=diff2ai]\rJudging:  38%|███▊      | 15/40 [03:32<04:05,  9.84s/review, eval=14, skip=0, timeout=0, tool=diff2ai]\rJudging:  38%|███▊      | 15/40 [03:32<04:05,  9.84s/review, eval=15, skip=0, timeout=0, tool=diff2ai]\rJudging:  40%|████      | 16/40 [03:36<03:12,  8.03s/review, eval=15, skip=0, timeout=0, tool=diff2ai]\rJudging:  40%|████      | 16/40 [03:36<03:12,  8.03s/review, eval=16, skip=0, timeout=0, tool=diff2ai]\rJudging:  42%|████▎     | 17/40 [03:45<03:12,  8.36s/review, eval=16, skip=0, timeout=0, tool=diff2ai]\rJudging:  42%|████▎     | 17/40 [03:45<03:12,  8.36s/review, eval=17, skip=0, timeout=0, tool=diff2ai]\rJudging:  45%|████▌     | 18/40 [03:49<02:32,  6.94s/review, eval=17, skip=0, timeout=0, tool=diff2ai]\rJudging:  45%|████▌     | 18/40 [03:49<02:32,  6.94s/review, eval=18, skip=0, timeout=0, tool=diff2ai]\rJudging:  48%|████▊     | 19/40 [03:53<02:05,  5.98s/review, eval=18, skip=0, timeout=0, tool=diff2ai]\rJudging:  48%|████▊     | 19/40 [03:53<02:05,  5.98s/review, eval=19, skip=0, timeout=0, tool=diff2ai]\rJudging:  50%|█████     | 20/40 [04:06<02:47,  8.36s/review, eval=19, skip=0, timeout=0, tool=diff2ai]\rJudging:  50%|█████     | 20/40 [04:06<02:47,  8.36s/review, eval=20, skip=0, timeout=0, tool=diff2ai]\rJudging:  52%|█████▎    | 21/40 [04:09<02:08,  6.76s/review, eval=20, skip=0, timeout=0, tool=diff2ai]\rJudging:  52%|█████▎    | 21/40 [04:09<02:08,  6.76s/review, eval=21, skip=0, timeout=0, tool=diff2ai]\rJudging:  55%|█████▌    | 22/40 [04:17<02:04,  6.90s/review, eval=21, skip=0, timeout=0, tool=diff2ai]\rJudging:  55%|█████▌    | 22/40 [04:17<02:04,  6.90s/review, eval=22, skip=0, timeout=0, tool=diff2ai]\rJudging:  57%|█████▊    | 23/40 [04:20<01:41,  5.96s/review, eval=22, skip=0, timeout=0, tool=diff2ai]\rJudging:  57%|█████▊    | 23/40 [04:20<01:41,  5.96s/review, eval=23, skip=0, timeout=0, tool=diff2ai]\rJudging:  60%|██████    | 24/40 [04:25<01:26,  5.42s/review, eval=23, skip=0, timeout=0, tool=diff2ai]\rJudging:  60%|██████    | 24/40 [04:25<01:26,  5.42s/review, eval=24, skip=0, timeout=0, tool=diff2ai]\rJudging:  62%|██████▎   | 25/40 [04:28<01:13,  4.87s/review, eval=24, skip=0, timeout=0, tool=diff2ai]\rJudging:  62%|██████▎   | 25/40 [04:28<01:13,  4.87s/review, eval=25, skip=0, timeout=0, tool=diff2ai]\rJudging:  65%|██████▌   | 26/40 [04:35<01:17,  5.55s/review, eval=25, skip=0, timeout=0, tool=diff2ai]\rJudging:  65%|██████▌   | 26/40 [04:35<01:17,  5.55s/review, eval=26, skip=0, timeout=0, tool=diff2ai]\rJudging:  68%|██████▊   | 27/40 [04:48<01:38,  7.55s/review, eval=26, skip=0, timeout=0, tool=diff2ai]\rJudging:  68%|██████▊   | 27/40 [04:48<01:38,  7.55s/review, eval=27, skip=0, timeout=0, tool=diff2ai]\rJudging:  70%|███████   | 28/40 [04:51<01:16,  6.37s/review, eval=27, skip=0, timeout=0, tool=diff2ai]\rJudging:  70%|███████   | 28/40 [04:51<01:16,  6.37s/review, eval=28, skip=0, timeout=0, tool=diff2ai]\rJudging:  72%|███████▎  | 29/40 [04:55<01:02,  5.71s/review, eval=28, skip=0, timeout=0, tool=diff2ai]\rJudging:  72%|███████▎  | 29/40 [04:55<01:02,  5.71s/review, eval=29, skip=0, timeout=0, tool=diff2ai]\rJudging:  75%|███████▌  | 30/40 [05:06<01:11,  7.18s/review, eval=29, skip=0, timeout=0, tool=diff2ai]\rJudging:  75%|███████▌  | 30/40 [05:06<01:11,  7.18s/review, eval=30, skip=0, timeout=0, tool=diff2ai]\rJudging:  78%|███████▊  | 31/40 [05:14<01:06,  7.41s/review, eval=30, skip=0, timeout=0, tool=diff2ai]\rJudging:  78%|███████▊  | 31/40 [05:14<01:06,  7.41s/review, eval=31, skip=0, timeout=0, tool=diff2ai]\rJudging:  80%|████████  | 32/40 [05:18<00:50,  6.31s/review, eval=31, skip=0, timeout=0, tool=diff2ai]\rJudging:  80%|████████  | 32/40 [05:18<00:50,  6.31s/review, eval=32, skip=0, timeout=0, tool=diff2ai]\rJudging:  82%|████████▎ | 33/40 [05:25<00:45,  6.52s/review, eval=32, skip=0, timeout=0, tool=diff2ai]\rJudging:  82%|████████▎ | 33/40 [05:25<00:45,  6.52s/review, eval=33, skip=0, timeout=0, tool=diff2ai]\rJudging:  85%|████████▌ | 34/40 [05:27<00:32,  5.39s/review, eval=33, skip=0, timeout=0, tool=diff2ai]\rJudging:  85%|████████▌ | 34/40 [05:27<00:32,  5.39s/review, eval=34, skip=0, timeout=0, tool=diff2ai]\rJudging:  88%|████████▊ | 35/40 [05:35<00:30,  6.07s/review, eval=34, skip=0, timeout=0, tool=diff2ai]\rJudging:  88%|████████▊ | 35/40 [05:35<00:30,  6.07s/review, eval=35, skip=0, timeout=0, tool=diff2ai]\rJudging:  90%|█████████ | 36/40 [05:43<00:26,  6.52s/review, eval=35, skip=0, timeout=0, tool=diff2ai]\rJudging:  90%|█████████ | 36/40 [05:43<00:26,  6.52s/review, eval=36, skip=0, timeout=0, tool=diff2ai]\rJudging:  92%|█████████▎| 37/40 [05:51<00:20,  6.96s/review, eval=36, skip=0, timeout=0, tool=diff2ai]\rJudging:  92%|█████████▎| 37/40 [05:51<00:20,  6.96s/review, eval=37, skip=0, timeout=0, tool=diff2ai]\rJudging:  95%|█████████▌| 38/40 [06:04<00:17,  8.83s/review, eval=37, skip=0, timeout=0, tool=diff2ai]\rJudging:  95%|█████████▌| 38/40 [06:04<00:17,  8.83s/review, eval=38, skip=0, timeout=0, tool=diff2ai]\rJudging:  98%|█████████▊| 39/40 [06:12<00:08,  8.50s/review, eval=38, skip=0, timeout=0, tool=diff2ai]\rJudging:  98%|█████████▊| 39/40 [06:12<00:08,  8.50s/review, eval=39, skip=0, timeout=0, tool=diff2ai]\rJudging: 100%|██████████| 40/40 [06:22<00:00,  9.19s/review, eval=39, skip=0, timeout=0, tool=diff2ai]\rJudging: 100%|██████████| 40/40 [06:22<00:00,  9.57s/review, eval=39, skip=0, timeout=0, tool=diff2ai]"
+      },
+      {
+        "name": "score_profiles",
+        "code": 0,
+        "ms": 163,
+        "tail": ""
+      }
+    ],
+    "calls": 1713,
+    "unattributedCalls": 0
+  },
+  "environment": {
+    "node": "v24.22.1",
+    "platform": "win32"
+  }
+}

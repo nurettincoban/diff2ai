@@ -1,0 +1,258 @@
+{
+  "https://github.com/calcom/cal.com/pull/14943": {
+    "pr_title": "SMS workflow reminder retry count tracking",
+    "original_url": null,
+    "source_repo": "cal.com",
+    "golden_comments": [
+      {
+        "comment": "Using retryCount: reminder.retryCount + 1 reads a possibly stale value and can lose increments under concurrency; consider an atomic increment via Prisma (increment: 1) to avoid race conditions (also applies to the similar update in the catch block).",
+        "severity": "High",
+        "category": "concurrency"
+      },
+      {
+        "comment": "The deletion logic in scheduleSMSReminders.ts incorrectly deletes non-SMS workflow reminders (e.g., Email, WhatsApp) that have retryCount > 1. This occurs because the retryCount condition within the OR clause for deletion lacks a method: WorkflowMethods.SMS filter, causing it to apply to all reminder types instead of only SMS reminders, which is the intended scope of this function.",
+        "severity": "High",
+        "category": "bug"
+      }
+    ],
+    "golden_source_file": "cal_dot_com.json",
+    "az_comment": null,
+    "reviews": [
+      {
+        "tool": "diff2ai",
+        "repo_name": "calcom/cal.com",
+        "pr_url": "https://github.com/calcom/cal.com/pull/14943",
+        "review_comments": [
+          {
+            "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+            "line": 43,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Scope the retry-exhausted delete to SMS reminders**\n\nThe second `OR` branch (`retryCount > 1`) has no `method` filter. This SMS cron job will therefore delete *any* `WorkflowReminder` whose `retryCount` exceeds 1, including EMAIL and WHATSAPP reminders.\n\nToday only this file increments `retryCount`, so nothing breaks yet. But `retryCount` is now a generic column on the shared model. As soon as another channel's cron (email or WhatsApp) uses it, this handler will silently delete that channel's reminders, possibly before that channel has finished its own retries.\n\nFix: add `method: WorkflowMethods.SMS` to the retry branch.\n\n**Proposed fix:**\n\n~~~ts\nOR: [\n  { method: WorkflowMethods.SMS, scheduledDate: { lte: dayjs().toISOString() } },\n  { method: WorkflowMethods.SMS, retryCount: { gt: 1 } },\n],\n~~~",
+            "created_at": "2026-11-12T21:58:26.192Z"
+          },
+          {
+            "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+            "line": 199,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Reliability \u2014 **Failure inside the catch block aborts the whole batch**\n\n`prisma.workflowReminder.update` is now awaited inside the `catch` block, and nothing guards it. If that update fails (for example a DB hiccup, or the row was deleted concurrently, which causes Prisma to throw P2025 \"record not found\"), the exception escapes the loop. Two things then go wrong:\n- All remaining reminders in the run are skipped.\n- The handler returns a 500 instead of `{ ok: true }`.\n\nBefore this change, errors were fully contained per reminder.\n\n**Proposed fix:**\n\n~~~ts\n} catch (error) {\n  try {\n    await prisma.workflowReminder.update({\n      where: { id: reminder.id },\n      data: { retryCount: { increment: 1 } },\n    });\n  } catch (updateError) {\n    console.log(`Failed to update retryCount for reminder ${reminder.id}: ${updateError}`);\n  }\n  console.log(`Error scheduling SMS with error ${error}`);\n}\n~~~",
+            "created_at": "2026-11-12T21:58:26.192Z"
+          },
+          {
+            "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+            "line": 186,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Bug \u2014 **Use an atomic increment for retryCount**\n\n`retryCount: reminder.retryCount + 1` writes back a value read earlier in the request. If two cron invocations overlap, both can read the same count, and one increment is lost. That reminder then gets retried more often than intended.\n\nPrisma's `{ increment: 1 }` performs the increment atomically in SQL and removes the dependency on the stale read. It also means `retryCount` would no longer need to be selected just to compute the new value.\n\n**Proposed fix:**\n\n~~~ts\ndata: { retryCount: { increment: 1 } },\n~~~",
+            "created_at": "2026-11-12T21:58:26.192Z"
+          },
+          {
+            "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+            "line": 41,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Maintainability \u2014 **Unclear retry limit and silent dropping of failed reminders**\n\nThe magic number `gt: 1` means a reminder gets two scheduling attempts (counts 0\u21921\u21922) and is then deleted. This is not documented, and it is easy to misread as \"one retry\".\n\nThe rows are also hard-deleted with no logging. When an SMS reminder permanently fails, there is no trace of why the attendee or host never received it.\n\nFix:\n- Extract a named constant such as `MAX_SMS_RETRIES`.\n- Log or record the reminders before deleting them, or mark them failed instead of deleting.\n\n**Proposed fix:**\n\n~~~ts\nconst MAX_SMS_SCHEDULE_ATTEMPTS = 2;\n// ...\n{ method: WorkflowMethods.SMS, retryCount: { gte: MAX_SMS_SCHEDULE_ATTEMPTS } },\n~~~",
+            "created_at": "2026-11-12T21:58:26.192Z"
+          },
+          {
+            "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+            "line": 45,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Performance \u2014 **Unindexed OR predicate on every cron run**\n\nThe `deleteMany` now uses `OR` with a branch on the unindexed `retryCount` column. This branch has no `method` filter. That will typically force a sequential scan of the whole `WorkflowReminder` table on every cron invocation, and this table grows with every booking.\n\nAdding the `method` filter to both branches (issue 1) helps. A composite index on `(method, retryCount)` would also help if the table is large. I have not verified the table's existing indexes beyond those shown in the diff.\n\n**Proposed fix:**\n\n~~~prisma\n@@index([method, retryCount])\n~~~",
+            "created_at": "2026-11-12T21:58:26.192Z"
+          }
+        ]
+      }
+    ]
+  },
+  "https://github.com/getsentry/sentry/pull/77754": {
+    "pr_title": "feat(ecosystem): Implement cross-system issue synchronization",
+    "original_url": null,
+    "source_repo": "sentry",
+    "golden_comments": [
+      {
+        "comment": "The AssignmentSource dataclass uses queued: datetime = timezone.now() as a default field value, which evaluates timezone.now() once at class definition time and shares that single datetime instance across all objects.",
+        "severity": "Medium",
+        "category": "concurrency"
+      },
+      {
+        "comment": "The method name has a typo: test_from_dict_inalid_data should be test_from_dict_invalid_data.",
+        "severity": "Low",
+        "category": "style"
+      },
+      {
+        "comment": "Method name says 'empty_array' but tests empty dict - consider renaming to 'test_from_dict_empty_dict' for clarity.",
+        "severity": "Low",
+        "category": "style"
+      },
+      {
+        "comment": "to_dict() returns a datetime for queued; if this dict is passed in task kwargs (e.g., via apply_async), JSON serialization may fail depending on the serializer, which can cause enqueue errors.",
+        "severity": "Medium",
+        "category": "bug"
+      }
+    ],
+    "golden_source_file": "sentry.json",
+    "az_comment": null,
+    "reviews": [
+      {
+        "tool": "diff2ai",
+        "repo_name": "getsentry/sentry",
+        "pr_url": "https://github.com/getsentry/sentry/pull/77754",
+        "review_comments": [
+          {
+            "path": "src/sentry/integrations/services/assignment_source.py",
+            "line": 18,
+            "body": "**\ud83d\udfe7 HIGH** \u00b7 Bug \u2014 **Fix `queued` default, which is evaluated once at import time**\n\n`queued: datetime = timezone.now()` runs a single time, when the module is imported. Every `AssignmentSource` created without an explicit `queued` gets that same timestamp. In a long-running worker or web process, the value can be hours or days old, so it is wrong for any logging, debugging or staleness check that relies on it.\n\nThe fix is to use `field(default_factory=timezone.now)` so each instance gets its own timestamp.\n\n**Proposed fix:**\n\n~~~python\nfrom dataclasses import asdict, dataclass, field\n\n@dataclass(frozen=True)\nclass AssignmentSource:\n    source_name: str\n    integration_id: int\n    queued: datetime = field(default_factory=timezone.now)\n~~~",
+            "created_at": "2026-11-12T21:58:27.251Z"
+          },
+          {
+            "path": "src/sentry/integrations/services/assignment_source.py",
+            "line": 28,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Make `to_dict()` output JSON-serializable for Celery task kwargs**\n\n`asdict(self)` returns a raw `datetime` for `queued`. That dict is passed straight into `sync_assignee_outbound.apply_async` kwargs. The commit history says the intent was to pass JSON rather than objects, but:\n- Under a JSON task serializer, a `datetime` either fails to serialize or is turned into a string.\n- If it becomes a string, `from_dict` rebuilds an `AssignmentSource` whose `queued` is a `str`, which violates its type.\n\nThe tests never check that the dict survives a JSON round-trip. Serialize `queued` explicitly (for example with `isoformat()`) and parse it back in `from_dict`.\n\n**Proposed fix:**\n\n~~~python\ndef to_dict(self) -> dict[str, Any]:\n    d = asdict(self)\n    d[\"queued\"] = self.queued.isoformat()\n    return d\n\n@classmethod\ndef from_dict(cls, input_dict: dict[str, Any]) -> AssignmentSource | None:\n    try:\n        data = dict(input_dict)\n        if isinstance(data.get(\"queued\"), str):\n            data[\"queued\"] = datetime.fromisoformat(data[\"queued\"])\n        return cls(**data)\n    except (ValueError, TypeError):\n        return None\n~~~",
+            "created_at": "2026-11-12T21:58:27.251Z"
+          },
+          {
+            "path": "src/sentry/integrations/tasks/sync_assignee_outbound.py",
+            "line": 61,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Check that every `sync_assignee_outbound` implementation accepts the new `assignment_source` kwarg**\n\nThe task now calls `installation.sync_assignee_outbound(..., assignment_source=parsed_assignment_source)` for every integration. The diff does not change the abstract `sync_assignee_outbound` signature or any provider implementations (Jira, Jira Server, GitHub, GitLab, VSTS, etc.).\n\nAny implementation that does not accept `**kwargs` or `assignment_source` will raise `TypeError`, which breaks all outbound assignee sync for that provider. I cannot see those implementations in this diff, so the severity is moderated.\n\nEither add `assignment_source` to the abstract `sync_assignee_outbound` signature and confirm all implementations accept it, or stop passing it, since `should_sync` already does the cycle check.\n\n**Proposed fix:**\n\n~~~python\n@abstractmethod\ndef sync_assignee_outbound(\n    self,\n    external_issue,\n    user,\n    assign=True,\n    assignment_source: AssignmentSource | None = None,\n    **kwargs,\n):\n    ...\n~~~",
+            "created_at": "2026-11-12T21:58:27.251Z"
+          },
+          {
+            "path": "src/sentry/integrations/mixins/issues.py",
+            "line": 418,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Maintainability \u2014 **Move the `assignment_source` parameter from `sync_status_outbound` to `sync_assignee_outbound`**\n\nThe new `assignment_source` parameter was added to the abstract `sync_status_outbound`. However:\n- No caller ever passes it.\n- Status sync does not go through `AssignmentSource` at all.\n\nMeanwhile, the method that actually receives it (`sync_assignee_outbound`) was left unchanged. This looks like the wrong method was edited. It misleads implementers and leaves the real contract undocumented. Status sync cycles also remain unaddressed.\n\n**Proposed fix:**\n\n~~~text\nRevert the sync_status_outbound signature change and add assignment_source to sync_assignee_outbound instead (see issue 3).\n~~~",
+            "created_at": "2026-11-12T21:58:27.251Z"
+          },
+          {
+            "path": "tests/sentry/models/test_groupassignee.py",
+            "line": 221,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Test \u2014 **Add tests for deassign cycle-breaking and for propagation to other integrations**\n\nThe new test only covers `assign` when the source integration matches the target. Two cases are untested:\n- `deassign` called with a matching `assignment_source`.\n- A source from a *different* integration, where outbound sync must still be called with that source.\n\nThe second case is the behavior the code comment explicitly promises. A regression that suppresses all outbound syncs whenever any source is present would still pass the current tests.\n\n**Proposed fix:**\n\n~~~python\n# Add:\n# - deassign(group, assignment_source=AssignmentSource.from_integration(integration)) -> assert_not_called()\n# - assign(group, user, assignment_source=AssignmentSource(source_name=\"other\", integration_id=integration.id + 1))\n#   -> assert_called_with(..., assignment_source=<matching source>)\n~~~",
+            "created_at": "2026-11-12T21:58:27.251Z"
+          }
+        ]
+      }
+    ]
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4": {
+    "pr_title": "Enhance embed URL handling and validation system",
+    "original_url": "https://github.com/discourse/discourse/commit/4f8aed295a29954023b2849c060ef4fb299d1b5d",
+    "source_repo": "discourse-graphite",
+    "golden_comments": [
+      {
+        "comment": "The PollFeed job calls open(SiteSetting.feed_polling_url) without validating the URL, allowing an attacker who controls the feed_polling_url site setting to make the server fetch arbitrary internal or external URLs.",
+        "severity": "Critical",
+        "category": "security"
+      },
+      {
+        "comment": "The current origin validation using indexOf is insufficient and can be bypassed. An attacker could use a malicious domain like evil-discourseUrl.com to pass this check.",
+        "severity": "Medium",
+        "category": "security"
+      },
+      {
+        "comment": "postMessage targetOrigin should be the origin (scheme+host+port), not the full referrer URL; using the full URL will cause the message to be dropped and prevent resizing.",
+        "severity": "Medium",
+        "category": "security"
+      },
+      {
+        "comment": "The code sets X-Frame-Options: ALLOWALL which completely disables clickjacking protection. The referer validation can be bypassed (referer headers are easily spoofed), and the fallback to empty string for nil referer masks validation failures.",
+        "severity": "Medium",
+        "category": "security"
+      },
+      {
+        "comment": "The TopicEmbed.import method is susceptible to a NoMethodError if the contents parameter is nil when attempting to append a string, and an XSS vulnerability due to unescaped url interpolation in the generated HTML.",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "comment": "The ERB block closes with end if, which is invalid Ruby/ERB and will raise at render; it should just be end to close the if block.",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "comment": "Calling `i.content.scrub` assumes that `i.content` is always populated. However, many RSS feeds do not provide a `content` field, leading to a potential nil pointer exception when `i.content` is nil. A fallback to `description` should be implemented to prevent crashes.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "comment": "An unescaped request header (request.referer) is interpolated into JavaScript without proper escaping, which can lead to XSS vulnerabilities if the referer contains malicious content. This issue can allow attackers to execute arbitrary scripts in the context of the application.",
+        "severity": "Critical",
+        "category": "security"
+      }
+    ],
+    "golden_source_file": "discourse.json",
+    "az_comment": null,
+    "reviews": [
+      {
+        "tool": "diff2ai",
+        "repo_name": "ai-code-review-evaluation/discourse-graphite",
+        "pr_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4",
+        "review_comments": [
+          {
+            "path": "app/models/post.rb",
+            "line": 133,
+            "body": "**\ud83d\udfe7 HIGH** \u00b7 Security \u2014 **Stop rendering unsanitized feed and remote HTML (stored XSS)**\n\nPosts with `cook_method == raw_html` skip the cooking and sanitization pipeline. `cooked = raw` is then printed with `raw post.cooked` in the embed view and in the normal topic view.\n\nThe HTML in those posts comes from untrusted sources:\n- **RSS/Atom feeds.** Item content is HTML-unescaped and passed through unfiltered.\n- **Remote pages.** Readability keeps `<a href>`, so `href=\"javascript:...\"` survives.\n\nOn top of that, `url` is interpolated directly into `<a href='#{url}'>`. A URL containing `'` can break out of the attribute and add event-handler attributes.\n\nBecause `cook_method` stays `raw_html` after later edits, anyone who can edit the post can also inject arbitrary HTML.\n\nFix:\n- Sanitize HTML before storing or rendering it, using a whitelist sanitizer for tags, attributes and URL schemes.\n- HTML-escape `url` in the \"imported from\" footer.\n\n**Proposed fix:**\n\n~~~ruby\nsafe_url = ERB::Util.html_escape(url)\ncontents << \"\\n<hr>\\n<small>#{I18n.t('embed.imported_from', link: \"<a href='#{safe_url}'>#{safe_url}</a>\")}</small>\\n\"\n# and in Post#cook:\nreturn Sanitize.clean(raw, Sanitize::Config::RELAXED) if cook_method == Post.cook_methods[:raw_html]\n~~~",
+            "created_at": "2026-11-12T21:58:57.522Z"
+          },
+          {
+            "path": "app/models/topic_embed.rb",
+            "line": 48,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Security \u2014 **Avoid Kernel#open on URL strings**\n\n`open(str)` is `Kernel#open`. Even with open-uri loaded, a string starting with `|` makes Ruby run it as a shell command.\n\n`import_remote` now receives `t[:link]` from Disqus export files in `disqus.thor`. That is untrusted data, and those links are not host-checked.\n\nThe safer pattern is to parse the URI explicitly and open it through open-uri. Also restrict the scheme to http/https and set timeouts.\n\n**Proposed fix:**\n\n~~~ruby\nuri = URI.parse(url)\nraise ArgumentError unless %w[http https].include?(uri.scheme)\ndoc = Readability::Document.new(uri.open(read_timeout: 10).read, ...)\n~~~",
+            "created_at": "2026-11-12T21:58:57.522Z"
+          },
+          {
+            "path": "app/models/topic_embed.rb",
+            "line": 73,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Fix mangling of protocol-relative URLs**\n\n`href.start_with?('/')` also matches protocol-relative URLs such as `//cdn.example.com/a.png`.\n\nThe code then strips the leading slashes and prepends the site prefix. The result is `http://host/cdn.example.com/a.png`, which breaks images and links that point at CDNs.\n\n**Proposed fix:**\n\n~~~ruby\nif href.present? && href.start_with?('/') && !href.start_with?('//')\n~~~",
+            "created_at": "2026-11-12T21:58:57.522Z"
+          },
+          {
+            "path": "app/views/embed/best.html.erb",
+            "line": 6,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Correct `end if` in the ERB template**\n\n`<%- end if %>` compiles to Ruby `end if` followed by the next generated buffer-append statement. That statement becomes the condition of the whole if/else block.\n\nRendering only works by accident, and output ordering is altered. It should simply be `end`.\n\n**Proposed fix:**\n\n~~~erb\n<%- end %>\n~~~",
+            "created_at": "2026-11-12T21:58:57.522Z"
+          },
+          {
+            "path": "app/jobs/scheduled/poll_feed.rb",
+            "line": 36,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Handle feed items without content**\n\nMany RSS items only provide `description`, or have no content element at all. In that case `i.content` is nil and `.scrub` raises `NoMethodError`. Since the job has `retry: false`, one bad item aborts processing of the whole feed.\n\nAlso, `String#scrub` only exists in Ruby 2.1 and later. Check that the supported Ruby version has it.\n\n**Proposed fix:**\n\n~~~ruby\nraw = i.content || i.description\nnext if raw.blank?\ncontent = CGI.unescapeHTML(raw.scrub)\n~~~",
+            "created_at": "2026-11-12T21:58:57.522Z"
+          },
+          {
+            "path": "app/controllers/embed_controller.rb",
+            "line": 16,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Performance \u2014 **Throttle job enqueuing for unknown embed URLs**\n\nEvery request for an unknown `embed_url` enqueues a `retrieve_topic` job. Anonymous visitors can do this, and the loading page auto-reloads every 30 seconds, adding more requests.\n\nThe 60-second throttle only runs inside the job, so the queue can still be flooded. An attacker only needs to send arbitrary `embed_url` values with a spoofed Referer.\n\nThe same `retrieved:` throttle key should be checked before enqueuing. Separately, `TopicRetriever#perform_retrieve` runs the full `PollFeed` (a network fetch of the whole feed) for every retrieval.\n\n**Proposed fix:**\n\n~~~ruby\nkey = \"embed-enqueued:#{embed_url}\"\nif $redis.set(key, \"1\", nx: true, ex: 60)\n  Jobs.enqueue(:retrieve_topic, user_id: current_user.try(:id), embed_url: embed_url)\nend\n~~~",
+            "created_at": "2026-11-12T21:58:57.522Z"
+          },
+          {
+            "path": "lib/topic_retriever.rb",
+            "line": 30,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Reliability \u2014 **Make the Redis throttle atomic**\n\n`setnx` followed by a separate `expire` is not atomic. If the process dies between the two calls, the key never expires. That URL would then be permanently treated as \"retrieved recently\" and never fetched.\n\n**Proposed fix:**\n\n~~~ruby\nreturn false if $redis.set(retrieved_key, \"1\", nx: true, ex: 60)\ntrue\n~~~",
+            "created_at": "2026-11-12T21:58:57.522Z"
+          },
+          {
+            "path": "db/migrate/20131223171005_create_top_topics.rb",
+            "line": 3,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Maintainability \u2014 **Don't modify existing migrations**\n\nTwo problems:\n- `create_top_topics` is an already-shipped migration. Editing it has no effect on installs that already ran it.\n- `force: true` drops any existing table on (re)run, which can silently destroy data.\n\nNew migrations should not use `force: true`, and existing migrations should be left untouched.\n\n**Proposed fix:**\n\n~~~ruby\ncreate_table :topic_embeds do |t|\n~~~",
+            "created_at": "2026-11-12T21:58:57.522Z"
+          },
+          {
+            "path": "lib/tasks/disqus.thor",
+            "line": 148,
+            "body": "**\ud83d\udfe8 MEDIUM** \u00b7 Bug \u2014 **Avoid regressing the Disqus importer**\n\nThe importer has regressed in three ways:\n- The `--category` option was removed.\n- `created_at` is no longer preserved.\n- Every thread now triggers a live HTTP fetch via `import_remote`. Any network error or dead link raises and aborts the entire import.\n\nRestore the category and date handling. Rescue fetch failures per thread, for example by falling back to a permalink post.\n\n**Proposed fix:**\n\n~~~ruby\npost = begin\n  TopicEmbed.import_remote(user, t[:link], title: t[:title])\nrescue => e\n  puts \"Failed to fetch #{t[:link]}: #{e}\"\n  nil\nend\n~~~",
+            "created_at": "2026-11-12T21:58:57.522Z"
+          },
+          {
+            "path": "app/models/topic_embed.rb",
+            "line": 37,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Bug \u2014 **Handle a missing post when updating an embed**\n\nIf the embedded post has been deleted, `embed.post` is nil. `PostRevisor.new(nil).revise!` then raises, and that breaks feed polling for every later item in the feed. Guard against the nil post.\n\n**Proposed fix:**\n\n~~~ruby\npost = embed.post\nreturn nil if post.blank?\n~~~",
+            "created_at": "2026-11-12T21:58:57.522Z"
+          },
+          {
+            "path": "app/assets/javascripts/embed.js",
+            "line": 17,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Security \u2014 **Use exact origin comparison in postMessage handler**\n\n`discourseUrl.indexOf(e.origin) === -1` is a substring check. An origin like `https://forum.example.co` passes when `discourseUrl` is `https://forum.example.com/`.\n\nThe impact is limited to resizing the iframe, but the check should compare origins exactly.\n\n**Proposed fix:**\n\n~~~js\nvar a = document.createElement('a'); a.href = discourseUrl;\nif (e.origin !== a.protocol + '//' + a.host) { return; }\n~~~",
+            "created_at": "2026-11-12T21:58:57.522Z"
+          },
+          {
+            "path": "spec/controllers/embed_controller_spec.rb",
+            "line": 46,
+            "body": "**\ud83d\udfe6 LOW** \u00b7 Test \u2014 **Align controller spec with job-based implementation**\n\nThe spec expects `TopicRetriever.new` to be called during the request. The controller actually calls `Jobs.enqueue(:retrieve_topic, ...)`.\n\nThe spec only passes if jobs run inline in the test environment. Otherwise it fails or tests the wrong thing. Assert on `Jobs.expects(:enqueue)` instead.\n\n**Proposed fix:**\n\n~~~ruby\nJobs.expects(:enqueue).with(:retrieve_topic, has_entry(embed_url: embed_url))\nget :best, embed_url: embed_url\n~~~",
+            "created_at": "2026-11-12T21:58:57.522Z"
+          }
+        ]
+      }
+    ]
+  }
+}

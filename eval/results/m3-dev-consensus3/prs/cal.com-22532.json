@@ -1,0 +1,270 @@
+{
+  "id": "cal.com-22532",
+  "goldenUrl": "https://github.com/calcom/cal.com/pull/22532",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Set `updatedAt` explicitly instead of relying on an empty `updateMany`",
+      "affected": [
+        "packages/app-store/googlecalendar/lib/CalendarService.ts:1022-1024",
+        "packages/lib/server/repository/selectedCalendar.ts:400-405"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Throw `TRPCError` instead of a plain `Error` in `deleteCacheHandler`",
+      "affected": [
+        "packages/trpc/server/routers/viewer/calendars/deleteCache.handler.ts:17-30"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Hide \"Delete cached data\" for credentials the handler will always reject",
+      "affected": [
+        "packages/features/apps/components/CredentialActionsDropdown.tsx:67-73",
+        "packages/trpc/server/routers/viewer/calendars/deleteCache.handler.ts:17-22"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Test",
+      "title": "Add tests for deleteCache authorization and connectedCalendars enrichment",
+      "affected": [
+        "packages/trpc/server/routers/viewer/calendars/deleteCache.handler.ts:13-33",
+        "packages/trpc/server/routers/viewer/calendars/connectedCalendars.handler.ts:27-36",
+        "packages/features/calendar-cache/calendar-cache.repository.ts:173-188"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Format the cache timestamp with the user's locale instead of hardcoded en-US",
+      "affected": [
+        "packages/features/apps/components/CredentialActionsDropdown.tsx:88-94"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Make the webhook helper script portable and return correct exit codes",
+      "affected": [
+        "scripts/test-gcal-webhooks.sh:4-8",
+        "scripts/test-gcal-webhooks.sh:11-18",
+        "scripts/test-gcal-webhooks.sh:56-59",
+        "scripts/test-gcal-webhooks.sh:67-71"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Security",
+      "title": "Add `tsx` as a pinned dev dependency instead of resolving it via `npx`",
+      "affected": [
+        "apps/web/package.json:11"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Confirm intent of hiding \"Remove App\" for errored credentials when `disableConnectionModification` is set",
+      "affected": [
+        "packages/platform/atoms/selected-calendars/wrappers/SelectedCalendarsSettingsWebWrapper.tsx:123-132"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Avoid stamping existing cache rows with the migration time",
+      "affected": [
+        "packages/prisma/migrations/20250715160635_add_calendar_cache_updated_at/migration.sql:1-9"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Performance",
+      "title": "Respect the calendar-cache feature flag and skip the query when there are no credentials",
+      "affected": [
+        "packages/trpc/server/routers/viewer/calendars/connectedCalendars.handler.ts:27-29"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 10,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011CgyqAKFkRAr6myXEcgpYT",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 16094,
+      "outputTokens": 3928,
+      "ms": 36435
+    },
+    {
+      "id": "msg_011CgyqAKLDYDZXZzNd4kNEh",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 16091,
+      "outputTokens": 4317,
+      "ms": 38264
+    },
+    {
+      "id": "msg_011CgyqAKCXiQ2piDwYtK3TK",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 16087,
+      "outputTokens": 4446,
+      "ms": 38904
+    },
+    {
+      "id": "msg_011CgyqDCvqb3BcB76VaCdLp",
+      "model": "claude-opus-5-5",
+      "requestedModel": "claude-opus-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 21676,
+      "outputTokens": 5011,
+      "ms": 38056
+    }
+  ],
+  "costUsd": 0.633832,
+  "durationMs": 78511,
+  "promptSha256": "d2b3b8739b0da1a3e8984e96337b45a34ea5e0652340e9aa37dee1536a6a68ef",
+  "promptChars": 36247,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nConsensus: 3/3 reviewers\nTitle: Set `updatedAt` explicitly instead of relying on an empty `updateMany`\n\nAffected:\n- packages/app-store/googlecalendar/lib/CalendarService.ts:1022-1024\n- packages/lib/server/repository/selectedCalendar.ts:400-405\n\nExplanation:\n`updateManyByCredentialId(this.credential.id, {})` passes an empty `data` object. It relies on Prisma's `@updatedAt` to bump the timestamp, but Prisma may treat an empty update as a no-op. If it does, `SelectedCalendar.updatedAt` never changes.\n\nThere are four further problems:\n- **Extra writes on every webhook.** This runs an unconditional write on every webhook-driven refresh. It covers all of the credential's selected calendars, not just those in `parsedArgs`.\n- **New failure path.** If the write throws, `fetchAvailabilityAndSetCache` fails even though the cache was already written.\n- **Nothing reads the value.** The UI's `cacheUpdatedAt` comes from `CalendarCache.updatedAt`, not from `SelectedCalendar`.\n- **Wrong parameter type.** The helper is typed as `Prisma.SelectedCalendarUpdateInput`, which allows relation operations. `updateMany` does not accept those; the correct type is `SelectedCalendarUpdateManyMutationInput`.\n\nFix: either remove the call, or set `updatedAt: new Date()` explicitly and wrap the call in try/catch. In both cases, correct the parameter type.\n\nProposed fix:\n~~~ts\nstatic async updateManyByCredentialId(\n  credentialId: number,\n  data: Prisma.SelectedCalendarUpdateManyMutationInput\n) {\n  return prisma.selectedCalendar.updateMany({ where: { credentialId }, data });\n}\n\n// CalendarService\ntry {\n  await SelectedCalendarRepository.updateManyByCredentialId(this.credential.id, { updatedAt: new Date() });\n} catch (e) {\n  log.error(\"Failed to touch SelectedCalendar.updatedAt\", e);\n}\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nConsensus: 3/3 reviewers\nTitle: Throw `TRPCError` instead of a plain `Error` in `deleteCacheHandler`\n\nAffected:\n- packages/trpc/server/routers/viewer/calendars/deleteCache.handler.ts:17-30\n\nExplanation:\nA plain `Error` reaches the client as `INTERNAL_SERVER_ERROR` (500) and is logged as a server fault. A missing credential, or one the user cannot access, should return `NOT_FOUND` or `FORBIDDEN` instead. That lets clients and monitoring tell these cases apart from real crashes.\n\nThe handler also calls `prisma.calendarCache.deleteMany` directly instead of going through `CalendarCacheRepository`. This makes it harder to test with the repository mock.\n\nProposed fix:\n~~~ts\nimport { TRPCError } from \"@trpc/server\";\nimport { CalendarCacheRepository } from \"@calcom/features/calendar-cache/calendar-cache.repository\";\n...\nif (!credential) {\n  throw new TRPCError({ code: \"NOT_FOUND\", message: \"Credential not found\" });\n}\nawait new CalendarCacheRepository().deleteManyByCredential(credentialId);\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nConsensus: 3/3 reviewers\nTitle: Hide \"Delete cached data\" for credentials the handler will always reject\n\nAffected:\n- packages/features/apps/components/CredentialActionsDropdown.tsx:67-73\n- packages/trpc/server/routers/viewer/calendars/deleteCache.handler.ts:17-22\n\nExplanation:\n`hasCache` ignores both `delegationCredentialId` and `disableConnectionModification`. However, `deleteCacheHandler` only accepts credentials where `userId === user.id`.\n\nAs a result:\n- **Delegation and team credentials** (team credentials have `userId` null) show a destructive action that always fails with an error toast.\n- **Contexts with `disableConnectionModification`** still let users change credential state.\n\nFix: either hide the action for these credentials, or extend the handler's authorization to cover team and delegation credentials.\n\nProposed fix:\n~~~tsx\nconst hasCache =\n  isGoogleCalendar && !!cacheUpdatedAt && !delegationCredentialId && !disableConnectionModification;\n~~~\n\n## 4) Severity: MEDIUM | Type: Test\nConsensus: 1/3 reviewers\nTitle: Add tests for deleteCache authorization and connectedCalendars enrichment\n\nAffected:\n- packages/trpc/server/routers/viewer/calendars/deleteCache.handler.ts:13-33\n- packages/trpc/server/routers/viewer/calendars/connectedCalendars.handler.ts:27-36\n- packages/features/calendar-cache/calendar-cache.repository.ts:173-188\n\nExplanation:\nThis change adds a destructive, authorization-gated mutation and changes the `connectedCalendars` response shape, but includes no tests. The following cases need coverage:\n\n- **deleteCache, other user's credential:** the call is rejected and no rows are deleted.\n- **deleteCache, own credential:** only that credential's cache rows are removed.\n- **getCacheStatusByCredentialIds, multiple rows:** returns the max `updatedAt` per credential.\n- **getCacheStatusByCredentialIds, empty input:** handles an empty `credentialIds` array.\n- **connectedCalendars:** sets `cacheUpdatedAt: null` for credentials with no cache rows.\n\nProposed fix:\n~~~ts\nit(\"rejects deleting cache for a credential owned by another user\", async () => {\n  await expect(deleteCacheHandler({ ctx: { user: otherUser }, input: { credentialId } })).rejects.toThrow();\n  expect(await prisma.calendarCache.count({ where: { credentialId } })).toBe(2);\n});\n~~~\n\n## 5) Severity: LOW | Type: Bug\nConsensus: 3/3 reviewers\nTitle: Format the cache timestamp with the user's locale instead of hardcoded en-US\n\nAffected:\n- packages/features/apps/components/CredentialActionsDropdown.tsx:88-94\n\nExplanation:\n`new Intl.DateTimeFormat(\"en-US\", …)` ignores the user's language, so a translated label is followed by a US-formatted date. It also uses the browser timezone rather than the profile timezone.\n\nSeparately, the \"Cache Status\" info row is a clickable `DropdownMenuItem`. Selecting it does nothing except close the menu.\n\nProposed fix:\n~~~tsx\nconst { t, i18n } = useLocale();\n...\ntimestamp: new Intl.DateTimeFormat(i18n.language, { dateStyle: \"short\", timeStyle: \"short\" }).format(new Date(cacheUpdatedAt)),\n~~~\n\n## 6) Severity: LOW | Type: Bug\nConsensus: 3/3 reviewers\nTitle: Make the webhook helper script portable and return correct exit codes\n\nAffected:\n- scripts/test-gcal-webhooks.sh:4-8\n- scripts/test-gcal-webhooks.sh:11-18\n- scripts/test-gcal-webhooks.sh:56-59\n- scripts/test-gcal-webhooks.sh:67-71\n\nExplanation:\n- **`sed -i ''` is BSD/macOS-only.** GNU sed treats `''` as the script, so the `.env` update fails on Linux.\n- **`ENV_FILE=\"../.env\"` depends on the current working directory,** so the script can create or modify the wrong file.\n- **`cleanup` always exits 0,** so the rate-limit and missing-URL failure paths report success.\n- **`TM_KEYWORD` contains a greedy `.*`.** The match can capture extra characters, which are then written unescaped into the sed replacement.\n- **`/tmp/tmole.log` is a fixed, predictable path.** This is unsafe on shared hosts.\n- **`pgrep` can return multiple PIDs,** which the script then treats as a single value.\n\nProposed fix:\n~~~bash\nSCRIPT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\nENV_FILE=\"$SCRIPT_DIR/../.env\"\nTM_KEYWORD='https://[a-zA-Z0-9.-]+\\.tunnelmole\\.net'\ncleanup() { local code=${1:-0}; ...; exit \"$code\"; }\n# on failures: cleanup 1\ntmp=\"$(mktemp)\"; grep -v '^GOOGLE_WEBHOOK_URL=' \"$ENV_FILE\" > \"$tmp\"; echo \"GOOGLE_WEBHOOK_URL=$TUNNEL_URL\" >> \"$tmp\"; mv \"$tmp\" \"$ENV_FILE\"\n~~~\n\n## 7) Severity: LOW | Type: Security\nConsensus: 2/3 reviewers\nTitle: Add `tsx` as a pinned dev dependency instead of resolving it via `npx`\n\nAffected:\n- apps/web/package.json:11\n\nExplanation:\nIf `tsx` is not installed, `npx tsx` downloads and runs whatever version is latest at that moment. That makes `dev:cron` non-reproducible and dependent on the network. It is also an unpinned supply-chain execution path.\n\nProposed fix:\n~~~json\n\"dev:cron\": \"tsx cron-tester.ts\"\n~~~\nAlso add a pinned `tsx` to `devDependencies`.\n\n## 8) Severity: LOW | Type: Bug\nConsensus: 1/3 reviewers\nTitle: Confirm intent of hiding \"Remove App\" for errored credentials when `disableConnectionModification` is set\n\nAffected:\n- packages/platform/atoms/selected-calendars/wrappers/SelectedCalendarsSettingsWebWrapper.tsx:123-132\n\nExplanation:\nThe second `actions` block (credentials without calendars, typically ones with errors) previously checked only `delegationCredentialId`. It now also passes `disableConnectionModification`. When that flag is set, users can no longer remove a broken credential. Confirm this behavior change is intended; otherwise pass `false` here to keep the old behavior.\n\nProposed fix:\n~~~tsx\n<CredentialActionsDropdown\n  ...\n  disableConnectionModification={false}\n/>\n~~~\n\n## 9) Severity: LOW | Type: Bug\nConsensus: 1/3 reviewers\nTitle: Avoid stamping existing cache rows with the migration time\n\nAffected:\n- packages/prisma/migrations/20250715160635_add_calendar_cache_updated_at/migration.sql:1-9\n\nExplanation:\n`DEFAULT NOW()` sets every existing `CalendarCache` row to the migration time. The UI will then show \"Last updated: <deploy time>\" for caches that may be much older.\n\nThe header comment also says the column is added \"without a default value\", which contradicts the SQL below it.\n\nFix: backfill a more accurate value and correct the comment.\n\nProposed fix:\n~~~sql\nALTER TABLE \"CalendarCache\" ADD COLUMN \"updatedAt\" TIMESTAMP(3) NOT NULL DEFAULT NOW();\n-- optionally: UPDATE \"CalendarCache\" SET \"updatedAt\" = \"expiresAt\" - INTERVAL '<CACHE_TTL>';\n~~~\n\n## 10) Severity: LOW | Type: Performance\nConsensus: 1/3 reviewers\nTitle: Respect the calendar-cache feature flag and skip the query when there are no credentials\n\nAffected:\n- packages/trpc/server/routers/viewer/calendars/connectedCalendars.handler.ts:27-29\n\nExplanation:\nThe handler always creates the concrete `CalendarCacheRepository`. This bypasses the disabled-feature mock, so it queries the cache even when caching is off. It also runs a `groupBy` query when `credentialIds` is empty.\n\nFix: use the existing feature-aware factory and short-circuit when the list is empty.\n\nProposed fix:\n~~~ts\nconst cacheStatuses = credentialIds.length\n  ? await cacheRepository.getCacheStatusByCredentialIds(credentialIds) // obtained via feature-aware factory\n  : [];\n~~~\n",
+  "belowMinSeverity": 0,
+  "configHash": "bc61525ca1ff1073617ac60c0157a17ec949d2133b3304a06fa8dfe1f30cb778",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "The updateManyByCredentialId call uses an empty data object, which prevents Prisma's @updatedAt decorator from updating the updatedAt timestamp. This results in inaccurate cache status tracking, as the timestamp isn't updated when the cache is refreshed. To fix this, explicitly set the updatedAt field.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "updateManyByCredentialId passes an empty data object and relies on Prisma's @updatedAt to bump the timestamp, but Prisma may treat an empty update as a no-op, causing SelectedCalendar.updatedAt to never change",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the updateManyByCredentialId call uses an empty data object, and Prisma may treat this as a no-op, preventing the @updatedAt decorator from updating the timestamp. Both comments point to the same bug where the updatedAt field won't be properly updated, affecting cache status tracking."
+      },
+      {
+        "golden_comment": "logic: macOS-specific sed syntax with empty string after -i flag will fail on Linux systems",
+        "severity": "Low",
+        "category": "bug",
+        "matched_candidate": "Webhook helper script uses sed -i '' which is BSD/macOS-only and fails on Linux with GNU sed",
+        "confidence": 0.98,
+        "reasoning": "Both comments identify the exact same issue: the sed -i '' syntax is macOS/BSD-specific and will not work on Linux systems (which use GNU sed). The golden comment mentions 'macOS-specific sed syntax' failing on Linux, and the candidate mentions 'BSD/macOS-only' sed failing on Linux with GNU sed. These are semantically identical issues."
+      },
+      {
+        "golden_comment": "Throwing a generic Error for authentication failures results in a 500 response in tRPC. Instead, it should return a structured TRPCError with an appropriate code, such as FORBIDDEN, to accurately reflect the error type.",
+        "severity": "High",
+        "category": "api",
+        "matched_candidate": "deleteCacheHandler throws a plain Error instead of TRPCError, causing missing credentials to return INTERNAL_SERVER_ERROR (500) instead of NOT_FOUND or FORBIDDEN",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same problem as the golden comment: throwing a plain Error instead of TRPCError in deleteCacheHandler causes authentication/credential failures to return a 500 (INTERNAL_SERVER_ERROR) instead of an appropriate error code like FORBIDDEN. Both comments point to the same bug - using generic Error instead of TRPCError with proper error codes for authentication failures."
+      },
+      {
+        "golden_comment": "Date is formatted with hardcoded 'en-US' locale instead of using the user's locale from useLocale, which can lead to incorrect date representation for users in different locales.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Cache timestamp uses hardcoded en-US locale instead of user's locale, and uses browser timezone rather than profile timezone",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same core problem as the golden comment - that the date formatting uses a hardcoded 'en-US' locale instead of the user's locale. The candidate also mentions an additional concern about timezone, but the primary issue about hardcoded locale matches the golden comment."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Extra writes on every webhook - runs an unconditional write on every webhook-driven refresh covering all of the credential's selected calendars, not just those in parsedArgs"
+      },
+      {
+        "candidate": "New failure path - if the write throws, fetchAvailabilityAndSetCache fails even though the cache was already written"
+      },
+      {
+        "candidate": "Nothing reads the SelectedCalendar.updatedAt value - the UI's cacheUpdatedAt comes from CalendarCache.updatedAt instead"
+      },
+      {
+        "candidate": "Wrong parameter type - the helper is typed as Prisma.SelectedCalendarUpdateInput which allows relation operations, but updateMany requires SelectedCalendarUpdateManyMutationInput"
+      },
+      {
+        "candidate": "deleteCacheHandler calls prisma.calendarCache.deleteMany directly instead of going through CalendarCacheRepository, making it harder to test with the repository mock"
+      },
+      {
+        "candidate": "hasCache ignores delegationCredentialId and disableConnectionModification, but deleteCacheHandler only accepts credentials where userId === user.id, causing delegation and team credentials to show a destructive action that always fails"
+      },
+      {
+        "candidate": "Missing tests for deleteCache authorization and connectedCalendars enrichment including: other user's credential rejection, own credential deletion, getCacheStatusByCredentialIds with multiple rows, empty credentialIds array handling, and cacheUpdatedAt null for credentials with no cache rows"
+      },
+      {
+        "candidate": "Cache Status info row is a clickable DropdownMenuItem that does nothing except close the menu when selected"
+      },
+      {
+        "candidate": "ENV_FILE=\"../.env\" depends on current working directory, potentially creating or modifying the wrong file"
+      },
+      {
+        "candidate": "Webhook script cleanup function always exits 0, so rate-limit and missing-URL failure paths report success incorrectly"
+      },
+      {
+        "candidate": "TM_KEYWORD contains a greedy .* that can capture extra characters written unescaped into the sed replacement"
+      },
+      {
+        "candidate": "/tmp/tmole.log is a fixed, predictable path which is unsafe on shared hosts"
+      },
+      {
+        "candidate": "pgrep can return multiple PIDs which the script then treats as a single value"
+      },
+      {
+        "candidate": "tsx is resolved via npx instead of being a pinned dev dependency, making dev:cron non-reproducible and creating an unpinned supply-chain execution path"
+      },
+      {
+        "candidate": "Second actions block now passes disableConnectionModification, preventing users from removing broken credentials when that flag is set - may be unintended behavior change"
+      },
+      {
+        "candidate": "Migration uses DEFAULT NOW() which stamps existing CalendarCache rows with migration time, showing incorrect 'Last updated' times for older caches"
+      },
+      {
+        "candidate": "Migration header comment says column is added without a default value, contradicting the SQL that uses DEFAULT NOW()"
+      },
+      {
+        "candidate": "Handler always creates concrete CalendarCacheRepository bypassing the disabled-feature mock, querying cache even when caching is off"
+      },
+      {
+        "candidate": "Handler runs a groupBy query even when credentialIds is empty"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 23,
+    "total_golden": 4,
+    "tp": 4,
+    "fp": 19,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 0.17391304347826086,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "calcom/cal.com",
+    "pr_url": "https://github.com/calcom/cal.com/pull/22532"
+  },
+  "judgeUsage": {
+    "calls": 94,
+    "inputTokens": 25574,
+    "outputTokens": 9858,
+    "costUsd": 0.37432000000000004
+  }
+}

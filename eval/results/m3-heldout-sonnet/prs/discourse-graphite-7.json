@@ -1,0 +1,143 @@
+{
+  "id": "discourse-graphite-7",
+  "goldenUrl": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/7",
+  "status": "findings",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Light-theme value changed in desktop topic-post `.topic-meta-data a` (30% → 70%)",
+      "affected": [
+        "app/assets/stylesheets/desktop/topic-post.scss:291-291"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Light-theme value changed in desktop user `.name` (30% → 50%)",
+      "affected": [
+        "app/assets/stylesheets/desktop/user.scss:522-522",
+        "app/assets/stylesheets/mobile/user.scss:497-497"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Light-theme value changed in mobile modal `.custom-message-length` (70% → 30%)",
+      "affected": [
+        "app/assets/stylesheets/mobile/modal.scss:102-102"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Bug",
+      "title": "Light-theme value changed in mobile topic-post `h3` (20% → 50%)",
+      "affected": [
+        "app/assets/stylesheets/mobile/topic-post.scss:182-182"
+      ],
+      "verified": true
+    },
+    {
+      "severity": "LOW",
+      "type": "Bug",
+      "title": "Asymmetric dark-theme mapping for `p.help` and similar rules",
+      "affected": [
+        "app/assets/stylesheets/common/admin/admin_base.scss:506-506"
+      ],
+      "verified": true
+    }
+  ],
+  "postedComments": 5,
+  "unverifiedFindings": 0,
+  "usage": [
+    {
+      "id": "msg_011Cgyqfo9qYPkih8BQysq5S",
+      "model": "claude-sonnet-5-5",
+      "requestedModel": "claude-sonnet-5-5",
+      "effort": "medium",
+      "stopReason": "end_turn",
+      "inputTokens": 22266,
+      "outputTokens": 1215,
+      "ms": 7527
+    }
+  ],
+  "costUsd": 0.056682,
+  "durationMs": 8581,
+  "promptSha256": "f3e454b5add722e7037a93878e74bf23a936ddbd098e28e89cbe2e98519c9ebc",
+  "promptChars": 49180,
+  "response": "## 1) Severity: MEDIUM | Type: Bug\nTitle: Light-theme value changed in desktop topic-post `.topic-meta-data a` (30% → 70%)\n\nAffected:\n- app/assets/stylesheets/desktop/topic-post.scss:291-291\n\nExplanation:\nThe original light-theme color was `scale-color($primary, $lightness: 30%)`. The new light branch is `scale-color($primary, $lightness: 70%)`, which is much lighter. This changes the existing light theme and reduces contrast. The dark branch (secondary 30%) also looks inverted relative to the intended mirror (secondary 70%).\n\nProposed fix:\n~~~scss\ncolor: dark-light-choose(scale-color($primary, $lightness: 30%), scale-color($secondary, $lightness: 70%));\n~~~\n\n## 2) Severity: MEDIUM | Type: Bug\nTitle: Light-theme value changed in desktop user `.name` (30% → 50%)\n\nAffected:\n- app/assets/stylesheets/desktop/user.scss:522-522\n- app/assets/stylesheets/mobile/user.scss:497-497\n\nExplanation:\nThe original was `scale-color($primary, $lightness: 30%)`. The new light branch uses 50%, which makes the name text lighter and indistinguishable from `.title`. This is an unintended light-theme regression, probably a copy-paste error.\n\nProposed fix:\n~~~scss\ncolor: dark-light-choose(scale-color($primary, $lightness: 30%), scale-color($secondary, $lightness: 70%));\n~~~\n\n## 3) Severity: MEDIUM | Type: Bug\nTitle: Light-theme value changed in mobile modal `.custom-message-length` (70% → 30%)\n\nAffected:\n- app/assets/stylesheets/mobile/modal.scss:102-102\n\nExplanation:\nThe original was `scale-color($primary, $lightness: 70%)`. The new code uses 30% for primary and 70% for secondary, which swaps the pair. Light theme becomes much darker, and this no longer matches the desktop modal rule, which uses 70% and 30%.\n\nProposed fix:\n~~~scss\ncolor: dark-light-choose(scale-color($primary, $lightness: 70%), scale-color($secondary, $lightness: 30%));\n~~~\n\n## 4) Severity: MEDIUM | Type: Bug\nTitle: Light-theme value changed in mobile topic-post `h3` (20% → 50%)\n\nAffected:\n- app/assets/stylesheets/mobile/topic-post.scss:182-182\n\nExplanation:\nThe original was `scale-color($primary, $lightness: 20%)`. The new code uses 50%/50%, which lightens the heading and changes the light theme. The correct pair is 20%/80%, as used in desktop `h3`.\n\nProposed fix:\n~~~scss\ncolor: dark-light-choose(scale-color($primary, $lightness: 20%), scale-color($secondary, $lightness: 80%));\n~~~\n\n## 5) Severity: LOW | Type: Bug\nTitle: Asymmetric dark-theme mapping for `p.help` and similar rules\n\nAffected:\n- app/assets/stylesheets/common/admin/admin_base.scss:506-506\n\nExplanation:\nThe primary value is 40% and the secondary value is 60%, so this pair is consistent. However, other pairs in the change are not mirrored. For example, `.coldmap-*` and some `.hint` and `.date` rules should be checked for a consistent mirror of the light value.\n\nProposed fix:\nVerify that every pair sums to 100%.\n",
+  "belowMinSeverity": 0,
+  "configHash": "d3435fb644d9a45338822d676eea171f5c68bf5619071a69a2edf7279de930cc",
+  "judge": {
+    "skipped": false,
+    "true_positives": [
+      {
+        "golden_comment": "In .topic-meta-data h5 a, the original code had color: scale-color($primary, $lightness: 30%) but was changed to dark-light-choose(scale-color($primary, $lightness: 70%), scale-color($secondary, $lightness: 30%)). The lightness for the light theme changed from 30% to 70%, which is a dramatic inversion",
+        "severity": "Low",
+        "category": "style",
+        "matched_candidate": "Light-theme value changed in desktop topic-post `.topic-meta-data a` from 30% to 70% lightness, reducing contrast and changing existing light theme behavior",
+        "confidence": 0.98,
+        "reasoning": "The candidate issue identifies the exact same problem as the golden comment: the lightness value for the light theme in .topic-meta-data changed from 30% to 70%. Both comments point out this dramatic change in the light theme behavior for the same CSS selector."
+      },
+      {
+        "golden_comment": "This change for desktop/user.css changes $primary from 30% to 50% for the light theme; most other changes preserve the original $primary value and move the complement to $secondary for dark. Consider reviewing this (also applies to a similar .name change in the mobile variant).",
+        "severity": "Low",
+        "category": "speculative",
+        "matched_candidate": "Light-theme value changed in desktop user `.name` from 30% to 50% lightness, making name text indistinguishable from `.title` - likely a copy-paste error",
+        "confidence": 0.9,
+        "reasoning": "Both comments identify the same issue: the light-theme value for .name in desktop/user.css was changed from 30% to 50% lightness. The golden comment notes this differs from the pattern used elsewhere (preserving $primary and moving complement to $secondary for dark theme), while the candidate identifies it as making text indistinguishable from .title (likely a copy-paste error). Both are pointing to the same problematic change in the same location."
+      },
+      {
+        "golden_comment": "In topic-post.css the original code used $lightness: 70% but the replacement uses $lightness: 30% for the light theme. This makes the text significantly darker than intended.",
+        "severity": "Low",
+        "category": "bug",
+        "matched_candidate": "Light-theme value changed in mobile modal `.custom-message-length` from 70% to 30% lightness, swapping the pair and no longer matching the desktop modal rule",
+        "confidence": 0.95,
+        "reasoning": "The candidate issue identifies the same problem as the golden comment - the lightness value was changed from 70% to 30% for the light theme in the CSS. The candidate specifically mentions this is in the mobile modal `.custom-message-length` class, which aligns with the topic-post.css file mentioned in the golden comment. Both are pointing out that the light theme lightness value was incorrectly changed from 70% to 30%."
+      },
+      {
+        "golden_comment": "The light theme color for `.topic-meta-data h5 a` was changed from `scale-color($primary, $lightness: 30%)` to `scale-color($primary, $lightness: 70%)`, which may unintentionally reduce contrast and affect readability. This change should be reviewed to ensure it aligns with design intentions.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Light-theme value changed in desktop topic-post `.topic-meta-data a` from 30% to 70% lightness, reducing contrast and changing existing light theme behavior",
+        "confidence": 0.9,
+        "reasoning": "The candidate issue identifies the same problem as the golden comment - the change from 30% to 70% lightness in the light theme for topic-meta-data links, which reduces contrast. The candidate mentions '.topic-meta-data a' while the golden mentions '.topic-meta-data h5 a', but this is essentially the same concern about the same code change affecting readability/contrast in the light theme."
+      },
+      {
+        "golden_comment": "In mobile/user.scss line 497, the lightness value for dark themes should be inverted to 70% instead of being changed to 50%. This change may lead to unintended visual regressions in light themes.",
+        "severity": "Medium",
+        "category": "bug",
+        "matched_candidate": "Light-theme value changed in mobile topic-post `h3` from 20% to 50% lightness, should use 20%/80% pair as in desktop `h3`",
+        "confidence": 0.8,
+        "reasoning": "Both comments identify the same issue: the lightness value change in mobile/user.scss is incorrect. The golden comment says the dark theme value should be 70% instead of 50%, while the candidate says the light theme value was changed from 20% to 50% and should use a 20%/80% pair. Both are pointing to the same problem - the 50% lightness value is wrong and will cause visual regressions. The candidate identifies it as a light-theme issue while the golden focuses on dark themes, but they're both addressing the same problematic change to the lightness value that should maintain proper contrast between light/dark theme pairs."
+      }
+    ],
+    "false_positives": [
+      {
+        "candidate": "Asymmetric dark-theme mapping for `p.help` and similar rules - `.coldmap-*`, `.hint`, and `.date` rules should be checked for consistent mirroring of light values"
+      }
+    ],
+    "false_negatives": [],
+    "errors": [],
+    "total_candidates": 5,
+    "total_golden": 5,
+    "tp": 5,
+    "fp": 1,
+    "fn": 0,
+    "errors_count": 0,
+    "precision": 1,
+    "recall": 1,
+    "tool": "diff2ai",
+    "repo_name": "ai-code-review-evaluation/discourse-graphite",
+    "pr_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/7"
+  },
+  "judgeUsage": {
+    "calls": 29,
+    "inputTokens": 8156,
+    "outputTokens": 3528,
+    "costUsd": 0.12897999999999998
+  }
+}
